@@ -584,7 +584,7 @@ pragma / `#extension` line. f16 adds a **parallel `kernel_uses_float16`** detect
 > f16 operand of an operator, intrinsic, index, or a width-mismatched store is a
 > located error. So the table row below ("`.f16`, `mov.f16`, default sm_86 >=
 > sm_53") is superseded: nothing needs sm_53 and the same module assembles for
-> sm_50 and up. Still refused: scalar f16 kernel parameters (the typer rejects
+> sm_52 and up (ptxas-gated; sm_50 and sm_51 inferred). Still refused: scalar f16 kernel parameters (the typer rejects
 > them too) and f16 fields of record vectors (no host layout). Evidence tier:
 > structural tests and `ptxas` assembly in CI; execution on ZLUDA/AMD (the
 > AMDGPU lowering there fuses the multiply into the narrowing,

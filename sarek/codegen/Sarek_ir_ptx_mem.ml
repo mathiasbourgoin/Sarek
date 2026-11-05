@@ -217,6 +217,13 @@ let addr_operand r_addr offset =
   if offset = 0 then Printf.sprintf "[%s]" r_addr
   else Printf.sprintf "[%s+%d]" r_addr offset
 
+(* The host record layout has no f16 field (Sarek_ir_layout refuses it), so an
+   aggregate leaf of type float16 cannot be addressed; say so rather than call
+   it "non-scalar". Vectors OF float16 are fine (emit_array_read). *)
+let field_f16_refusal =
+  "aggregate field of type float16: record and variant fields cannot be \
+   float16 (no host layout for them); use a float16 vector"
+
 (** [emit_field_load buf alloc r_addr ~offset ty] emits one typed [ld.global] of
     the scalar field at [offset] from the element base [r_addr]. *)
 let emit_field_load buf alloc r_addr ~offset ty =
@@ -231,6 +238,7 @@ let emit_field_load buf alloc r_addr ~offset ty =
   | TBool -> ld "u32" new_u32
   | TFloat64 -> ld "f64" new_f64
   | TInt64 -> ld "s64" new_u64
+  | TFloat16 -> unsupported field_f16_refusal
   | _ -> unsupported "aggregate field load of non-scalar leaf type"
 
 (** [emit_field_store buf r_addr ~offset ty r_val] emits one typed [st.global]
@@ -243,8 +251,10 @@ let emit_field_store buf r_addr ~offset ty r_val =
     | TBool -> "u32"
     | TFloat64 -> "f64"
     | TInt64 -> "s64"
+    | TFloat16 -> unsupported field_f16_refusal
     | _ -> unsupported "aggregate field store of non-scalar leaf type"
   in
+  reject_f16_operand "aggregate field store" r_val ;
   emit buf "st.global.%s %s, %s;" suffix (addr_operand r_addr offset) r_val
 
 (** Load a variant element: tag at [vl_tag_offset], then EVERY constructor's

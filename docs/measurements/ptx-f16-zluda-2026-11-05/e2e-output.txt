@@ -1,0 +1,56 @@
+# command: HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 LD_LIBRARY_PATH=$HOME/opt/zluda flock <gpu-lock> ./_build/default/sarek/tests/e2e/test_ptx_f16_e2e.exe
+# machine: tartarus (Ryzen 9 7950X; RX 7900 XTX gfx1100 through ZLUDA, libcuda from $HOME/opt/zluda), 2026-11-05T22:05+01:00, branch fix/529-ptx-float16 at the commit that adds this file; NOT an NVIDIA run
+# kernel log scan: journalctl -k --since "2026-11-05 21:46:30": only firewall (UFW) and overlayfs mount lines (other sessions), no amdgpu, page-fault, ring-timeout or oops line
+mul       f16(x*1.1)
+  OK   interpreter = model                              0/63488 differ
+  OK   control demoted vs interpreter (red)         33088/63488 differ  (first: x=0x1.4p-22 got 0x1.8p-22 reference 0x1.4p-22)
+  OK   control const vs interpreter (red)            2912/63488 differ  (first: x=0x1.ep-21 got 0x1p-20 reference 0x1.1p-20)
+  OK   fused model vs interpreter (red)              2913/63488 differ  (first: x=0x1.ep-21 got 0x1p-20 reference 0x1.1p-20)
+chain     f16(f16(x*1.1)+1000)
+  OK   interpreter = model                              0/63488 differ
+  OK   control demoted vs interpreter (red)          7181/63488 differ  (first: x=0x1.d1cp-3 got 0x1.f44p+9 reference 0x1.f4p+9)
+  OK   control const vs interpreter (red)             620/63488 differ  (first: x=0x1.6bcp+2 got 0x1.f7p+9 reference 0x1.f74p+9)
+  OK   fused model vs interpreter (red)               620/63488 differ  (first: x=0x1.6bcp+2 got 0x1.f7p+9 reference 0x1.f74p+9)
+roundtrip out = inp
+  OK   interpreter = model                              0/63488 differ
+  OK   control flushed vs interpreter (red)          2047/63488 differ  (first: x=0x1p-24 got 0x1p-24 reference 0x0p+0)
+trunc     f16(float(int(f64(x))))  [composite, intrinsics]
+  OK   interpreter = model                              0/63488 differ
+  OK   control rounded vs interpreter (red)         26624/63488 differ  (first: x=0x1p-1 got 0x0p+0 reference 0x1p+0)
+fromint   f16(float(i))  [composite, intrinsic]
+  OK   interpreter = model                              0/63488 differ
+  OK   control shifted vs interpreter (red)          7104/63488 differ  (first: x=0x0p+0 got 0x0p+0 reference 0x1p+0)
+direct    ECast(f16, ECast(int32, f16 x))  [hand IR]
+  OK   interpreter = model                              0/63488 differ
+  OK   control rounded vs interpreter (red)         26624/63488 differ  (first: x=0x1p-1 got 0x0p+0 reference 0x1p+0)
+direct    ECast(f16, int32 i)  [hand IR]
+  OK   interpreter = model                              0/63488 differ
+  OK   control shifted vs interpreter (red)          7104/63488 differ  (first: x=0x0p+0 got 0x0p+0 reference 0x1p+0)
+=== f16 on CUDA/PTX: AMD Radeon RX 7900 XTX [ZLUDA] (framework CUDA/PTX) ===
+mul       f16(x*1.1)
+  OK   AMD Radeon RX 7900 XTX [ZLUDA]: every element equals the interpreter model or the fused model (60575 equal the model, 63488 the fused model, 0 neither)
+       known non-NVIDIA deviation: 2913/63488 differ from the interpreter
+chain     f16(f16(x*1.1)+1000)
+  OK   AMD Radeon RX 7900 XTX [ZLUDA]: every element equals the interpreter model or the fused model (62868 equal the model, 63488 the fused model, 0 neither)
+       known non-NVIDIA deviation: 620/63488 differ from the interpreter
+roundtrip out = inp
+  OK   CUDA/PTX = model                                 0/63488 differ
+  OK   CUDA/PTX = interpreter                           0/63488 differ
+  OK   control flushed vs device (red)               2047/63488 differ  (first: x=0x1p-24 got 0x1p-24 reference 0x0p+0)
+trunc     f16(float(int(f64(x))))  [composite, intrinsics]
+  OK   CUDA/PTX = model                                 0/63488 differ
+  OK   CUDA/PTX = interpreter                           0/63488 differ
+  OK   control rounded vs device (red)              26624/63488 differ  (first: x=0x1p-1 got 0x0p+0 reference 0x1p+0)
+fromint   f16(float(i))  [composite, intrinsic]
+  OK   CUDA/PTX = model                                 0/63488 differ
+  OK   CUDA/PTX = interpreter                           0/63488 differ
+  OK   control shifted vs device (red)               7104/63488 differ  (first: x=0x0p+0 got 0x0p+0 reference 0x1p+0)
+direct    ECast(f16, ECast(int32, f16 x))  [hand IR]
+  OK   CUDA/PTX = model                                 0/63488 differ
+  OK   CUDA/PTX = interpreter                           0/63488 differ
+  OK   control rounded vs device (red)              26624/63488 differ  (first: x=0x1p-1 got 0x0p+0 reference 0x1p+0)
+direct    ECast(f16, int32 i)  [hand IR]
+  OK   CUDA/PTX = model                                 0/63488 differ
+  OK   CUDA/PTX = interpreter                           0/63488 differ
+  OK   control shifted vs device (red)               7104/63488 differ  (first: x=0x0p+0 got 0x0p+0 reference 0x1p+0)
+[PASS]

@@ -264,6 +264,69 @@ let test_mismatched_stores_refused () =
        [K.vec_param "out" TFloat32; K.vec_param "inp" TFloat16]
        (store_into_out (f16_read (EConst (CInt32 0l)))))
 
+(** An f16 value in a condition or loop-bound position would reach [setp.*.u32]
+    on a 16-bit register; each is a located refusal. *)
+let test_f16_control_positions_refused () =
+  let h = f16_read (EConst (CInt32 0l)) in
+  let nop = SAssign (LArrayElem ("out", EConst (CInt32 0l)), h) in
+  let k body = K.kernel "f16_ctl" h_params body in
+  let loop_var = K.var "i" TInt32 in
+  List.iter
+    (fun (what, needle, body) -> expect_error what ~needle (k body))
+    [
+      ("SIf condition", "if condition", SIf (h, nop, None));
+      ("SWhile condition", "while condition", SWhile (h, nop));
+      ( "SFor lower bound",
+        "for-loop lower bound",
+        SFor (loop_var, h, EConst (CInt32 4l), Upto, SEmpty) );
+      ( "SFor upper bound",
+        "for-loop upper bound",
+        SFor (loop_var, EConst (CInt32 0l), h, Upto, SEmpty) );
+      ( "EIf condition",
+        "if condition",
+        K.with_gid (fun i ->
+            SAssign
+              ( LArrayElem ("out", i),
+                EIf (h, f16_read i, f16_read (EConst (CInt32 1l))) )) );
+    ]
+
+(** A select whose branches disagree on f16-ness must not emit [selp.b16] on a
+    32-bit operand. Both orders, with the select in the eager and in the
+    branching (array read in a branch) form. *)
+let test_f16_select_mismatch_refused () =
+  let f32_const = EConst (CFloat32 1.0) in
+  let c = EBinop (Lt, EConst (CInt32 0l), EConst (CInt32 1l)) in
+  List.iter
+    (fun (what, e) ->
+      expect_error
+        what
+        ~needle:"float16"
+        (K.kernel
+           "f16_sel"
+           [K.vec_param "out" TFloat16; K.vec_param "inp" TFloat16]
+           (store_into_out e)))
+    [
+      ("f16 then, f32 else", EIf (c, K.narrow f32_const, f32_const));
+      ("f32 then, f16 else", EIf (c, f32_const, K.narrow f32_const));
+      ("branching form", EIf (c, f16_read (EConst (CInt32 0l)), f32_const));
+    ]
+
+(** Aggregate field stores take no f16 value, and an f16 leaf is named as such
+    rather than as a "non-scalar" type. *)
+let test_field_store_f16 () =
+  let buf = Buffer.create 16 in
+  let refuses what ~needle f =
+    match f () with
+    | () -> Alcotest.failf "%s: expected a refusal" what
+    | exception Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+        if not (contains ~needle msg) then
+          Alcotest.failf "%s: unexpected diagnostic: %s" what msg
+  in
+  refuses "f16 value into f32 field" ~needle:"float16" (fun () ->
+      Sarek_ir_ptx_mem.emit_field_store buf "%rd0" ~offset:0 TFloat32 "%h0") ;
+  refuses "f16 leaf type" ~needle:"float16 vector" (fun () ->
+      Sarek_ir_ptx_mem.emit_field_store buf "%rd0" ~offset:0 TFloat16 "%h0")
+
 let test_f16_index_refused () =
   expect_error
     "f16 as index"
@@ -365,6 +428,15 @@ let () =
             `Quick
             test_mismatched_stores_refused;
           Alcotest.test_case "f16 index" `Quick test_f16_index_refused;
+          Alcotest.test_case
+            "f16 control positions"
+            `Quick
+            test_f16_control_positions_refused;
+          Alcotest.test_case
+            "f16 select mismatch"
+            `Quick
+            test_f16_select_mismatch_refused;
+          Alcotest.test_case "f16 aggregate field" `Quick test_field_store_f16;
           Alcotest.test_case
             "scalar f16 parameter"
             `Quick

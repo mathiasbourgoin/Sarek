@@ -2755,7 +2755,7 @@ let test_ptxas_assembles () =
       kernels ;
     (* float16 kernels (ptx_f16_kernels, structurally tested in test_ptx_f16):
        assembled for targets BELOW sm_53 as well as above it. Native f16
-       arithmetic is invalid there, so a ptxas pass at sm_52 and sm_61 proves
+       arithmetic is invalid there, so a ptxas pass at sm_52 (the only target here below sm_53) proves
        the emitted f16 code is cvt/ld/st/mov only, i.e. valid on every SM the
        backend can target. *)
     List.iter
