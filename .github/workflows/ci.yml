@@ -227,7 +227,7 @@ jobs:
       - name: OCaml toplevel for the cross-language label-shape harness
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ocaml-nox
+          sudo apt-get install -y --no-install-recommends ocaml
           # Not decoration: `apt-get install` succeeding is not the same claim
           # as `ocaml` being runnable, and the harness's exit 2 would otherwise
           # be the first thing to notice.
