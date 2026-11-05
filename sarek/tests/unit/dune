@@ -166,7 +166,20 @@
 (test
  (name test_ptx_snapshot)
  (modules test_ptx_snapshot)
- (libraries sarek.codegen alcotest unix str))
+ (libraries sarek.codegen ptx_f16_kernels alcotest unix str))
+
+; float16 in the PTX backend: the IR kernels (shared with the ptxas gate in
+; test_ptx_snapshot) and the structural tests over their PTX.
+
+(library
+ (name ptx_f16_kernels)
+ (modules ptx_f16_kernels)
+ (libraries sarek.codegen))
+
+(test
+ (name test_ptx_f16)
+ (modules test_ptx_f16)
+ (libraries sarek.codegen ptx_f16_kernels alcotest))
 
 ; ptxas sweep over the WHOLE PTX intrinsic surface: one kernel per intrinsic
 ; name, enumerated from Sarek_ir_ptx_expr's own dispatch registry so a new

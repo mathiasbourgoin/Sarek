@@ -2753,6 +2753,26 @@ let test_ptxas_assembles () =
             Alcotest.fail
               (Printf.sprintf "ptxas rejected kernel %s:\n%s" name err))
       kernels ;
+    (* float16 kernels (ptx_f16_kernels, structurally tested in test_ptx_f16):
+       assembled for targets BELOW sm_53 as well as above it. Native f16
+       arithmetic is invalid there, so a ptxas pass at sm_52 and sm_61 proves
+       the emitted f16 code is cvt/ld/st/mov only, i.e. valid on every SM the
+       backend can target. *)
+    List.iter
+      (fun sm_target ->
+        List.iter
+          (fun (name, k) ->
+            match assemble_ok (Sarek_ir_ptx.generate ~sm_target k) with
+            | Ok () -> Printf.printf "  ptxas OK: %s (%s)\n%!" name sm_target
+            | Error err ->
+                Alcotest.fail
+                  (Printf.sprintf
+                     "ptxas rejected f16 kernel %s at %s:\n%s"
+                     name
+                     sm_target
+                     err))
+          (Ptx_f16_kernels.all ()))
+      ["sm_52"; "sm_61"; "sm_75"; "sm_90"] ;
     (* SoA-lowered custom-vector kernels: N per-leaf base pointers + coalesced
        scalar loads must also assemble, across every leaf width (f32/f64/i32/i64
        and a misaligned-AoS mixed record). *)

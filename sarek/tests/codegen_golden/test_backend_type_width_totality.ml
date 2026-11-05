@@ -218,6 +218,7 @@ let wgsl_width = function
 let ptx_width = function
   | ".u32" -> Some (Bytes 4)
   | ".u64" -> Some (Bytes 8)
+  | ".b16" -> Some (Bytes 2)
   | ".f32" -> Some (Bytes 4)
   | ".f64" -> Some (Bytes 8)
   | _ -> None

@@ -31,7 +31,9 @@ let soa_leaves_of_param param_name (elt : elttype) : (string * elttype) list =
               fail
                 (Printf.sprintf
                    "PTX codegen: SoA parameter '%s': float16 field '%s' \
-                    unsupported (#57 slice 2)"
+                    unsupported: record fields cannot be float16 (the host \
+                    record layout and SoA marshalling have no f16 field); use \
+                    a float16 vector"
                    param_name
                    fname)
           | TUint8 ->
@@ -235,9 +237,10 @@ let emit_params buf alloc (env : env) ~(soa_params : string list)
           | TFloat16 ->
               fail
                 (Printf.sprintf
-                   "PTX codegen: kernel parameter '%s' has type float16, which \
-                    the PTX backend does not support (#57 slice 2 — needs a \
-                    %%h register class)"
+                   "PTX codegen: kernel parameter '%s' is a scalar float16, \
+                    which is not supported: f16 is a storage type, so pass a \
+                    float16 vector, or a float32 scalar to narrow in the \
+                    kernel"
                    v.var_name)
           | TUint8 ->
               (* A scalar uint8 parameter is not something the surface language
@@ -299,14 +302,9 @@ let emit_locals buf shared_buf module_buf alloc (env : env) (locals : decl list)
           | None -> ()
           | Some e ->
               let r_init = emit_expr buf alloc env e in
-              let mov_op =
-                match v.var_type with
-                | TFloat32 -> "mov.f32"
-                | TFloat64 -> "mov.f64"
-                | TInt64 -> "mov.u64"
-                | _ -> "mov.u32"
-              in
-              emit buf "%s %s, %s;" mov_op r r_init)
+              (* Typed by the destination register, which [new_reg_for_type]
+                 allocated from [v.var_type]: f16 locals move as [mov.b16]. *)
+              mov_scalar buf ~dst:r ~src:r_init)
       | DShared (name, elt, size_opt) ->
           let align = ptx_align_of_elttype elt in
           let btype = ptx_btype_of_elttype elt in
@@ -372,6 +370,9 @@ let emit_reg_decls buf alloc =
   if alloc.u32 > 0 then Printf.bprintf buf "    .reg .u32 %%r<%d>;\n" alloc.u32 ;
   if alloc.u64 > 0 then Printf.bprintf buf "    .reg .u64 %%rd<%d>;\n" alloc.u64 ;
   if alloc.f32 > 0 then Printf.bprintf buf "    .reg .f32 %%f<%d>;\n" alloc.f32 ;
+  (* [.b16], the type nvcc itself gives the registers of cvt/ld/st on halves:
+     it is untyped bits, so no f16 arithmetic is implied (and none is emitted). *)
+  if alloc.f16 > 0 then Printf.bprintf buf "    .reg .b16 %%h<%d>;\n" alloc.f16 ;
   if alloc.f64 > 0 then Printf.bprintf buf "    .reg .f64 %%fd<%d>;\n" alloc.f64 ;
   if alloc.pred > 0 then
     Printf.bprintf buf "    .reg .pred %%p<%d>;\n" alloc.pred
@@ -390,23 +391,10 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
     ptx_version
     sm_target
 
-(* Slice-2 deferral. PTX keeps its OWN raiser rather than going through
-   {!Sarek_ir_codegen.reject_feature}'s composed message: the wording in
-   [Sarek_ir_ptx_types.unsupported_elttype] explains the %h register-class audit
-   and is shared verbatim with the expression emitter, so one f16 message for the
-   whole backend is better than two. The detector is still the shared choke
-   point — see reject_feature's docstring for why a whole-kernel gate is needed.
-   [_kernel] distinguishes this from [Sarek_typer.reject_float16], which rejects
-   an f16 OPERAND. *)
-let reject_float16_kernel (k : kernel) : unit =
-  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Float16 k then
-    Sarek_ir_ptx_types.unsupported_elttype TFloat16 "kernel-level float16 usage"
-
-(* The cooperative-matrix gate, sharing the f16 gate's placement and its reason
-   for existing: a per-node refusal names whichever node the emitter happened to
-   reach, and a [TUint8] operand buffer that is only ever stored to reaches
-   none. It also covers helper bodies, which [emit_stmt] visits through a
-   different entry. *)
+(* The cooperative-matrix gate: a per-node refusal names whichever node the
+   emitter happened to reach, and a [TUint8] operand buffer that is only ever
+   stored to reaches none. It also covers helper bodies, which [emit_stmt]
+   visits through a different entry. *)
 let reject_coopmat_kernel (k : kernel) : unit =
   if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
     Sarek_ir_ptx_types.unsupported
@@ -425,7 +413,6 @@ let reject_coopmat_kernel (k : kernel) : unit =
       to before. *)
 let generate ?(sm_target = "sm_86") ?(soa_params = []) ?block (k : kernel) :
     string =
-  reject_float16_kernel k ;
   reject_coopmat_kernel k ;
   let alloc = make_alloc () in
   List.iter

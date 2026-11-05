@@ -26,11 +26,6 @@ let f32_one_bits = Int32.bits_of_float 1.0
 
 let f32_half_bits = Int32.bits_of_float 0.5
 
-(** An f64 register is "%fd<n>"; an f32 register is "%f<n>" (not "%fd<n>"). *)
-let is_f64_reg r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd'
-
-let is_f32_reg r = String.length r >= 2 && r.[1] = 'f' && not (is_f64_reg r)
-
 (* Refusal for a same-named intrinsic from another module: PTX lowers its own
    table only and has no registry fallback, so say which one it does lower. *)
 let off_stdlib_int32 path name =
@@ -42,7 +37,7 @@ let off_stdlib_int32 path name =
     name
 
 (* A 32-bit integer register ([%rN], not the 64-bit [%rdN]). *)
-let is_s32_reg r = String.length r >= 3 && r.[1] = 'r' && r.[2] <> 'd'
+let is_s32_reg r = reg_class r = RU32
 
 (** Whether an expression must NOT be evaluated speculatively — i.e. an [EIf]
     with such a branch must emit real control flow rather than the eager
@@ -287,7 +282,7 @@ let rec zero_binding buf (b : binding) : unit =
   | Scalar r ->
       let zero =
         match reg_class r with
-        | RU32 | RU64 -> "0"
+        | RU32 | RU64 | RF16 -> "0"
         | RF32 -> "0F00000000"
         | RF64 -> "0D0000000000000000"
       in
@@ -525,19 +520,16 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
   | EVar v -> env_lookup env v.var_name
   | EBinop (op, e1, e2) -> emit_binop buf alloc env op e1 e2
   | EUnop (Neg, e) ->
-      let r_src = emit_expr buf alloc env e in
-      let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
-      let is_f32 r = String.length r >= 2 && r.[1] = 'f' && not (is_f64 r) in
-      let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
-      if is_f64 r_src then (
+      let r_src = emit_operand buf alloc env "unary minus" e in
+      if is_f64_reg r_src then (
         let r = new_f64 alloc in
         emit buf "neg.f64 %s, %s;" r r_src ;
         r)
-      else if is_f32 r_src then (
+      else if is_f32_reg r_src then (
         let r = new_f32 alloc in
         emit buf "neg.f32 %s, %s;" r r_src ;
         r)
-      else if is_u64 r_src then (
+      else if is_u64_reg r_src then (
         let r = new_u64 alloc in
         emit buf "neg.s64 %s, %s;" r r_src ;
         r)
@@ -548,18 +540,16 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
   | EUnop (Not, e) ->
       (* Bools are u32 0/1 post-typer, but be class-aware so a 64-bit
          operand cannot produce invalid setp.eq.u32-on-%rd PTX (H2). *)
-      let r_src = emit_expr buf alloc env e in
-      let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
+      let r_src = emit_operand buf alloc env "boolean not" e in
       let p = new_pred alloc in
-      if is_u64 r_src then emit buf "setp.eq.s64 %s, %s, 0;" p r_src
+      if is_u64_reg r_src then emit buf "setp.eq.s64 %s, %s, 0;" p r_src
       else emit buf "setp.eq.u32 %s, %s, 0;" p r_src ;
       let r = new_u32 alloc in
       emit buf "selp.u32 %s, 1, 0, %s;" r p ;
       r
   | EUnop (BitNot, e) ->
-      let r_src = emit_expr buf alloc env e in
-      let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
-      if is_u64 r_src then (
+      let r_src = emit_operand buf alloc env "bitwise not" e in
+      if is_u64_reg r_src then (
         let r = new_u64 alloc in
         emit buf "not.b64 %s, %s;" r r_src ;
         r)
@@ -616,18 +606,20 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
       let r_else = emit_expr buf alloc env else_e in
       let p = new_pred alloc in
       emit buf "setp.ne.u32 %s, %s, 0;" p r_cond ;
-      let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
-      let is_f32 r = String.length r >= 2 && r.[1] = 'f' && not (is_f64 r) in
-      let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
-      if is_f64 r_then then (
+      if is_f16_reg r_then then (
+        (* A select moves bits; no arithmetic on the binary16 value. *)
+        let r = new_f16 alloc in
+        emit buf "selp.b16 %s, %s, %s, %s;" r r_then r_else p ;
+        r)
+      else if is_f64_reg r_then then (
         let r = new_f64 alloc in
         emit buf "selp.f64 %s, %s, %s, %s;" r r_then r_else p ;
         r)
-      else if is_f32 r_then then (
+      else if is_f32_reg r_then then (
         let r = new_f32 alloc in
         emit buf "selp.f32 %s, %s, %s, %s;" r r_then r_else p ;
         r)
-      else if is_u64 r_then then (
+      else if is_u64_reg r_then then (
         let r = new_u64 alloc in
         emit buf "selp.u64 %s, %s, %s, %s;" r r_then r_else p ;
         r)
@@ -1055,24 +1047,21 @@ and emit_variant buf alloc env tyname ctor args : binding =
   Agg (AVariant {vname = tyname; tag_reg; ctors})
 
 and emit_binop buf alloc env op e1 e2 : string =
-  let r1 = emit_expr buf alloc env e1 in
-  let r2 = emit_expr buf alloc env e2 in
+  let r1 = emit_operand buf alloc env "binary operator" e1 in
+  let r2 = emit_operand buf alloc env "binary operator" e2 in
   (* Infer type from first operand register name prefix.
      %r* -> u32, %rd* -> u64, %f* -> f32, %fd* -> f64 *)
-  let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
-  let is_f32 r = String.length r >= 2 && r.[1] = 'f' && not (is_f64 r) in
-  let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
   match op with
   | Add ->
-      if is_f64 r1 then (
+      if is_f64_reg r1 then (
         let r = new_f64 alloc in
         emit buf "add.f64 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_f32 r1 then (
+      else if is_f32_reg r1 then (
         let r = new_f32 alloc in
         emit buf "add.f32 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_u64 r1 then (
+      else if is_u64_reg r1 then (
         let r = new_u64 alloc in
         emit buf "add.u64 %s, %s, %s;" r r1 r2 ;
         r)
@@ -1081,15 +1070,15 @@ and emit_binop buf alloc env op e1 e2 : string =
         emit buf "add.u32 %s, %s, %s;" r r1 r2 ;
         r
   | Sub ->
-      if is_f64 r1 then (
+      if is_f64_reg r1 then (
         let r = new_f64 alloc in
         emit buf "sub.f64 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_f32 r1 then (
+      else if is_f32_reg r1 then (
         let r = new_f32 alloc in
         emit buf "sub.f32 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_u64 r1 then (
+      else if is_u64_reg r1 then (
         let r = new_u64 alloc in
         emit buf "sub.u64 %s, %s, %s;" r r1 r2 ;
         r)
@@ -1098,15 +1087,15 @@ and emit_binop buf alloc env op e1 e2 : string =
         emit buf "sub.u32 %s, %s, %s;" r r1 r2 ;
         r
   | Mul ->
-      if is_f64 r1 then (
+      if is_f64_reg r1 then (
         let r = new_f64 alloc in
         emit buf "mul.f64 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_f32 r1 then (
+      else if is_f32_reg r1 then (
         let r = new_f32 alloc in
         emit buf "mul.f32 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_u64 r1 then (
+      else if is_u64_reg r1 then (
         let r = new_u64 alloc in
         emit buf "mul.lo.u64 %s, %s, %s;" r r1 r2 ;
         r)
@@ -1115,11 +1104,11 @@ and emit_binop buf alloc env op e1 e2 : string =
         emit buf "mul.lo.u32 %s, %s, %s;" r r1 r2 ;
         r
   | Div ->
-      if is_f64 r1 then (
+      if is_f64_reg r1 then (
         let r = new_f64 alloc in
         emit buf "div.rn.f64 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_f32 r1 then (
+      else if is_f32_reg r1 then (
         (* Correctly-rounded division (audit finding M2): div.approx.f32 is
            ~2 ulp and badly wrong at exponent extremes, which made PTX the
            least-accurate backend for ordinary /. and eroded Sarek_df64's
@@ -1128,7 +1117,7 @@ and emit_binop buf alloc env op e1 e2 : string =
         let r = new_f32 alloc in
         emit buf "div.rn.f32 %s, %s, %s;" r r1 r2 ;
         r)
-      else if is_u64 r1 then (
+      else if is_u64_reg r1 then (
         (* Sarek int64 is signed: div.u64 on negative operands is silently
            wrong ((-7)/2 = huge). add/sub/mul are sign-agnostic in two's
            complement; div/rem are not (audit finding H1). *)
@@ -1143,9 +1132,9 @@ and emit_binop buf alloc env op e1 e2 : string =
       (* Float Mod is C fmod (exact for all finite inputs, result sign
          follows the dividend). Lowered by emit_float_fmod's iterative
          reduction - see its doc comment (audit finding M1). *)
-      if is_f64 r1 then emit_float_fmod buf alloc ~is64:true r1 r2
-      else if is_f32 r1 then emit_float_fmod buf alloc ~is64:false r1 r2
-      else if is_u64 r1 then (
+      if is_f64_reg r1 then emit_float_fmod buf alloc ~is64:true r1 r2
+      else if is_f32_reg r1 then emit_float_fmod buf alloc ~is64:false r1 r2
+      else if is_u64_reg r1 then (
         (* Signed rem, matching C's % (result sign follows the dividend),
            the interpreter's Int64.rem, and every C-family backend. *)
         let r = new_u64 alloc in
@@ -1161,7 +1150,7 @@ and emit_binop buf alloc env op e1 e2 : string =
          which is invalid PTX and fails at module load. Sarek ints are
          signed, so the integer forms are s32/s64 (sign matters for
          Lt/Le/Gt/Ge; for Eq/Ne it is irrelevant but harmless). *)
-      let is_float = is_f64 r1 || is_f32 r1 in
+      let is_float = is_f64_reg r1 || is_f32_reg r1 in
       let cmp =
         match op with
         | Eq -> "eq"
@@ -1190,9 +1179,9 @@ and emit_binop buf alloc env op e1 e2 : string =
         | _ -> assert false
       in
       let ty =
-        if is_f64 r1 then "f64"
-        else if is_f32 r1 then "f32"
-        else if is_u64 r1 then "s64"
+        if is_f64_reg r1 then "f64"
+        else if is_f32_reg r1 then "f32"
+        else if is_u64_reg r1 then "s64"
         else if cmp = "eq" || cmp = "ne" then "u32"
         else "s32"
       in
@@ -1210,9 +1199,9 @@ and emit_binop buf alloc env op e1 e2 : string =
       emit buf "or.b32 %s, %s, %s;" r r1 r2 ;
       r
   | Shl ->
-      if is_u64 r1 then (
+      if is_u64_reg r1 then (
         (* PTX shift amounts are u32; narrow a 64-bit amount if needed. *)
-        let amt = if is_u64 r2 then emit_cast buf alloc r2 TInt32 else r2 in
+        let amt = if is_u64_reg r2 then emit_cast buf alloc r2 TInt32 else r2 in
         let r = new_u64 alloc in
         emit buf "shl.b64 %s, %s, %s;" r r1 amt ;
         r)
@@ -1231,10 +1220,10 @@ and emit_binop buf alloc env op e1 e2 : string =
          test_codegen_ptx_conformance.ml checks the extracted model against
          this emitter, so changing an instruction here without the model
          fails that test. *)
-      if is_u64 r1 then (
+      if is_u64_reg r1 then (
         (* 64-bit arithmetic shift (softmath exponent extraction); PTX shift
            amounts are u32, so a 64-bit amount is narrowed first. *)
-        let amt = if is_u64 r2 then emit_cast buf alloc r2 TInt32 else r2 in
+        let amt = if is_u64_reg r2 then emit_cast buf alloc r2 TInt32 else r2 in
         let r = new_u64 alloc in
         emit buf "shr.s64 %s, %s, %s;" r r1 amt ;
         r)
@@ -1250,7 +1239,7 @@ and emit_binop buf alloc env op e1 e2 : string =
   | Lshr64 ->
       (* [lsr] on int64; PTX shift amounts are u32, so a 64-bit amount is
          narrowed first, as for Shr. *)
-      let amt = if is_u64 r2 then emit_cast buf alloc r2 TInt32 else r2 in
+      let amt = if is_u64_reg r2 then emit_cast buf alloc r2 TInt32 else r2 in
       let r = new_u64 alloc in
       emit buf "shr.b64 %s, %s, %s;" r r1 amt ;
       r
@@ -1261,9 +1250,8 @@ and emit_binop buf alloc env op e1 e2 : string =
 (** Bitwise and/or/xor at the width of the first operand (b64 when it is a
     64-bit register, b32 otherwise); a narrower second operand is widened. *)
 and emit_bitwise buf alloc op r1 r2 : string =
-  let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
-  if is_u64 r1 then (
-    let r2w = if is_u64 r2 then r2 else emit_cast buf alloc r2 TInt64 in
+  if is_u64_reg r1 then (
+    let r2w = if is_u64_reg r2 then r2 else emit_cast buf alloc r2 TInt64 in
     let r = new_u64 alloc in
     emit buf "%s.b64 %s, %s, %s;" op r r1 r2w ;
     r)
@@ -1272,18 +1260,38 @@ and emit_bitwise buf alloc op r1 r2 : string =
     emit buf "%s.b32 %s, %s, %s;" op r r1 r2 ;
     r
 
+(** Evaluate an operand of an arithmetic operator or intrinsic and refuse an f16
+    result: f16 is a storage type, so such an operand means the IR bypassed the
+    typer, and the integer default of the class dispatch would otherwise accept
+    it. [what] names the consumer. *)
+and emit_operand buf alloc env what e : string =
+  let r = emit_expr buf alloc env e in
+  reject_f16_operand what r ;
+  r
+
+(** Scalar conversion. f16 is a storage width, so every conversion goes through
+    binary32: an f16 source is first widened exactly ([cvt.f32.f16]) and then
+    follows the f32 rule for the destination; an f16 destination is the f32
+    conversion of the source followed by the round-to-nearest-even narrowing.
+    This is the interpreter's definition ([Sarek_float16.to_float16] of the f32
+    value) and the CUDA/C one ([__float2half] of the float). *)
 and emit_cast buf alloc r_src dst_ty : string =
-  let is_f64 r = String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' in
-  let is_f32 r = String.length r >= 2 && r.[1] = 'f' && not (is_f64 r) in
-  let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
+  if is_f16_reg r_src then
+    if dst_ty = TFloat16 then r_src
+    else emit_cast buf alloc (emit_f16_widen buf alloc r_src) dst_ty
+  else emit_cast_from_non_f16 buf alloc r_src dst_ty
+
+and emit_cast_from_non_f16 buf alloc r_src dst_ty : string =
   match dst_ty with
   | TFloat16 ->
-      (* #57 slice 2. Note the hazard this arm guards: [is_f32] above is
-         "second char is 'f' and not %fd", which an "%h" f16 register would NOT
-         satisfy — so an f16 source would silently fall through to the
-         "cvt.rn.f32.s32" integer path and produce garbage. f16 registers must
-         not exist until those guards are made class-aware. *)
-      unsupported_elttype TFloat16 "ECast to float16"
+      (* No fusion barrier here, unlike the CUDA/C backend's
+         [sarek_f32_barrier]: the barrier exists for AMDGPU compilers that
+         absorb the f32 operation into the narrowing (v_fma_mixlo_f16). NVIDIA
+         has no fused multiply-and-convert-to-f16, and ptxas keeps the
+         [cvt.rn.f16.f32] as its own instruction (docs/fp-contraction-policy.md,
+         CUDA / nvrtc f16 narrowing row), so the plain narrowing of the rounded
+         f32 value is the DSL's two-step rounding. *)
+      emit_f16_narrow buf alloc (emit_cast buf alloc r_src TFloat32)
   | TUint8 ->
       (* Unreachable through any front end — no cast to or from a
          cooperative-matrix operand element type is producible from the surface
@@ -1292,18 +1300,18 @@ and emit_cast buf alloc r_src dst_ty : string =
          of a silent narrowing. *)
       unsupported_coopmat_elttype "ECast to uint8"
   | TFloat32 ->
-      if is_f32 r_src then r_src
+      if is_f32_reg r_src then r_src
       else
         let r = new_f32 alloc in
         let cvt =
-          if is_f64 r_src then "cvt.rn.f32.f64"
-          else if is_u64 r_src then "cvt.rn.f32.s64"
+          if is_f64_reg r_src then "cvt.rn.f32.f64"
+          else if is_u64_reg r_src then "cvt.rn.f32.s64"
           else "cvt.rn.f32.s32"
         in
         emit buf "%s %s, %s;" cvt r r_src ;
         r
   | TFloat64 ->
-      if is_f64 r_src then r_src
+      if is_f64_reg r_src then r_src
       else
         let r = new_f64 alloc in
         let cvt =
@@ -1313,20 +1321,23 @@ and emit_cast buf alloc r_src dst_ty : string =
              instruction 'cvt'". The int -> f64 conversions below and the
              narrowing f64 -> f32 in the TFloat32 arm above ARE inexact, so
              they keep (and require) the [.rn] modifier. *)
-          if is_f32 r_src then "cvt.f64.f32"
-          else if is_u64 r_src then "cvt.rn.f64.s64"
+          if is_f32_reg r_src then "cvt.f64.f32"
+          else if is_u64_reg r_src then "cvt.rn.f64.s64"
           else "cvt.rn.f64.s32"
         in
         emit buf "%s %s, %s;" cvt r r_src ;
         r
   | TInt32 ->
-      if (not (is_f32 r_src)) && (not (is_f64 r_src)) && not (is_u64 r_src) then
-        r_src
+      if
+        (not (is_f32_reg r_src))
+        && (not (is_f64_reg r_src))
+        && not (is_u64_reg r_src)
+      then r_src
       else
         let r = new_u32 alloc in
         let cvt =
-          if is_f64 r_src then "cvt.rzi.s32.f64"
-          else if is_f32 r_src then "cvt.rzi.s32.f32"
+          if is_f64_reg r_src then "cvt.rzi.s32.f64"
+          else if is_f32_reg r_src then "cvt.rzi.s32.f32"
           else "cvt.u32.u64"
         in
         emit buf "%s %s, %s;" cvt r r_src ;
@@ -1335,12 +1346,12 @@ and emit_cast buf alloc r_src dst_ty : string =
       (* i32 -> i64 widens with sign extension (cvt.s64.s32); the reverse
          narrowing in the TInt32 arm (cvt.u32.u64) TRUNCATES to the low 32
          bits — values outside int32 range wrap, matching Int64.to_int32. *)
-      if is_u64 r_src then r_src
+      if is_u64_reg r_src then r_src
       else
         let r = new_u64 alloc in
         let cvt =
-          if is_f64 r_src then "cvt.rzi.s64.f64"
-          else if is_f32 r_src then "cvt.rzi.s64.f32"
+          if is_f64_reg r_src then "cvt.rzi.s64.f64"
+          else if is_f32_reg r_src then "cvt.rzi.s64.f32"
           else "cvt.s64.s32"
         in
         emit buf "%s %s, %s;" cvt r r_src ;
@@ -1353,11 +1364,11 @@ and emit_cast buf alloc r_src dst_ty : string =
          UNordered ne (setp.neu): NaN != 0.0 is true in C, so
          (bool)NaN = 1. *)
       let p = new_pred alloc in
-      if is_f64 r_src then
+      if is_f64_reg r_src then
         emit buf "setp.neu.f64 %s, %s, 0D0000000000000000;" p r_src
-      else if is_f32 r_src then
+      else if is_f32_reg r_src then
         emit buf "setp.neu.f32 %s, %s, 0F00000000;" p r_src
-      else if is_u64 r_src then emit buf "setp.ne.s64 %s, %s, 0;" p r_src
+      else if is_u64_reg r_src then emit buf "setp.ne.s64 %s, %s, 0;" p r_src
       else emit buf "setp.ne.u32 %s, %s, 0;" p r_src ;
       let r = new_u32 alloc in
       emit buf "selp.u32 %s, 1, 0, %s;" r p ;
@@ -1415,7 +1426,7 @@ and intr_f32_mul_const buf alloc a bits =
 (* Emit the argument(s) of a math intrinsic (no width check). *)
 and intr_unary_arg buf alloc (env : env) intr args =
   match args with
-  | [a] -> emit_expr buf alloc env a
+  | [a] -> emit_operand buf alloc env "intrinsic argument" a
   | _ -> unsupported (intr ^ " arity != 1")
 
 and intr_binary_args buf alloc (env : env) intr args =
@@ -1427,8 +1438,8 @@ and intr_binary_args buf alloc (env : env) intr args =
          ocamlopt evaluates it right-to-left, emitting [b]'s instructions
          before [a]'s and reversing register numbering / side effects (array
          reads, atomics) relative to source order. Force left-to-right. *)
-      let ra = emit_expr buf alloc env a in
-      let rb = emit_expr buf alloc env b in
+      let ra = emit_operand buf alloc env "intrinsic argument" a in
+      let rb = emit_operand buf alloc env "intrinsic argument" b in
       (ra, rb)
   | _ -> unsupported (intr ^ " arity != 2")
 
@@ -1469,7 +1480,12 @@ and intr_unary_native buf alloc env intr ~f32_op ~f64_op args =
 (* Type conversions delegate to emit_cast; a unary helper for them. *)
 and intr_unary_cast buf alloc (env : env) intr dst_ty args =
   match args with
-  | [a] -> emit_cast buf alloc (emit_expr buf alloc env a) dst_ty
+  | [a] ->
+      emit_cast
+        buf
+        alloc
+        (emit_operand buf alloc env "intrinsic argument" a)
+        dst_ty
   | _ -> unsupported (intr ^ " arity != 1")
 
 (* Binary min/max: native PTX op. Both operands must share a register
@@ -1477,8 +1493,8 @@ and intr_unary_cast buf alloc (env : env) intr dst_ty args =
 and intr_binary_minmax buf alloc env intr op args =
   match args with
   | [a; b] ->
-      let ra = emit_expr buf alloc env a in
-      let rb = emit_expr buf alloc env b in
+      let ra = emit_operand buf alloc env "intrinsic argument" a in
+      let rb = emit_operand buf alloc env "intrinsic argument" b in
       let mismatch () =
         unsupported
           (intr ^ ": operands " ^ ra ^ " and " ^ rb
@@ -1497,26 +1513,24 @@ and intr_binary_minmax buf alloc env intr op args =
           emit buf "%s.f32 %s, %s, %s;" op r ra rb ;
           r)
       else if is_f32_reg rb || is_f64_reg rb then mismatch ()
-      else
-        let is_u64 r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' in
-        if is_u64 ra then (
-          if not (is_u64 rb) then mismatch ()
-          else
-            let r = new_u64 alloc in
-            emit buf "%s.s64 %s, %s, %s;" op r ra rb ;
-            r)
-        else if is_u64 rb then mismatch ()
+      else if is_u64_reg ra then (
+        if not (is_u64_reg rb) then mismatch ()
         else
-          let r = new_u32 alloc in
-          emit buf "%s.s32 %s, %s, %s;" op r ra rb ;
-          r
+          let r = new_u64 alloc in
+          emit buf "%s.s64 %s, %s, %s;" op r ra rb ;
+          r)
+      else if is_u64_reg rb then mismatch ()
+      else
+        let r = new_u32 alloc in
+        emit buf "%s.s32 %s, %s, %s;" op r ra rb ;
+        r
   | _ -> unsupported (intr ^ " arity != 2")
 
 (* Unary same-type float rounding via cvt (rmi = floor, rpi = ceil). *)
 and intr_unary_round buf alloc env intr cvt args =
   match args with
   | [a] ->
-      let r = emit_expr buf alloc env a in
+      let r = emit_operand buf alloc env "intrinsic argument" a in
       if is_f64_reg r then (
         let d = new_f64 alloc in
         emit buf "%s.f64.f64 %s, %s;" cvt d r ;
@@ -1530,9 +1544,6 @@ and intr_unary_round buf alloc env intr cvt args =
 
 (* ---- Atomic-intrinsic helpers -------------------------------------------- *)
 
-(* An i64 register is "%rd<n>" (u64 class; distinct from f64 "%fd<n>"). *)
-and intr_is_u64_reg r = String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd'
-
 (* The operand register class must agree with the atom.<op><ty> suffix; a
    mismatched register would be invalid PTX (module-load failure). *)
 and intr_check_atom_operand intr result r =
@@ -1540,9 +1551,9 @@ and intr_check_atom_operand intr result r =
     match result with
     | `F32 -> (is_f32_reg r, "f32")
     | `F64 -> (is_f64_reg r, "f64")
-    | `U64 -> (intr_is_u64_reg r, "int64")
+    | `U64 -> (is_u64_reg r, "int64")
     | `U32 ->
-        ( (not (is_f32_reg r)) && (not (is_f64_reg r)) && not (intr_is_u64_reg r),
+        ( (not (is_f32_reg r)) && (not (is_f64_reg r)) && not (is_u64_reg r),
           "int32" )
   in
   if not ok then
@@ -1637,8 +1648,8 @@ and intr_atomic_rmw buf alloc env intr ~global_only ~elt_shift ~op ~ty ~result
     args =
   match args with
   | [EVar arr; idx_e; val_e] ->
-      let r_idx = emit_expr buf alloc env idx_e in
-      let r_val0 = emit_expr buf alloc env val_e in
+      let r_idx = emit_operand buf alloc env "intrinsic argument" idx_e in
+      let r_val0 = emit_operand buf alloc env "intrinsic argument" val_e in
       intr_check_atom_operand intr result r_val0 ;
       let op, r_val =
         if op = "sub" then begin
@@ -1662,9 +1673,9 @@ and intr_atomic_rmw buf alloc env intr ~global_only ~elt_shift ~op ~ty ~result
 and intr_atomic_cas buf alloc env intr ~elt_shift ~ty ~result args =
   match args with
   | [EVar arr; idx_e; cmp_e; val_e] ->
-      let r_idx = emit_expr buf alloc env idx_e in
-      let r_cmp = emit_expr buf alloc env cmp_e in
-      let r_val = emit_expr buf alloc env val_e in
+      let r_idx = emit_operand buf alloc env "intrinsic argument" idx_e in
+      let r_cmp = emit_operand buf alloc env "intrinsic argument" cmp_e in
+      let r_val = emit_operand buf alloc env "intrinsic argument" val_e in
       intr_check_atom_operand intr result r_cmp ;
       intr_check_atom_operand intr result r_val ;
       let space, r_addr =
@@ -1702,7 +1713,7 @@ and intr_atomic_cas buf alloc env intr ~elt_shift ~ty ~result args =
 and intr_atomic_incdec buf alloc env intr ~global_only ~op args =
   match args with
   | [EVar arr; idx_e] ->
-      let r_idx = emit_expr buf alloc env idx_e in
+      let r_idx = emit_operand buf alloc env "intrinsic argument" idx_e in
       let space, r_addr =
         intr_atomic_addr buf alloc env ~intr ~global_only ~elt_shift:2 arr r_idx
       in
@@ -2090,9 +2101,9 @@ and float_ops_intrinsic_handlers () : (string list * intrinsic_handler) list =
       fun buf alloc env _path _name args ->
         match args with
         | [a; b; c] ->
-            let ra = emit_expr buf alloc env a in
-            let rb = emit_expr buf alloc env b in
-            let rc = emit_expr buf alloc env c in
+            let ra = emit_operand buf alloc env "intrinsic argument" a in
+            let rb = emit_operand buf alloc env "intrinsic argument" b in
+            let rc = emit_operand buf alloc env "intrinsic argument" c in
             if is_f64_reg ra && is_f64_reg rb && is_f64_reg rc then (
               let r = new_f64 alloc in
               emit buf "fma.rn.f64 %s, %s, %s, %s;" r ra rb rc ;
@@ -2137,7 +2148,7 @@ and bitcast_intrinsic_handlers () : (string list * intrinsic_handler) list =
     ( ["bits_f64"],
       fun buf alloc env _path _name args ->
         let r = intr_unary_arg buf alloc env "bits_f64" args in
-        if String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' then (
+        if is_u64_reg r then (
           let d = new_f64 alloc in
           emit buf "mov.b64 %s, %s;" d r ;
           Some d)
@@ -2513,9 +2524,9 @@ and warp_intrinsic_handlers () : (string list * intrinsic_handler) list =
 and intr_warp_shuffle buf alloc env name args =
   match (Sarek_warp.classify name, args) with
   | Some (Sarek_warp.Shuffle (op, ty)), [value; operand] -> (
-      let rv = emit_expr buf alloc env value in
-      let rx = emit_expr buf alloc env operand in
-      if is_f32_reg rx || is_f64_reg rx || intr_is_u64_reg rx then
+      let rv = emit_operand buf alloc env "intrinsic argument" value in
+      let rx = emit_operand buf alloc env "intrinsic argument" operand in
+      if is_f32_reg rx || is_f64_reg rx || is_u64_reg rx then
         unsupported (name ^ ": the lane operand must be int32") ;
       let mode, clamp =
         match op with
@@ -2552,7 +2563,7 @@ and intr_warp_shuffle buf alloc env name args =
           expect
             ((not (is_f32_reg rv))
             && (not (is_f64_reg rv))
-            && not (intr_is_u64_reg rv))
+            && not (is_u64_reg rv))
             "int32" ;
           let d = new_u32 alloc in
           shuffle32 d rv ;

@@ -596,31 +596,48 @@ let test_deferred_backends_reject_f16 () =
   each "local-only" (f16_local_only_kernel ()) ;
   each "helper-return" (f16_helper_ret_kernel ())
 
-(** PTX raises its own [Ptx_codegen_error], not [Codegen_error]. Before the
-    whole-kernel gate, BOTH of these emitted complete valid PTX with no
-    diagnostic at all: the f16 vector param fell through a [| _ -> ()] and the
-    helper return type was never inspected. *)
-let test_ptx_rejects_f16 () =
-  let each label k =
+(** PTX implements f16 (storage type, f32 compute): every position f16 can
+    occupy now emits a module with the [%h] register class. The element-level
+    coverage (loads, stores, casts, shared arrays, no native f16 arithmetic)
+    lives in sarek/tests/unit/test_ptx_f16.ml. The untouched-param and
+    helper-return kernels used to emit a silently wrong module before the
+    whole-kernel gate existed; they must still produce a COMPLETE module, with
+    the f16 pointer parameter declared as an ordinary 64-bit address. *)
+let test_ptx_accepts_f16 () =
+  let each label ~needle k =
     match Sarek_ir_ptx.generate k with
     | (ptx : string) ->
-        Alcotest.failf
-          "PTX %s: expected f16 to be rejected (slice 2), but it emitted:\n%s"
-          label
-          ptx
-    | exception Sarek_ir_ptx_types.Ptx_codegen_error msg ->
-        if not (contains ~needle:"float16 not supported by the PTX backend" msg)
-        then Alcotest.failf "PTX %s: unexpected diagnostic: %s" label msg
+        if not (contains ~needle ptx) then
+          Alcotest.failf "PTX %s: expected %S in:\n%s" label needle ptx
     | exception e ->
         Alcotest.failf
-          "PTX %s: rejected with the WRONG exception: %s"
+          "PTX %s: f16 must be accepted, got %s"
           label
           (Printexc.to_string e)
   in
-  each "vector-param" (f16_scale_kernel ()) ;
-  each "untouched-param" (f16_untouched_param_kernel ()) ;
-  each "local-only" (f16_local_only_kernel ()) ;
-  each "helper-return" (f16_helper_ret_kernel ())
+  each "vector-param" ~needle:"ld.global.b16" (f16_scale_kernel ()) ;
+  each
+    "untouched-param"
+    ~needle:".param .u64 param_hin"
+    (f16_untouched_param_kernel ()) ;
+  each "local-only" ~needle:"cvt.rn.f16.f32" (f16_local_only_kernel ()) ;
+  each
+    "helper-return"
+    ~needle:".entry f16_helper_ret"
+    (f16_helper_ret_kernel ())
+
+(** A SCALAR f16 kernel parameter stays refused (the typer rejects it too, and
+    the host has no scalar f16 marshalling): a precise diagnostic, not a wrong
+    module. *)
+let test_ptx_refuses_scalar_f16_param () =
+  let h = make_var "h" TFloat16 in
+  let k = mk_kernel "scalar_f16" [DParam (h, None)] SEmpty in
+  match Sarek_ir_ptx.generate k with
+  | (ptx : string) ->
+      Alcotest.failf "scalar f16 parameter must be refused, emitted:\n%s" ptx
+  | exception Sarek_ir_ptx_types.Ptx_codegen_error msg ->
+      if not (contains ~needle:"scalar float16" msg) then
+        Alcotest.failf "unexpected diagnostic: %s" msg
 
 let test_deferred_backends_still_accept_f32 () =
   (* The rejecting arms must be f16-specific — they must not have broken the
@@ -754,9 +771,13 @@ let () =
             `Quick
             test_deferred_backends_reject_f16;
           Alcotest.test_case
-            "ptx rejects f16 (param, local, helper return)"
+            "ptx accepts f16 (vector param, local, helper return)"
             `Quick
-            test_ptx_rejects_f16;
+            test_ptx_accepts_f16;
+          Alcotest.test_case
+            "ptx refuses a scalar f16 parameter"
+            `Quick
+            test_ptx_refuses_scalar_f16_param;
           Alcotest.test_case
             "opencl/glsl/wgsl still accept f32"
             `Quick

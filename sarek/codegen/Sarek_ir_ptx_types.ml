@@ -60,6 +60,7 @@ type reg_alloc = {
   mutable u32 : int;
   mutable u64 : int;
   mutable f32 : int;
+  mutable f16 : int;
   mutable f64 : int;
   mutable pred : int;
   mutable label : int;
@@ -103,6 +104,7 @@ let make_alloc () =
     u32 = 0;
     u64 = 0;
     f32 = 0;
+    f16 = 0;
     f64 = 0;
     pred = 0;
     label = 0;
@@ -157,6 +159,11 @@ let new_f64 a =
   a.f64 <- n + 1 ;
   Printf.sprintf "%%fd%d" n
 
+let new_f16 a =
+  let n = a.f16 in
+  a.f16 <- n + 1 ;
+  Printf.sprintf "%%h%d" n
+
 let new_pred a =
   let n = a.pred in
   a.pred <- n + 1 ;
@@ -169,34 +176,9 @@ let new_label a =
 
 (** {1 Type mapping} *)
 
-(* An element type this emitter cannot represent. Today that is only f16, which
-   is deliberately out of scope for PTX in #57 slice 1: the spec carves PTX out
-   as its own reviewable unit (slice 2) because this emitter identifies a value's
-   register class by STRING-PREFIX SNIFFING of register names (see
-   [Sarek_ir_ptx_expr.emit_cast]: is_f64 = name starts "%fd", is_f32 = starts
-   "%f" and not "%fd"). A new "%h" f16 class silently aliases the "%f" prefix
-   test, so every prefix guard has to be audited before f16 registers can exist
-   at all. Rejecting here keeps that unsound state unreachable.
-
-   Named for the general case rather than for f16: this module is
-   backend-generic, and bf16 will want the same raiser without a second
-   feature-specific export sitting next to [fail]. *)
-let unsupported_elttype (ty : elttype) what =
-  unsupported
-    (Printf.sprintf
-       "%s: %s not supported by the PTX backend (#57 slice 2 — needs a new %%h \
-        register class and an audit of the prefix-based class guards)"
-       what
-       (Sarek_ir_pp.string_of_elttype ty))
-
-(* The cooperative-matrix counterpart of {!unsupported_elttype}, kept separate
-   because the two refusals have nothing in common but their shape. f16 is
-   blocked by an internal invariant of THIS emitter (the prefix-sniffed register
-   classes) and cites the slice that will lift it; [TUint8] is blocked because
-   it is not a general 8-bit integer at all — it is the element type of a
+(* [TUint8] is not a general 8-bit integer here: it is the element type of a
    cooperative-matrix operand buffer, meaningful only alongside the [SCoopmat]
-   statements the Vulkan backend emits. Sharing one message would attach the %h
-   register-class explanation to a refusal it does not explain. *)
+   statements the Vulkan backend emits. *)
 let unsupported_coopmat_elttype what =
   unsupported
     (Printf.sprintf
@@ -208,7 +190,7 @@ let unsupported_coopmat_elttype what =
 let ptx_reg_type_of = function
   | TInt32 | TBool -> ".u32"
   | TInt64 -> ".u64"
-  | TFloat16 -> unsupported_elttype TFloat16 "TFloat16 register type"
+  | TFloat16 -> ".b16"
   | TUint8 -> unsupported_coopmat_elttype "TUint8 register type"
   | TFloat32 -> ".f32"
   | TFloat64 -> ".f64"
@@ -221,7 +203,7 @@ let ptx_reg_type_of = function
 let new_reg_for_type alloc = function
   | TInt32 | TBool | TUnit -> new_u32 alloc
   | TInt64 -> new_u64 alloc
-  | TFloat16 -> unsupported_elttype TFloat16 "TFloat16 new_reg"
+  | TFloat16 -> new_f16 alloc
   | TUint8 -> unsupported_coopmat_elttype "TUint8 new_reg"
   | TFloat32 -> new_f32 alloc
   | TFloat64 -> new_f64 alloc
@@ -294,15 +276,64 @@ let emit_label buf lbl = Printf.bprintf buf "%s:\n" lbl
 (** {1 Register-class helpers}
 
     A register's class is recovered from its PTX name prefix: [%fdN] = f64,
-    [%fN] = f32, [%rdN] = u64, [%rN] = u32. *)
+    [%fN] = f32, [%hN] = f16 (a [.b16] register), [%rdN] = u64, [%rN] = u32.
+    This is the ONLY place the prefixes are decoded: every other class test goes
+    through {!reg_class} (or the [is_*_reg] predicates below), so a new class
+    cannot be missed by a forgotten copy of the test. An unrecognised prefix
+    raises instead of defaulting to [RU32], which is how an f16 register would
+    otherwise be treated as an integer. *)
 
-type reg_class = RU32 | RU64 | RF32 | RF64
+type reg_class = RU32 | RU64 | RF16 | RF32 | RF64
 
 let reg_class r =
-  if String.length r >= 3 && r.[1] = 'f' && r.[2] = 'd' then RF64
-  else if String.length r >= 2 && r.[1] = 'f' then RF32
-  else if String.length r >= 3 && r.[1] = 'r' && r.[2] = 'd' then RU64
-  else RU32
+  let n = String.length r in
+  if n < 3 || r.[0] <> '%' then
+    fail ("PTX codegen: internal error: not a value register: " ^ r)
+  else
+    match (r.[1], r.[2]) with
+    | 'f', 'd' -> RF64
+    | 'f', _ -> RF32
+    | 'h', _ -> RF16
+    | 'r', 'd' -> RU64
+    | 'r', _ -> RU32
+    | _ ->
+        fail
+          ("PTX codegen: internal error: register " ^ r
+         ^ " has no known value class (expected %r, %rd, %h, %f or %fd)")
+
+let is_f64_reg r = reg_class r = RF64
+
+let is_f32_reg r = reg_class r = RF32
+
+let is_f16_reg r = reg_class r = RF16
+
+let is_u64_reg r = reg_class r = RU64
+
+(** [reject_f16_operand what r] fails when [r] is an f16 register. f16 is a
+    storage type: the typer gives it no arithmetic, so an f16 value reaching an
+    operator or an intrinsic is an IR that bypassed the typer. Without this
+    guard such a register would fall into the integer default branch of the
+    class dispatch and emit invalid or wrong PTX. [what] names the site. *)
+let reject_f16_operand what r =
+  if is_f16_reg r then
+    unsupported
+      (what ^ ": operand " ^ r
+     ^ " is a float16 value; f16 is a storage type with no arithmetic. Widen \
+        it with float32_of_float16 first")
+
+(** Widen an f16 register to a fresh f32 register ([cvt.f32.f16], exact). *)
+let emit_f16_widen buf alloc r_h =
+  let r = new_f32 alloc in
+  emit buf "cvt.f32.f16 %s, %s;" r r_h ;
+  r
+
+(** Narrow an f32 register to a fresh f16 register ([cvt.rn.f16.f32],
+    round-to-nearest-even; saturation to infinity on overflow). The only
+    instruction that produces an f16 value from computed data. *)
+let emit_f16_narrow buf alloc r_f =
+  let r = new_f16 alloc in
+  emit buf "cvt.rn.f16.f32 %s, %s;" r r_f ;
+  r
 
 (** Every element-address computation in this backend treats the index register
     as 32-bit: [shl.b32] on the shared path, [cvt.u64.u32] on the global one
@@ -324,7 +355,7 @@ let check_index_reg what r =
         (what ^ ": index register " ^ r
        ^ " is int64; array indices are 32-bit here — convert the index to \
           int32 first (an implicit narrowing would silently truncate)")
-  | RF32 | RF64 ->
+  | RF16 | RF32 | RF64 ->
       unsupported
         (what ^ ": index register " ^ r
        ^ " is a float; array indices must be int32")
@@ -332,6 +363,7 @@ let check_index_reg what r =
 let mov_op_of_class = function
   | RU32 -> "mov.u32"
   | RU64 -> "mov.u64"
+  | RF16 -> "mov.b16"
   | RF32 -> "mov.f32"
   | RF64 -> "mov.f64"
 
@@ -340,12 +372,26 @@ let new_reg_like a r =
   match reg_class r with
   | RU32 -> new_u32 a
   | RU64 -> new_u64 a
+  | RF16 -> new_f16 a
   | RF32 -> new_f32 a
   | RF64 -> new_f64 a
 
 (** [mov_scalar buf ~dst ~src] emits a typed mov of [src] into [dst]; the mov
-    type is selected from [dst]'s register class. *)
+    type is selected from [dst]'s register class. A register [src] must be of
+    the same f16-ness as [dst]: [mov.b16] between a 16-bit and a 32-bit register
+    is invalid PTX, and the IR never asks for an implicit f16 widening or
+    narrowing (those are explicit casts). *)
 let mov_scalar buf ~dst ~src =
+  (if String.length src > 0 && src.[0] = '%' then
+     let d16 = is_f16_reg dst and s16 = is_f16_reg src in
+     if d16 <> s16 then
+       fail
+         (Printf.sprintf
+            "PTX codegen: internal error: mov between %s and %s mixes a \
+             float16 register with a non-float16 one; an explicit cast is \
+             required"
+            dst
+            src)) ;
   emit buf "%s %s, %s;" (mov_op_of_class (reg_class dst)) dst src
 
 (** [copy_reg buf alloc r] allocates a fresh register of [r]'s class and emits a
@@ -417,7 +463,7 @@ let rec mov_binding buf ~src ~dst =
 (** {1 Shared-memory declaration helpers} *)
 
 let ptx_align_of_elttype = function
-  | TFloat16 -> unsupported_elttype TFloat16 "align of float16"
+  | TFloat16 -> 2
   | TUint8 -> unsupported_coopmat_elttype "align of uint8"
   | TFloat32 | TInt32 | TBool -> 4
   | TFloat64 | TInt64 -> 8
@@ -426,7 +472,7 @@ let ptx_align_of_elttype = function
   | TRecord _ | TVariant _ -> unsupported "align of custom type"
 
 let ptx_btype_of_elttype = function
-  | TFloat16 -> unsupported_elttype TFloat16 "btype of float16"
+  | TFloat16 -> "b16"
   | TUint8 -> unsupported_coopmat_elttype "btype of uint8"
   | TFloat32 | TInt32 | TBool | TUnit -> "b32"
   | TFloat64 | TInt64 -> "b64"
