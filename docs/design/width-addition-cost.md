@@ -212,7 +212,8 @@ the interpreter and a real device. For bf16 on this host:
 - **OpenCL / GLSL-Vulkan / WGSL** — bf16 support is not established. RADV on the
   RX 7900 XTX (Mesa 26.1.4-arch3.1) advertises `VK_KHR_shader_float16_int8` and
   **no bfloat16 extension**, despite RDNA3 having bf16 in its ISA.
-- **PTX** — refuses f16 already, for the `%h` register-class reason.
+- **PTX** — implements f16 now (issue #529): a `%h` register class, `.b16`
+  loads/stores and two conversions, no native f16 instruction.
 
 Under the capability model's own rule — **`Unknown` does not permit** — every one
 of those is a refusal. A bf16 element type that every backend refuses is not a
