@@ -2552,6 +2552,7 @@
   sarek.execute
   sarek_ir
   spoc_core
+  ptx_f16_kernels
   test_helpers)
  (preprocess
   (pps sarek_ppx))

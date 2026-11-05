@@ -49,6 +49,12 @@ val emit_match_arms :
     inferred from the register-name prefix of the first operand. *)
 val emit_binop : Buffer.t -> reg_alloc -> env -> binop -> expr -> expr -> string
 
+(** [emit_operand buf alloc env what e] is {!emit_expr} for an operand of [what]
+    (an operator, condition, bound or intrinsic): it raises
+    {!Sarek_ir_ptx_types.Ptx_codegen_error} when the value is a float16
+    register, since f16 is a storage type with no arithmetic. *)
+val emit_operand : Buffer.t -> reg_alloc -> env -> string -> expr -> string
+
 (** [emit_cast buf alloc r_src dst_ty] emits a PTX [cvt.*] instruction if needed
     and returns the destination register. Returns [r_src] unchanged when no
     conversion is needed. *)

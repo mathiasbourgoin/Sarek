@@ -217,6 +217,26 @@ let helper_roundtrip () =
            ( LArrayElem ("out", i),
              EApp (EVar (var "bump" TFloat16), [EArrayRead ("inp", i)]) )))
 
+(** out[i] = f16(int32(inp[i])): the DIRECT casts [ECast (TInt32, f16)]
+    ([cvt.f32.f16] then [cvt.rzi.s32.f32]) and [ECast (TFloat16, int32)]
+    ([cvt.rn.f32.s32] then [cvt.rn.f16.f32]), which the surface language cannot
+    spell without going through an f32 or f64 intrinsic. *)
+let direct_trunc () =
+  kernel
+    "f16_direct_trunc"
+    [vec_param "out" TFloat16; vec_param "inp" TFloat16]
+    (with_gid (fun i ->
+         SAssign
+           ( LArrayElem ("out", i),
+             narrow (ECast (TInt32, EArrayRead ("inp", i))) )))
+
+(** out[i] = f16(i) with the direct [ECast (TFloat16, int32)]. *)
+let direct_fromint () =
+  kernel
+    "f16_direct_fromint"
+    [vec_param "out" TFloat16; vec_param "inp" TFloat16]
+    (with_gid (fun i -> SAssign (LArrayElem ("out", i), narrow i)))
+
 (** Every kernel above, by name. *)
 let all () =
   [
@@ -230,4 +250,6 @@ let all () =
     ("f16_select", select_values ());
     ("f16_select_loads", select_loads ());
     ("f16_helper", helper_roundtrip ());
+    ("f16_direct_trunc", direct_trunc ());
+    ("f16_direct_fromint", direct_fromint ());
   ]

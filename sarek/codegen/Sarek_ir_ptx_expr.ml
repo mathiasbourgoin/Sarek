@@ -601,9 +601,16 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
             "PTX codegen: if-expression of record/variant type used in a \
              scalar context; bind it with let and read its scalar fields")
   | EIf (cond, then_e, else_e) ->
-      let r_cond = emit_expr buf alloc env cond in
+      let r_cond = emit_operand buf alloc env "if condition" cond in
       let r_then = emit_expr buf alloc env then_e in
       let r_else = emit_expr buf alloc env else_e in
+      if is_f16_reg r_then <> is_f16_reg r_else then
+        fail
+          (Printf.sprintf
+             "PTX codegen: if-expression branches %s and %s mix a float16 \
+              value with a non-float16 one; narrow or widen explicitly"
+             r_then
+             r_else) ;
       let p = new_pred alloc in
       emit buf "setp.ne.u32 %s, %s, 0;" p r_cond ;
       if is_f16_reg r_then then (
@@ -888,7 +895,7 @@ and emit_value buf alloc (env : env) (e : expr) : binding =
          is leaf-wise copied into the result, the else-value leaf-wise moved
          into it (for scalars this emits exactly the instructions of
          emit_expr's guarded EIf path). *)
-      let r_cond = emit_expr buf alloc env cond in
+      let r_cond = emit_operand buf alloc env "if condition" cond in
       let p = new_pred alloc in
       emit buf "setp.ne.u32 %s, %s, 0;" p r_cond ;
       let l_else = new_label alloc in

@@ -33,12 +33,12 @@
   conversions emit a `%h<N>` register class (`.reg .b16`), `ld`/`st`/`mov`/`selp` on `.b16`,
   `cvt.f32.f16` (exact) and `cvt.rn.f16.f32` (round to nearest even, the interpreter's rounding);
   int32/int64/f64 conversions go through f32. No native `.f16` instruction is emitted, so the same
-  module assembles for every target from sm_50 (native f16 arithmetic needs sm_53). The register
+  module assembles at sm_52 and above, and is inferred valid at sm_50 and sm_51 (the ptxas gate starts at sm_52; native f16 arithmetic needs sm_53). The register
   class is decoded in one place (`Sarek_ir_ptx_types.reg_class`); an unknown prefix, an f16 operand
   of an operator, intrinsic or index, an f32 stored into an f16 array (or the reverse) and a mov
   between an f16 and a non-f16 register are now located `Ptx_codegen_error`s instead of falling
   into an integer default. Still refused: scalar `float16` kernel parameters and `float16` record
-  fields. Evidence: `test_ptx_f16` (structure, no native f16, identical body sm_50..sm_90), the
+  fields. Known limitation (pre-existing, not changed here): converting an infinite or NaN f16 to int32 is unspecified in the interpreter (`Int32.of_float`) while PTX `cvt.rzi.s32.f32` saturates (NaN gives 0). Evidence: `test_ptx_f16` (structure, no native f16, identical body sm_50..sm_90), the
   `ptxas` gate of `test_ptx_snapshot` (sm_52, sm_61, sm_75, sm_90; CI), and
   `test_ptx_f16_e2e` over all 63488 finite binary16 inputs. Executed on ZLUDA/AMD (RX 7900 XTX)
   only: raw round trip, f16 -> int32 -> f16 and int32 -> f16 agree with the interpreter on every

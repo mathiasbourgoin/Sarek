@@ -130,17 +130,52 @@ let finite_f16 =
 
 let count = Array.length finite_f16
 
-(* The reference functions take the input INDEX as well: the [fromint] shape
-   ignores the input value. *)
+(* The reference functions take the input INDEX as well: the [fromint] shapes
+   ignore the input value. *)
 type shape = {
   name : string;
   ir : Sarek_ir_types.kernel;
   model : int -> float -> float;
   controls : (string * (int -> float -> float)) list;
   ptx_marker : string;  (** an instruction the generated PTX must contain *)
+  fused : (int -> float -> float) option;
+      (** The result of a compiler that fuses the f32 operation into the
+          narrowing (one rounding). Not what NVIDIA does; known to be what
+          ZLUDA's AMDGPU lowering does. Accepted only on a ZLUDA device. *)
+  with_n : bool;  (** hand-built IR kernels take no [n] argument *)
 }
 
 let flush_subnormal x = if Float.abs x < ldexp 1.0 (-14) then 0.0 else x
+
+(* Single-rounding f64 -> binary16, round to nearest even. (The interpreter's
+   [round16] double-rounds through binary32, which is exactly the difference the
+   fused models are about.) *)
+let round16_single v =
+  if v = 0.0 || Float.is_nan v then v
+  else
+    let a = Float.abs v in
+    let e = max (snd (Float.frexp a) - 1) (-14) in
+    let ulp = ldexp 1.0 (e - 10) in
+    let q = a /. ulp in
+    let fl = Float.floor q in
+    let d = q -. fl in
+    let r =
+      if d > 0.5 then fl +. 1.0
+      else if d < 0.5 then fl
+      else if Float.rem fl 2.0 = 0.0 then fl
+      else fl +. 1.0
+    in
+    let res = r *. ulp in
+    Float.copy_sign (if res >= 65520.0 then infinity else res) v
+
+(* f16(x*1.1) with the product absorbed into the narrowing: the exact product
+   (binary16 x binary32 fits a double) rounded once; [+. 0.0] is the [a*b + 0]
+   form that turns -0 into +0. *)
+let fused_mul x = round16_single ((x *. c11) +. 0.0)
+
+(* The chain with only its inner narrowing fused; the outer add and narrowing
+   stay f32 + plain. *)
+let fused_chain x = round16 (f32 (fused_mul x +. 1000.0))
 
 let shapes =
   [
@@ -154,6 +189,8 @@ let shapes =
           ("demoted", fun _ x -> round16 (x *. c11_16));
           ("const", fun _ x -> round16 (f32 (x *. c11_up)));
         ];
+      fused = Some (fun _ x -> fused_mul x);
+      with_n = true;
     };
     {
       name = "chain     f16(f16(x*1.1)+1000)";
@@ -166,6 +203,8 @@ let shapes =
           ( "const",
             fun _ x -> round16 (f32 (round16 (f32 (x *. c11_up)) +. 1000.0)) );
         ];
+      fused = Some (fun _ x -> fused_chain x);
+      with_n = true;
     };
     {
       name = "roundtrip out = inp";
@@ -173,21 +212,49 @@ let shapes =
       ptx_marker = "ld.global.b16";
       model = (fun _ x -> x);
       controls = [("flushed", fun _ x -> flush_subnormal x)];
+      fused = None;
+      with_n = true;
     };
     {
-      name = "trunc     f16(float(int(x)))";
+      (* Composite path through intrinsics: f16 -> f32 -> f64 -> int32 (cvt.rzi)
+         -> f32 -> f16. The direct casts are the two shapes after it. *)
+      name = "trunc     f16(float(int(f64(x))))  [composite, intrinsics]";
       ir = ir_of k_trunc;
       ptx_marker = "cvt.rzi.s32.f64";
       (* through int32: -0.3 truncates to 0, not to -0 *)
       model = (fun _ x -> round16 (Float.of_int (Float.to_int x)));
       controls = [("rounded", fun _ x -> round16 (Float.round x))];
+      fused = None;
+      with_n = true;
     };
     {
-      name = "fromint   f16(float(i))";
+      name = "fromint   f16(float(i))  [composite, intrinsic]";
       ir = ir_of k_fromint;
       ptx_marker = "cvt.rn.f32.s32";
       model = (fun i _ -> round16 (float_of_int i));
       controls = [("shifted", fun i _ -> round16 (float_of_int (i + 1)))];
+      fused = None;
+      with_n = true;
+    };
+    {
+      (* hand IR: ECast (TFloat16, ECast (TInt32, f16 read)) *)
+      name = "direct    ECast(f16, ECast(int32, f16 x))  [hand IR]";
+      ir = Ptx_f16_kernels.direct_trunc ();
+      ptx_marker = "cvt.rzi.s32.f32";
+      model = (fun _ x -> round16 (Float.of_int (Float.to_int x)));
+      controls = [("rounded", fun _ x -> round16 (Float.round x))];
+      fused = None;
+      with_n = false;
+    };
+    {
+      (* hand IR: ECast (TFloat16, int32 index) *)
+      name = "direct    ECast(f16, int32 i)  [hand IR]";
+      ir = Ptx_f16_kernels.direct_fromint ();
+      ptx_marker = "cvt.rn.f32.s32";
+      model = (fun i _ -> round16 (float_of_int i));
+      controls = [("shifted", fun i _ -> round16 (float_of_int (i + 1)))];
+      fused = None;
+      with_n = false;
     };
   ]
 
@@ -202,12 +269,16 @@ let block = 256
 
 let grid = (count + block - 1) / block
 
+let args_of sh out inp =
+  if sh.with_n then Execute.[Vec out; Vec inp; Int count]
+  else Execute.[Vec out; Vec inp]
+
 let run_device dev sh =
   let out, inp = inputs () in
   Execute.run_vectors
     ~device:dev
     ~ir:sh.ir
-    ~args:Execute.[Vec out; Vec inp; Int count]
+    ~args:(args_of sh out inp)
     ~block:(Execute.dims1d block)
     ~grid:(Execute.dims1d grid)
     () ;
@@ -218,7 +289,7 @@ let run_interp sh =
   let out, inp = inputs () in
   Execute.run_interpreter_vectors
     ~ir:sh.ir
-    ~args:Execute.[Vec out; Vec inp; Int count]
+    ~args:(args_of sh out inp)
     ~block:(Execute.dims1d block)
     ~grid:(Execute.dims1d grid)
     ~parallel:false ;
@@ -285,21 +356,67 @@ let host_part sh =
         interp
         c)
     sh.controls ;
+  (* The fused model must be distinguishable from the interpreter, or accepting
+     it on ZLUDA would accept anything. *)
+  Option.iter
+    (fun f ->
+      check "fused model vs interpreter (red)" ~expect_equal:false interp f)
+    sh.fused ;
   interp
+
+(* ZLUDA runs PTX on an AMD GPU through LLVM's AMDGPU backend, which may absorb
+   the f32 multiply into the f32 -> f16 narrowing (one rounding where the DSL
+   mandates two). That is a property of the consumer, not of the PTX, and it is
+   not what NVIDIA does; it is tolerated here only on a device that names itself
+   ZLUDA, and only as the explicit [fused] model, element by element. *)
+let is_zluda dev = contains ~needle:"ZLUDA" dev.Device.name
+
+let device_part_fused dev sh f got interp =
+  let n_model = ref 0
+  and n_fused = ref 0
+  and n_neither = ref 0
+  and n_int = ref 0 in
+  Array.iteri
+    (fun i g ->
+      let x = finite_f16.(i) in
+      if not (same_bits g interp.(i)) then incr n_int ;
+      let m = same_bits g (sh.model i x) and fu = same_bits g (f i x) in
+      if m then incr n_model ;
+      if fu then incr n_fused ;
+      if not (m || fu) then incr n_neither)
+    got ;
+  let good = !n_neither = 0 in
+  if not good then incr failures ;
+  Printf.printf
+    "  %-4s %s: every element equals the interpreter model or the fused model \
+     (%d equal the model, %d the fused model, %d neither)\n\
+    \       known non-NVIDIA deviation: %d/%d differ from the interpreter\n\
+     %!"
+    (if good then "OK" else "FAIL")
+    dev.Device.name
+    !n_model
+    !n_fused
+    !n_neither
+    !n_int
+    count
 
 let device_part dev sh interp =
   Printf.printf "%s\n%!" sh.name ;
   let got = run_device dev sh in
-  check "CUDA/PTX = model" ~expect_equal:true got sh.model ;
-  check "CUDA/PTX = interpreter" ~expect_equal:true got (fun i _ -> interp.(i)) ;
-  List.iter
-    (fun (cname, c) ->
-      check
-        (Printf.sprintf "control %s vs device (red)" cname)
-        ~expect_equal:false
-        got
-        c)
-    sh.controls
+  match sh.fused with
+  | Some f when is_zluda dev -> device_part_fused dev sh f got interp
+  | _ ->
+      check "CUDA/PTX = model" ~expect_equal:true got sh.model ;
+      check "CUDA/PTX = interpreter" ~expect_equal:true got (fun i _ ->
+          interp.(i)) ;
+      List.iter
+        (fun (cname, c) ->
+          check
+            (Printf.sprintf "control %s vs device (red)" cname)
+            ~expect_equal:false
+            got
+            c)
+        sh.controls
 
 let () =
   let ptx =

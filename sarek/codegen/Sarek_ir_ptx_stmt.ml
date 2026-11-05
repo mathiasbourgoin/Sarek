@@ -159,7 +159,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
       emit_stmt buf alloc env body
   | SAssign (lv, e) -> emit_assign buf alloc env lv e
   | SIf (cond, then_s, else_opt) -> (
-      let r_cond = emit_expr buf alloc env cond in
+      let r_cond = emit_operand buf alloc env "if condition" cond in
       let p = new_pred alloc in
       emit buf "setp.ne.u32 %s, %s, 0;" p r_cond ;
       match else_opt with
@@ -180,8 +180,8 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
   | SFor (v, start_e, stop_e, dir, body) ->
       (* OCaml 'for i = a to b' is inclusive.
          Loop structure: init; header: bounds-check; body; incr; bra header *)
-      let r_start = emit_expr buf alloc env start_e in
-      let r_stop = emit_expr buf alloc env stop_e in
+      let r_start = emit_operand buf alloc env "for-loop lower bound" start_e in
+      let r_stop = emit_operand buf alloc env "for-loop upper bound" stop_e in
       let r_loop = new_u32 alloc in
       emit buf "mov.u32 %s, %s;" r_loop r_start ;
       env_bind env v.var_name r_loop ;
@@ -203,7 +203,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
       let l_header = new_label alloc in
       let l_exit = new_label alloc in
       emit_label buf l_header ;
-      let r_cond = emit_expr buf alloc env cond in
+      let r_cond = emit_operand buf alloc env "while condition" cond in
       let p = new_pred alloc in
       emit buf "setp.eq.u32 %s, %s, 0;" p r_cond ;
       emit buf "@%s bra %s;" p l_exit ;
