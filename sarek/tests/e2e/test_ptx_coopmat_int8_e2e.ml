@@ -15,7 +15,7 @@
  * Device checks (each CUDA/PTX device that offers 8-bit coopmat: an NVIDIA GPU
  * of compute capability 7.2 or later): for each configuration, 16 tiles that
  * cover all 65536 operand pairs bit-identical to the interpreter, the
- * C-dropping control rejected, an offset tile (index 400, stride 48) inside a
+ * C-dropping control rejected, an offset tile (index 416, stride 48) inside a
  * wider buffer bit-identical, and a layout sweep (every row/column combination
  * of A, B, C and D) against the interpreter. Exact integers, so equality is
  * bitwise. A device that does not offer it (no tensor cores, wave64, ZLUDA) is
@@ -76,10 +76,10 @@ let run_tile ~gpu ir t =
   | None -> run_interp ir args ~block:wave ~grid:one) ;
   Vector.to_array d
 
-(* Offset tile: row 8, column 16 of a 32 x 48 matrix (index 400, stride 48). *)
+(* Offset tile: row 8, column 32 of a 32 x 48 matrix (index 416, stride 48). *)
 let run_offset ~gpu cfg =
   let len = 32 * 48 in
-  let ir = tile_ir ~index:((8 * 48) + 16) ~stride:48 cfg in
+  let ir = tile_ir ~index:((8 * 48) + 32) ~stride:48 cfg in
   let a = Array.init len (fun p -> ((p * 97) + 13) land 0xff) in
   let b = Array.init len (fun p -> ((p * 61) + 7) land 0xff) in
   let c = Array.init len (fun p -> Int32.of_int ((p * 37 mod 1009) - 500)) in
@@ -139,7 +139,7 @@ let check_config dev cfg =
   else ok "%s: 65536 pairs bit-identical, control rejected" (C.config_name cfg) ;
   if run_offset ~gpu:(Some dev) cfg = run_offset ~gpu:None cfg then
     ok
-      "%s: offset tile (index 400, stride 48) bit-identical"
+      "%s: offset tile (index 416, stride 48) bit-identical"
       (C.config_name cfg)
   else fail "%s: offset tile differs from the interpreter" (C.config_name cfg)
 
