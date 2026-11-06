@@ -20,7 +20,8 @@
     ([Cuda_coopmat.support]: f16 from sm_70, 8-bit from sm_72, never on ZLUDA),
     so on an NVIDIA device the launch gate admits what this arm emits. The
     CUDA/PTX backend does not use this module: it lowers to [wmma.*]
-    instructions itself ({!Sarek_ir_ptx_coopmat}), for the f16 subset. *)
+    instructions itself ({!Sarek_ir_ptx_coopmat}), for the same configurations.
+*)
 
 open Sarek_ir_types
 module C = Sarek_coopmat_types

@@ -9,16 +9,16 @@
 
     The CUDA driver has no query that lists matrix-instruction configurations,
     so the probe is a rule over two facts it does report: the compute capability
-    and the warp size. The configurations offered are the ones
-    [Sarek_ir_cuda_coopmat]'s [nvcuda::wmma] arm emits: 16x16x16 on 32-wide
-    warps, f16 operands with an f32 accumulator from sm_70, and 8-bit operands
-    of the SAME signedness with a 32-bit integer accumulator from sm_72 (the
-    mixed-sign arms and bf16 loaded from float32 are [#error] there, so they are
-    not offered).
+    and the warp size. The configurations offered are the ones both lowerings
+    emit ([Sarek_ir_cuda_coopmat]'s [nvcuda::wmma] arm and
+    [Sarek_ir_ptx_coopmat]'s [wmma.*] instructions): 16x16x16 on 32-wide warps,
+    f16 operands with an f32 accumulator from sm_70, and 8-bit operands of the
+    SAME signedness with a 32-bit integer accumulator from sm_72 (the mixed-sign
+    arms and bf16 loaded from float32 are refused by both, so they are not
+    offered). [lowering] only labels the evidence.
 
-    Only the CUDA/C backend reports this: CUDA/PTX has no coopmat lowering and
-    keeps reporting [None]. Executed in this repository only through ZLUDA on
-    gfx1100 (which reports compute capability 8.8), never on NVIDIA hardware. *)
+    Executed in this repository only through ZLUDA on gfx1100 (which reports
+    compute capability 8.8 and rejects [wmma.*]), never on NVIDIA hardware. *)
 
 module C = Sarek_coopmat
 
@@ -67,13 +67,13 @@ let is_zluda ~device_name ~compute_capability =
 
 (** [support_for ~lowering ~device_name ~compute_capability ~warp_size] is the
     rule, separated from the device record so a test can drive it with any
-    device's facts. [Ptx] drops the 8-bit family. *)
+    device's facts. *)
 let support_for ~lowering ~device_name ~compute_capability:(major, minor)
     ~warp_size =
   let at_least (m, n) = (major, minor) >= (m, n) in
   let zluda = is_zluda ~device_name ~compute_capability:(major, minor) in
   let who = lowering_name lowering in
-  let int8 = match lowering with Cuda_c -> at_least (7, 2) | Ptx -> false in
+  let int8 = at_least (7, 2) in
   let configs =
     if warp_size <> 32 || zluda then []
     else
@@ -106,7 +106,7 @@ let support_for ~lowering ~device_name ~compute_capability:(major, minor)
            "%s: wmma needs compute capability 7.0 (f16)%s and 32-wide warps; \
             this device reports %d.%d and warp size %d"
            who
-           (match lowering with Cuda_c -> " or 7.2 (8-bit)" | Ptx -> "")
+           " or 7.2 (8-bit)"
            major
            minor
            warp_size);

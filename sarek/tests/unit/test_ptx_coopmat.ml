@@ -50,6 +50,10 @@ let cfg ?(shape = shape16) ?(sat = false) ?(scope = C.Subgroup) a b c r =
 
 let f16_cfg = cfg C.Float16 C.Float16 C.Float32 C.Float32
 
+let u8_cfg = cfg C.Uint8 C.Uint8 C.Sint32 C.Sint32
+
+let s8_cfg = cfg C.Sint8 C.Sint8 C.Uint32 C.Uint32
+
 let elt = function
   | C.Float16 -> TFloat16
   | C.BFloat16 | C.Float32 -> TFloat32
@@ -182,6 +186,41 @@ let test_layouts () =
     ] ;
   let src = ptx (tile ~lb:col f16_cfg) in
   check_has "B transposed" src ["wmma.mma.sync.aligned.row.col."]
+
+let test_int8_text () =
+  let src = ptx (tile u8_cfg) in
+  check_has
+    "u8 tile"
+    src
+    [
+      "wmma.load.a.sync.aligned.row.m16n16k16.global.u8 {%fr";
+      "wmma.load.b.sync.aligned.row.m16n16k16.global.u8 {%fr";
+      "wmma.load.c.sync.aligned.row.m16n16k16.global.s32 {%fr";
+      "wmma.mma.sync.aligned.row.row.m16n16k16.s32.u8.u8.s32 {";
+      "wmma.store.d.sync.aligned.row.m16n16k16.global.s32 [";
+      ".reg .b32 %fr<";
+    ] ;
+  let regs g = List.length (String.split_on_char ',' g) in
+  Alcotest.(check (list int))
+    "2 registers per 8-bit operand, 8 per accumulator"
+    [2; 2; 8]
+    [
+      regs (group_after src "wmma.load.a");
+      regs (group_after src "wmma.load.b");
+      regs (group_after src "wmma.load.c");
+    ] ;
+  let s8 = ptx (tile ~la:col ~lb:col ~lc:col ~ld:col s8_cfg) in
+  check_has
+    "s8 col-major tile"
+    s8
+    [
+      "wmma.load.a.sync.aligned.col.m16n16k16.global.s8 {";
+      "wmma.mma.sync.aligned.col.col.m16n16k16.s32.s8.s8.s32 {";
+      "wmma.store.d.sync.aligned.col.m16n16k16.global.s32 [";
+    ] ;
+  (* 1-byte elements: the stride check multiplies by 1, the address is not
+     scaled. *)
+  check_has "u8 stride check" src ["mul.lo.u32 %r"; ", 1;"]
 
 let test_header_and_targets () =
   (* sm_70 is the first target with wmma; a suffix is ignored. *)
@@ -321,8 +360,13 @@ let test_refusals () =
     (cfg ~scope:C.Workgroup C.Float16 C.Float16 C.Float32 C.Float32) ;
   gen "saturating" (cfg ~sat:true C.Float16 C.Float16 C.Float32 C.Float32) ;
   gen "bf16" (cfg C.BFloat16 C.BFloat16 C.Float32 C.Float32) ;
-  gen "u8*u8+s32 (phase 2)" (cfg C.Uint8 C.Uint8 C.Sint32 C.Sint32) ;
-  gen "s8*s8+s32 (phase 2)" (cfg C.Sint8 C.Sint8 C.Sint32 C.Sint32) ;
+  gen "mixed-sign u8*s8" (cfg C.Uint8 C.Sint8 C.Sint32 C.Sint32) ;
+  gen "mixed-sign s8*u8" (cfg C.Sint8 C.Uint8 C.Uint32 C.Uint32) ;
+  gen "8-bit with an f32 accumulator" (cfg C.Uint8 C.Uint8 C.Float32 C.Float32) ;
+  gen "8-bit, addend and result differ" (cfg C.Uint8 C.Uint8 C.Sint32 C.Uint32) ;
+  gen "saturating 8-bit" (cfg ~sat:true C.Sint8 C.Sint8 C.Sint32 C.Sint32) ;
+  refused "8-bit below sm_72" (fun () ->
+      ptx ~sm_target:"sm_70" (tile (cfg C.Uint8 C.Uint8 C.Sint32 C.Sint32))) ;
   gen "f16 accumulator" (cfg C.Float16 C.Float16 C.Float16 C.Float16) ;
   gen "mixed f16*bf16" (cfg C.Float16 C.BFloat16 C.Float32 C.Float32) ;
   refused "A from a float32 buffer" (fun () ->
@@ -374,14 +418,12 @@ let ptx_accepts k =
   | (_ : string) -> true
   | exception Sarek_ir_ptx_types.Ptx_codegen_error _ -> false
 
-let is_8bit = function C.Uint8 | C.Sint8 -> true | _ -> false
-
-(* PTX accepts nothing CUDA/C refuses, and refuses what CUDA/C accepts only in
-   the 8-bit family (phase 2). Every f16-operand configuration agrees. *)
+(* PTX accepts exactly the configurations CUDA/C accepts, over every operand
+   pair, every addend/result pair, with and without saturation. *)
 let test_parity () =
   let operands = [C.Float16; C.BFloat16; C.Uint8; C.Sint8] in
   let accs = [C.Float32; C.Sint32; C.Uint32; C.Float16] in
-  let n = ref 0 and both = ref 0 in
+  let n = ref 0 and accepted = ref 0 in
   List.iter
     (fun a ->
       List.iter
@@ -390,23 +432,28 @@ let test_parity () =
             (fun c ->
               List.iter
                 (fun r ->
-                  let config = cfg a b c r in
-                  let k = tile config in
-                  let cu = cuda_accepts k and pt = ptx_accepts k in
-                  incr n ;
-                  if cu && pt then incr both ;
-                  let what = C.config_name config in
-                  if pt && not cu then
-                    Alcotest.failf "PTX accepts what CUDA/C refuses: %s" what ;
-                  if cu && (not pt) && not (is_8bit a && is_8bit b) then
-                    Alcotest.failf
-                      "PTX refuses a non-8-bit configuration CUDA/C accepts: %s"
-                      what)
-                [c; (if c = C.Float32 then C.Sint32 else C.Float32)])
+                  List.iter
+                    (fun sat ->
+                      let config = cfg ~sat a b c r in
+                      let k = tile config in
+                      let cu = cuda_accepts k and pt = ptx_accepts k in
+                      incr n ;
+                      if cu then incr accepted ;
+                      if cu <> pt then
+                        Alcotest.failf
+                          "CUDA/C %s, PTX %s: %s"
+                          (if cu then "accepts" else "refuses")
+                          (if pt then "accepts" else "refuses")
+                          (C.config_name config))
+                    [false; true])
+                accs)
             accs)
         operands)
     operands ;
-  Alcotest.(check bool) "grid is non-trivial" true (!n > 100 && !both >= 1)
+  (* f16*f16+f32 and the 8 same-sign 8-bit configurations (2 signs x 2 x 2
+     accumulator signednesses, addend = result) *)
+  Alcotest.(check int) "grid size" 512 !n ;
+  Alcotest.(check int) "accepted configurations" (1 + 4) !accepted
 
 (** {1 Kernels without cooperative matrices are unchanged} *)
 
@@ -506,6 +553,9 @@ let test_ptxas () =
     let kernels =
       [
         ("tile row/row", tile f16_cfg);
+        ("tile u8*u8+s32", tile u8_cfg);
+        ("tile s8*s8+u32", tile s8_cfg);
+        ("tile s8 col/col", tile ~la:col ~lb:col ~lc:col ~ld:col s8_cfg);
         ("tile col/col", tile ~la:col ~lb:col ~lc:col ~ld:col f16_cfg);
         ("tile row/col", tile ~lb:col f16_cfg);
         ("shared accumulator", shared_acc_kernel ());
@@ -540,6 +590,7 @@ let () =
         [
           Alcotest.test_case "f16 tile" `Quick test_tile_text;
           Alcotest.test_case "layouts" `Quick test_layouts;
+          Alcotest.test_case "8-bit tile" `Quick test_int8_text;
           Alcotest.test_case "header and targets" `Quick test_header_and_targets;
           Alcotest.test_case "GEMM" `Quick test_gemm_snapshot;
           Alcotest.test_case "shared source" `Quick test_shared;

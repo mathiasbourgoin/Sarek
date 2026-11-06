@@ -6,14 +6,18 @@
 (** Cooperative matrix ([SCoopmat]) for the PTX generator: the [wmma.*]
     instructions of the PTX ISA (tensor cores from sm_70, PTX ISA 6.0).
 
-    The lowering accepts what the [nvcuda::wmma] arm of {!Sarek_ir_cuda_coopmat}
-    accepts, minus the integer family: 16x16x16 on subgroup (warp) scope, f16
-    operands with an f32 accumulator, any layout of A (row/col), B (row/col) and
-    of the accumulator in memory. The CUDA/C arm also emits 8-bit operands with
-    a 32-bit integer accumulator (sm_72); that is a separate piece of work here
-    and is refused by name below, never lowered silently. bf16 is refused by
-    both: [nvcuda::wmma]'s bf16 fragment reads a bf16 buffer, not a float32
-    buffer rounded on load.
+    The lowering accepts exactly what the [nvcuda::wmma] arm of
+    {!Sarek_ir_cuda_coopmat} accepts: 16x16x16 on subgroup (warp) scope, any
+    layout of A (row/col), B (row/col) and of the accumulator in memory, and two
+    families of configuration.
+    - f16 operands with an f32 accumulator (sm_70);
+    - 8-bit operands of the SAME signedness (s8*s8 or u8*u8) with a 32-bit
+      integer accumulator of either signedness (sm_72),
+      [wmma.mma ... .s32.s8.s8.s32] or [.s32.u8.u8.s32]: a 32-bit wrapping sum
+      has the same bits either way. Mixed-sign operands have no [wmma] form and
+      are refused (a named [#error] on CUDA/C). The non-saturating form only.
+      bf16 is refused by both: [nvcuda::wmma]'s bf16 fragment reads a bf16
+      buffer, not a float32 buffer rounded on load.
 
     [wmma] and not [mma.sync]: [mma.sync.m16n8k16] needs sm_80, and the Turing
     form [m16n8k8] is not translated by ZLUDA (specs/zluda-mma-nvrtc13.md).
@@ -22,9 +26,10 @@
 
     {b Fragments.} PTX fixes the per-lane register group of a [wmma] fragment
     (m16n16k16): an f16 operand is 8 [.b32] registers each holding an f16x2
-    pair, an f32 accumulator is 8 [.f32] registers. The emitter never indexes
-    into a group; it passes the whole group to [wmma.load] / [wmma.mma] /
-    [wmma.store], which agree on the distribution across lanes.
+    pair, an 8-bit operand 2 [.b32] registers of four bytes, an f32 accumulator
+    8 [.f32] registers and an integer accumulator 8 [.b32] registers. The
+    emitter never indexes into a group; it passes the whole group to [wmma.load]
+    / [wmma.mma] / [wmma.store], which agree on the distribution across lanes.
 
     {b Precondition, checked at run time.} Exactly the CUDA/C one
     ([sarek_cm_require]): the element address is 32-byte aligned and
@@ -44,8 +49,10 @@ open Sarek_ir_ptx_mem
 open Sarek_ir_ptx_expr
 module C = Sarek_coopmat_types
 
-(** First SM with [wmma]. *)
+(** First SM with [wmma], and with 8-bit [wmma]. *)
 let min_sm = 70
+
+let min_sm_int8 = 72
 
 let shape_16 = {C.m = 16; n = 16; k = 16}
 
@@ -53,11 +60,6 @@ let shape_16 = {C.m = 16; n = 16; k = 16}
 
 let refuse what why =
   unsupported (Printf.sprintf "cooperative matrix: %s: %s" what why)
-
-let phase_two =
-  "the PTX backend lowers f16 operands with an f32 accumulator only; 8-bit \
-   operands with a 32-bit integer accumulator (wmma.*.s8/u8, sm_72) are not \
-   lowered yet, although the CUDA/C backend lowers them"
 
 (** Refuse a fragment this lowering cannot represent. Total over the fragment
     type: every case is accepted or raises with the reason. *)
@@ -75,27 +77,31 @@ let check_fragment (f : C.fragment) =
          "CUDA/PTX: only subgroup (warp) scope exists; got %s"
          (C.scope_name f.C.frag_scope)) ;
   match (f.C.frag_use, f.C.frag_component) with
-  | (C.Matrix_a | C.Matrix_b), C.Float16 | C.Accumulator, C.Float32 -> ()
+  | (C.Matrix_a | C.Matrix_b), (C.Float16 | C.Uint8 | C.Sint8)
+  | C.Accumulator, (C.Float32 | C.Uint32 | C.Sint32) ->
+      ()
   | (C.Matrix_a | C.Matrix_b), C.BFloat16 ->
       refuse
         "bf16 operand"
         "no faithful lowering: wmma's bf16 fragment reads a bf16 buffer, not a \
          float32 buffer rounded on load (CUDA/C refuses it too)"
-  | (C.Matrix_a | C.Matrix_b), (C.Uint8 | C.Sint8)
-  | C.Accumulator, (C.Uint32 | C.Sint32) ->
-      refuse "integer fragment" phase_two
   | use, comp ->
       refuse
         "fragment"
         (Printf.sprintf
-           "CUDA/PTX: no %s fragment of %s (operands are f16; accumulators are \
-            f32)"
+           "CUDA/PTX: no %s fragment of %s (operands are f16, s8 or u8; \
+            accumulators are f32, s32 or u32)"
            (C.use_name use)
            (C.component_name comp))
 
-(** The configurations a multiply-add is emitted for. The four fragments of a
-    configuration are checked first, which already pins both operands to f16 and
-    the addend and result to f32. *)
+let is_8bit = function C.Uint8 | C.Sint8 -> true | _ -> false
+
+let is_int32 = function C.Uint32 | C.Sint32 -> true | _ -> false
+
+(** The configurations a multiply-add is emitted for: f16*f16+f32->f32, and
+    8-bit operands of one signedness with the same 32-bit integer accumulator
+    type as addend and result (as the CUDA/C arm). The four fragments are
+    checked first. *)
 let check_config (cfg : C.config) =
   List.iter
     check_fragment
@@ -105,7 +111,30 @@ let check_config (cfg : C.config) =
     refuse
       "saturating accumulation"
       "CUDA/PTX: the saturating variant computes a different function, and the \
-       interpreter, the oracle it is checked against, refuses it"
+       interpreter, the oracle it is checked against, refuses it" ;
+  let int8 = is_8bit cfg.C.cfg_a && is_8bit cfg.C.cfg_b in
+  if int8 && cfg.C.cfg_a <> cfg.C.cfg_b then
+    refuse
+      "mixed-sign 8-bit multiply"
+      (Printf.sprintf
+         "wmma has no form with one signed and one unsigned operand (%s)"
+         (C.config_name cfg)) ;
+  let f16 =
+    cfg.C.cfg_a = C.Float16 && cfg.C.cfg_b = C.Float16
+    && cfg.C.cfg_c = C.Float32
+    && cfg.C.cfg_result = C.Float32
+  in
+  let int8_ok =
+    int8 && is_int32 cfg.C.cfg_c && cfg.C.cfg_c = cfg.C.cfg_result
+  in
+  if not (f16 || int8_ok) then
+    refuse
+      "configuration"
+      (Printf.sprintf
+         "CUDA/PTX: %s is not lowered (f16*f16+f32->f32 and \
+          8-bit*8-bit+i32->i32 with the same operand signedness and the same \
+          32-bit accumulator type are)"
+         (C.config_name cfg))
 
 (** {1 Layouts} *)
 
@@ -163,8 +192,8 @@ let check_kernel ?block ~sm_target (k : kernel) : unit =
     if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
       refuse
         "uint8 buffer"
-        ("a uint8 operand buffer without a cooperative-matrix statement; "
-       ^ phase_two)
+        "a uint8 operand buffer without a cooperative-matrix statement (uint8 \
+         is the element type of 8-bit operand buffers only)"
   end
   else begin
     (match sm_number sm_target with
@@ -173,8 +202,8 @@ let check_kernel ?block ~sm_target (k : kernel) : unit =
         refuse
           "target"
           (Printf.sprintf
-             "wmma needs .target sm_%d or later (PTX ISA 6.0); this kernel is \
-              generated for %s"
+             "wmma needs .target sm_%d or later (PTX ISA 6.0; 8-bit: sm_72); \
+              this kernel is generated for %s"
              min_sm
              sm_target)) ;
     List.iter
@@ -183,6 +212,25 @@ let check_kernel ?block ~sm_target (k : kernel) : unit =
             check_fragment frag
         | CM_muladd {cfg; _} -> check_config cfg)
       ops ;
+    if
+      List.exists
+        (function
+          | CM_decl {frag; _} | CM_load {frag; _} | CM_store {frag; _} ->
+              is_8bit frag.C.frag_component
+          | CM_muladd {cfg; _} -> is_8bit cfg.C.cfg_a)
+        ops
+      &&
+      match sm_number sm_target with
+      | Some sm -> sm < min_sm_int8
+      | None -> true
+    then
+      refuse
+        "target"
+        (Printf.sprintf
+           "8-bit wmma needs .target sm_%d or later; this kernel is generated \
+            for %s"
+           min_sm_int8
+           sm_target) ;
     ignore (operand_layouts k) ;
     Option.iter
       (fun (bx, by, bz) ->
@@ -206,8 +254,37 @@ let regs_text regs = "{" ^ String.concat ", " regs ^ "}"
 
 let layout_suffix = function C.Row_major -> "row" | C.Col_major -> "col"
 
+(** Buffer element type and byte size a fragment is loaded from or stored to (an
+    integer accumulator of either signedness lives in an [int32] buffer, an
+    8-bit operand of either signedness in a [uint8] one). *)
 let elt_of (f : C.fragment) =
-  match f.C.frag_component with C.Float16 -> (TFloat16, 2) | _ -> (TFloat32, 4)
+  match f.C.frag_component with
+  | C.Float16 -> (TFloat16, 2)
+  | C.BFloat16 | C.Float32 -> (TFloat32, 4)
+  | C.Uint8 | C.Sint8 -> (TUint8, 1)
+  | C.Uint32 | C.Sint32 -> (TInt32, 4)
+
+let elt_name = function
+  | TFloat16 -> "float16"
+  | TFloat32 -> "float32"
+  | TUint8 -> "uint8"
+  | TInt32 -> "int32"
+  | _ -> "a non-numeric type"
+
+(** The PTX type letters of a fragment component in [wmma.load]/[wmma.store]
+    ([f16], [s8], [u8], [f32], [s32]). *)
+let ptx_type = function
+  | C.Float16 | C.BFloat16 -> "f16"
+  | C.Uint8 -> "u8"
+  | C.Sint8 -> "s8"
+  | C.Float32 -> "f32"
+  | C.Uint32 | C.Sint32 -> "s32"
+
+(** Registers per lane of a fragment at m16n16k16. *)
+let frag_reg_count (f : C.fragment) =
+  match (f.C.frag_use, f.C.frag_component) with
+  | (C.Matrix_a | C.Matrix_b), (C.Uint8 | C.Sint8) -> 2
+  | _ -> 8
 
 let declared alloc name =
   match Hashtbl.find_opt alloc.coop_frags name with
@@ -226,12 +303,12 @@ let emit_decl buf alloc name (frag : C.fragment) =
   check_fragment frag ;
   (* Zero-initialised, as every backend does (Sarek_ir_types.CM_decl). *)
   let regs, zero =
-    match frag.C.frag_use with
-    | C.Accumulator ->
+    match (frag.C.frag_use, frag.C.frag_component) with
+    | C.Accumulator, C.Float32 ->
         ( List.init 8 (fun _ -> new_f32 alloc),
           fun r -> emit buf "mov.f32 %s, 0F00000000;" r )
-    | C.Matrix_a | C.Matrix_b ->
-        ( List.init 8 (fun _ -> new_frag_b32 alloc),
+    | _ ->
+        ( List.init (frag_reg_count frag) (fun _ -> new_frag_b32 alloc),
           fun r -> emit buf "mov.b32 %s, 0;" r )
   in
   List.iter zero regs ;
@@ -253,9 +330,9 @@ let emit_access buf alloc env ~what ~(frag : C.fragment) ~buf_name ~index
          "a %s %s fragment needs a %s buffer, but %s holds %s"
          (C.component_name frag.C.frag_component)
          (C.use_name frag.C.frag_use)
-         (ptx_reg_type_of elt)
+         (elt_name elt)
          buf_name
-         (ptx_reg_type_of held)) ;
+         (elt_name held)) ;
   let space = arr_space_of alloc buf_name in
   if space = Some SpaceLocal then
     refuse
@@ -315,7 +392,7 @@ let emit_load buf alloc env ~dst ~(frag : C.fragment) ~src ~index ~stride
     role
     (layout_suffix layout)
     sp
-    (if frag.C.frag_use = C.Accumulator then "f32" else "f16")
+    (ptx_type frag.C.frag_component)
     (regs_text cf.cf_regs)
     addr
     r_stride
@@ -334,9 +411,10 @@ let emit_store buf alloc env ~src ~(frag : C.fragment) ~dst ~index ~stride
   in
   emit
     buf
-    "wmma.store.d.sync.aligned.%s.m16n16k16.%s.f32 [%s], %s, %s;"
+    "wmma.store.d.sync.aligned.%s.m16n16k16.%s.%s [%s], %s, %s;"
     (layout_suffix layout)
     sp
+    (ptx_type frag.C.frag_component)
     addr
     (regs_text cf.cf_regs)
     r_stride
@@ -358,11 +436,17 @@ let emit_muladd buf alloc ~dst ~a ~b ~c (cfg : C.config) =
   in
   let ra = regs_of a fa and rb = regs_of b fb in
   let rc = regs_of c fc and rd = regs_of dst fd in
+  let types =
+    match cfg.C.cfg_a with
+    | C.Float16 -> "f32.f32"
+    | op -> Printf.sprintf "s32.%s.%s.s32" (ptx_type op) (ptx_type op)
+  in
   emit
     buf
-    "wmma.mma.sync.aligned.%s.%s.m16n16k16.f32.f32 %s, %s, %s, %s;"
+    "wmma.mma.sync.aligned.%s.%s.m16n16k16.%s %s, %s, %s, %s;"
     (layout_suffix (operand_layout alloc a))
     (layout_suffix (operand_layout alloc b))
+    types
     rd
     ra
     rb
