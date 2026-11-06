@@ -108,6 +108,10 @@ type reg_alloc = {
       (** Cooperative-matrix fragments declared so far, by name (a later
           declaration of the same name replaces the earlier one). Empty for
           every kernel without an [SCoopmat] statement. *)
+  mutable coop_buffers : string list;
+      (** Arrays a cooperative-matrix load or store reads or writes: a [.shared]
+          one is declared 32-byte aligned (what [wmma] requires). Set by
+          [generate]. *)
   mutable coop_layouts : (string * Sarek_coopmat_types.layout) list;
       (** The one layout each operand fragment is loaded in, by name, over the
           whole kernel: a [wmma.mma] names the layouts of A and B, which the
@@ -135,6 +139,7 @@ let make_alloc () =
     inline_budget = Hashtbl.create 4;
     inline_ret = [];
     coop_frags = Hashtbl.create 4;
+    coop_buffers = [];
     coop_layouts = [];
   }
 
@@ -488,6 +493,13 @@ let ptx_align_of_elttype = function
   | TUnit -> 4
   | TVec _ | TArray _ -> 8
   | TRecord _ | TVariant _ -> unsupported "align of custom type"
+
+(** Declared alignment of a [.shared] array: its element's, raised to the 32
+    bytes [wmma.load]/[wmma.store] need when a cooperative-matrix statement
+    accesses it. *)
+let shared_align alloc name elt =
+  let base = ptx_align_of_elttype elt in
+  if List.mem name alloc.coop_buffers then max 32 base else base
 
 let ptx_btype_of_elttype = function
   | TFloat16 -> "b16"

@@ -108,6 +108,10 @@ type reg_alloc = {
   coop_frags : (string, coop_frag) Hashtbl.t;
       (** Cooperative-matrix fragments declared so far, by name. Empty for every
           kernel without an [SCoopmat] statement. *)
+  mutable coop_buffers : string list;
+      (** Arrays a cooperative-matrix load or store reads or writes: a [.shared]
+          one is declared 32-byte aligned (what [wmma] requires). Set by
+          [generate]. *)
   mutable coop_layouts : (string * Sarek_coopmat_types.layout) list;
       (** The one layout each operand fragment is loaded in, by name, over the
           whole kernel. Set by [generate]; empty without cooperative matrices.
@@ -283,6 +287,11 @@ val mov_binding : Buffer.t -> src:binding -> dst:binding -> unit
 
 (** Byte alignment of a [.shared] array of the given element type. *)
 val ptx_align_of_elttype : elttype -> int
+
+(** [shared_align alloc name elt] is the declared alignment of the [.shared]
+    array [name]: [ptx_align_of_elttype elt], or 32 when a cooperative-matrix
+    load or store accesses it. *)
+val shared_align : reg_alloc -> string -> elttype -> int
 
 (** PTX untyped-bits type ([b32]/[b64]) for a [.shared] array declaration. *)
 val ptx_btype_of_elttype : elttype -> string

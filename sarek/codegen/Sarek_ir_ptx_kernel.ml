@@ -306,7 +306,7 @@ let emit_locals buf shared_buf module_buf alloc (env : env) (locals : decl list)
                  allocated from [v.var_type]: f16 locals move as [mov.b16]. *)
               mov_scalar buf ~dst:r ~src:r_init)
       | DShared (name, elt, size_opt) ->
-          let align = ptx_align_of_elttype elt in
+          let align = shared_align alloc name elt in
           let btype = ptx_btype_of_elttype elt in
           (match size_opt with
           | None ->
@@ -404,8 +404,10 @@ let generate ?(sm_target = "sm_86") ?(soa_params = []) ?block (k : kernel) :
     string =
   Sarek_ir_ptx_coopmat.check_kernel ~sm_target ?block k ;
   let alloc = make_alloc () in
-  if Sarek_ir_analysis.kernel_has_coopmat_op k then
+  if Sarek_ir_analysis.kernel_has_coopmat_op k then begin
     alloc.coop_layouts <- Sarek_ir_ptx_coopmat.operand_layouts k ;
+    alloc.coop_buffers <- Sarek_ir_ptx_coopmat.accessed_buffers k
+  end ;
   List.iter
     (fun hf ->
       (* The __sarek_ prefix is reserved for emitter-internal helpers (e.g.
