@@ -1584,6 +1584,36 @@ let submit_deferred (module B : Framework_sig.BACKEND) ~(device : Device.t) ~ir
       issue_fused;
     }
 
+(* The values of the scalar int32 parameters of [ir], by name. *)
+let scalar_arguments (ir : Sarek_ir_types.kernel) (args : vector_arg list) :
+    (string * int) list =
+  if List.length ir.Sarek_ir_types.kern_params <> List.length args then []
+  else
+    List.concat
+      (List.map2
+         (fun decl arg ->
+           match (decl, arg) with
+           | Sarek_ir_types.DParam (v, None), Int n ->
+               [(v.Sarek_ir_types.var_name, n)]
+           | Sarek_ir_types.DParam (v, None), Int32 n ->
+               [(v.Sarek_ir_types.var_name, Int32.to_int n)]
+           | Sarek_ir_types.DParam (v, None), Int64 n ->
+               [(v.Sarek_ir_types.var_name, Int64.to_int n)]
+           | _ -> [])
+         ir.Sarek_ir_types.kern_params
+         args)
+
+(** Which variant of a cooperative-matrix kernel a launch on [device] with
+    [args] runs ({!Coopmat_variant}); pure, counts nothing. *)
+let coopmat_variant ~(device : Device.t) (ir : Sarek_ir_types.kernel)
+    (args : vector_arg list) : Coopmat_variant.outcome =
+  snd
+    (Coopmat_variant.choose
+       ~count:false
+       ~framework:device.framework
+       ir
+       (scalar_arguments ir args))
+
 (* The JIT arm of {!run}. *)
 let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
     ~name ~ir ~block ~grid ~shared_mem (args : vector_arg list) : unit =
@@ -1626,7 +1656,23 @@ let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
                  no refusal; WebGPU is the one to watch, being a JIT backend
                  whose WGSL codegen is not yet wired. *)
       let soa_params = soa_param_names ir args device in
-      let source = jit_source (module B) ~device ~name ~block ~soa_params ir in
+      (* Cooperative matrices on CUDA: the variant the actual arguments allow
+         (Coopmat_variant). Only the generated source depends on it. *)
+      let gen_ir, variant =
+        Coopmat_variant.choose
+          ~framework:device.framework
+          ir
+          (scalar_arguments ir args)
+      in
+      if variant <> Coopmat_variant.Not_applicable then
+        Spoc_core.Log.debugf
+          Spoc_core.Log.Kernel
+          "coopmat variant: kernel='%s' %s"
+          name
+          (Coopmat_variant.outcome_name variant) ;
+      let source =
+        jit_source (module B) ~device ~name ~block ~soa_params gen_ir
+      in
       (* Arguments are expanded now, deferred or not (see [prepare_jit]). *)
       let issue =
         prepare_jit
