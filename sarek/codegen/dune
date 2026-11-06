@@ -11,6 +11,7 @@
  (modules
   Sarek_ir_warp_text
   Sarek_ir_intrinsic_dispatch
+  Sarek_ir_coopmat_align
   Sarek_ir_cuda_coopmat_preamble
   Sarek_ir_cuda_coopmat_scale
   Sarek_ir_cuda_coopmat

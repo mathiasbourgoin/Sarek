@@ -31,13 +31,19 @@
     emitter never indexes into a group; it passes the whole group to [wmma.load]
     / [wmma.mma] / [wmma.store], which agree on the distribution across lanes.
 
-    {b Precondition, checked at run time.} Exactly the CUDA/C one
-    ([sarek_cm_require]): the element address is 32-byte aligned and
-    [stride * element bytes] is a multiple of 16, otherwise the kernel executes
-    [trap]. [wmma.load]/[wmma.store] are undefined on a misaligned address; a
-    trap is preferable to wrong results. A [.shared] array a cooperative-matrix
-    statement accesses is declared 32-byte aligned, so only a misaligned offset
-    into it traps.
+    {b Alignment.} [wmma.load]/[wmma.store] are undefined unless the address is
+    32-byte aligned and [stride * element bytes] is a multiple of 16, while
+    [CM_load]/[CM_store] promise any index and stride. An access that
+    {!Sarek_ir_coopmat_align} proves aligned is the bare instruction. Any other
+    access tests alignment at run time (the CUDA/C [sarek_cm_require] test) and,
+    when the launch block is known, branches (warp-uniform) to an out-of-line
+    slow path that stages the 16x16 tile element by element through a 32-byte
+    aligned per-warp [.shared] buffer ([sarek_cm_tiles], 1 KiB per warp,
+    declared only when an access is unproven): results are the IR's for any
+    index and stride, in either layout; a store writes only its tile. With no
+    block known no buffer can be sized and a misaligned access executes [trap].
+    A [.shared] array a cooperative-matrix statement accesses is declared
+    32-byte aligned.
 
     {b What is validated where.} Text and refusals: unit tests, any machine. The
     instructions are checked by [ptxas] where it is installed. Execution needs
@@ -312,14 +318,24 @@ let emit_decl buf alloc name (frag : C.fragment) =
   List.iter zero regs ;
   Hashtbl.replace alloc.coop_frags name {cf_frag = frag; cf_regs = regs}
 
-(** The element address of a fragment access, after the checks that make the
-    access meaningful: the buffer holds the fragment's element type, and is not
-    per-thread [.local] memory (a warp-collective access to it has no meaning).
-    Returns the state-space word, the address register and the stride register.
-*)
+(** One fragment access, after the checks that make it meaningful: the buffer
+    holds the fragment's element type, and is not per-thread [.local] memory (a
+    warp-collective access to it has no meaning). *)
+type access = {
+  frag : C.fragment;
+  space : arr_space option;
+  base : string;  (** the array's base register *)
+  index : string;  (** int32 register *)
+  stride : string;  (** int32 register *)
+  addr : string;  (** the element address, 32-bit for [.shared] else 64-bit *)
+  bytes : int;  (** element bytes *)
+}
+
+let ss a = space_qualifier a.space
+
 let emit_access buf alloc env ~what ~(frag : C.fragment) ~buf_name ~index
     ~stride =
-  let elt, elt_bytes = elt_of frag in
+  let elt, bytes = elt_of frag in
   let held = infer_elt_type alloc buf_name in
   (* An s8 fragment also loads from an int8 buffer (same bytes); the wmma load
      reads the address, whatever the declared element type. *)
@@ -347,30 +363,175 @@ let emit_access buf alloc env ~what ~(frag : C.fragment) ~buf_name ~index
   let r_stride = emit_expr buf alloc env stride in
   check_index_reg (what ^ " index") r_index ;
   check_index_reg (what ^ " stride") r_stride ;
-  let r_addr =
-    emit_elt_addr buf alloc (env_lookup env buf_name) r_index elt ~space
-  in
-  (* sarek_cm_require of the CUDA/C arm: 32-byte aligned address, stride in
-     whole 16-byte units; [mul.lo.u32] keeps the low bits, the only ones tested. *)
+  let base = env_lookup env buf_name in
+  let addr = emit_elt_addr buf alloc base r_index elt ~space in
+  {frag; space; base; index = r_index; stride = r_stride; addr; bytes}
+
+(** The predicate "this access is misaligned" ([sarek_cm_require] of the CUDA/C
+    arm): the address is not 32-byte aligned, or the stride is not a whole
+    number of 16-byte units. [mul.lo.u32] keeps the low bits, the only ones
+    tested. *)
+let emit_misaligned buf alloc a =
   let bad = new_pred alloc and bad_stride = new_pred alloc in
-  (match space with
+  (match a.space with
   | Some SpaceShared ->
       let low = new_u32 alloc in
-      emit buf "and.b32 %s, %s, 31;" low r_addr ;
+      emit buf "and.b32 %s, %s, 31;" low a.addr ;
       emit buf "setp.ne.u32 %s, %s, 0;" bad low
   | Some SpaceLocal | None ->
       let low = new_u64 alloc in
-      emit buf "and.b64 %s, %s, 31;" low r_addr ;
+      emit buf "and.b64 %s, %s, 31;" low a.addr ;
       emit buf "setp.ne.u64 %s, %s, 0;" bad low) ;
   let bytes = new_u32 alloc and low = new_u32 alloc in
-  emit buf "mul.lo.u32 %s, %s, %d;" bytes r_stride elt_bytes ;
+  emit buf "mul.lo.u32 %s, %s, %d;" bytes a.stride a.bytes ;
   emit buf "and.b32 %s, %s, 15;" low bytes ;
   emit buf "setp.ne.u32 %s, %s, 0;" bad_stride low ;
   emit buf "or.pred %s, %s, %s;" bad bad bad_stride ;
-  emit buf "@%s trap;" bad ;
-  (space_qualifier space, r_addr, r_stride)
+  bad
 
-let emit_load buf alloc env ~dst ~(frag : C.fragment) ~src ~index ~stride
+(** {1 Staging through shared memory}
+
+    A misaligned access cannot use [wmma.load] / [wmma.store] on its own
+    address. The slow path copies the tile element by element, with the IR's own
+    formula, through a 32-byte aligned per-warp buffer in [.shared]: element [t]
+    (0..255) of the buffer is the memory element at
+    [index + (t / 16) * stride + (t mod 16)], in either layout (row-major:
+    [r * stride + c]; column-major: [c * stride + r]); [wmma] then loads from /
+    stores to the buffer with a leading dimension of 16, which is aligned for
+    every element size. Lane [l] copies [t = l + 32 j], [j < 8]. Results are
+    those of the IR whatever the address and stride. *)
+
+let tile_name = "sarek_cm_tiles"
+
+let tile_bytes_per_warp = 1024
+
+(** The buffer, declared at its first use, [warps] tiles of 1 KiB. *)
+let ensure_tiles alloc ~warps =
+  if not alloc.coop_tiles then begin
+    alloc.coop_tiles <- true ;
+    Buffer.add_string
+      alloc.shared_decls
+      (Printf.sprintf
+         "    .shared .align 32 .b8 %s[%d];\n"
+         tile_name
+         (warps * tile_bytes_per_warp))
+  end
+
+let move_width = function 1 -> "u8" | 2 -> "b16" | _ -> "b32"
+
+(** One element register of the staging copy. *)
+let copy_register alloc bytes =
+  if bytes = 2 then new_f16 alloc else new_u32 alloc
+
+(** The slow path of one access, appended out of line. [wmma] receives the
+    address register of the buffer (a [.shared] window offset) and the register
+    holding 16. [load]: copy in, then [wmma.load]; else [wmma.store], then copy
+    out. *)
+let emit_slow_path alloc ~label ~done_label (a : access) ~load ~wmma =
+  let b = alloc.coop_slow in
+  let warps = Option.get alloc.coop_warps in
+  ensure_tiles alloc ~warps ;
+  emit b "%s:" label ;
+  (* this lane's buffer: warp = linear thread id / 32 *)
+  let tx = new_u32 alloc in
+  let ty = new_u32 alloc and tz = new_u32 alloc in
+  let nx = new_u32 alloc and ny = new_u32 alloc in
+  emit b "mov.u32 %s, %%tid.x;" tx ;
+  emit b "mov.u32 %s, %%tid.y;" ty ;
+  emit b "mov.u32 %s, %%tid.z;" tz ;
+  emit b "mov.u32 %s, %%ntid.x;" nx ;
+  emit b "mov.u32 %s, %%ntid.y;" ny ;
+  let t1 = new_u32 alloc and lin = new_u32 alloc in
+  emit b "mad.lo.u32 %s, %s, %s, %s;" t1 tz ny ty ;
+  emit b "mad.lo.u32 %s, %s, %s, %s;" lin t1 nx tx ;
+  let warp = new_u32 alloc and lane = new_u32 alloc in
+  emit b "shr.u32 %s, %s, 5;" warp lin ;
+  emit b "and.b32 %s, %s, 31;" lane lin ;
+  let tile = new_u32 alloc and tile_base = new_u32 alloc in
+  emit b "mov.u32 %s, %s;" tile_base tile_name ;
+  emit b "mad.lo.u32 %s, %s, %d, %s;" tile warp tile_bytes_per_warp tile_base ;
+  let sixteen = new_u32 alloc in
+  emit b "mov.u32 %s, 16;" sixteen ;
+  (* this lane's first element: row lane/16, column lane mod 16 *)
+  let o0 = new_u32 alloc and i0 = new_u32 alloc in
+  emit b "shr.u32 %s, %s, 4;" o0 lane ;
+  emit b "and.b32 %s, %s, 15;" i0 lane ;
+  let off = new_u32 alloc in
+  emit b "mad.lo.s32 %s, %s, %s, %s;" off o0 a.stride a.index ;
+  emit b "add.s32 %s, %s, %s;" off off i0 ;
+  let src, step =
+    match a.space with
+    | Some SpaceShared ->
+        let offb = new_u32 alloc and src = new_u32 alloc in
+        let step = new_u32 alloc in
+        emit b "mul.lo.u32 %s, %s, %d;" offb off a.bytes ;
+        emit b "add.u32 %s, %s, %s;" src a.base offb ;
+        emit b "mul.lo.u32 %s, %s, %d;" step a.stride (2 * a.bytes) ;
+        (src, step)
+    | Some SpaceLocal | None ->
+        let offb = new_u64 alloc and src = new_u64 alloc in
+        let step = new_u64 alloc in
+        emit b "mul.wide.u32 %s, %s, %d;" offb off a.bytes ;
+        emit b "add.u64 %s, %s, %s;" src a.base offb ;
+        emit b "mul.wide.u32 %s, %s, %d;" step a.stride (2 * a.bytes) ;
+        (src, step)
+  in
+  let lane_slot = new_u32 alloc in
+  emit b "mad.lo.u32 %s, %s, %d, %s;" lane_slot lane a.bytes tile ;
+  let w = move_width a.bytes in
+  let sp = ss a in
+  let add_step = if a.space = Some SpaceShared then "add.u32" else "add.u64" in
+  let copy j =
+    let v = copy_register alloc a.bytes in
+    let slot = Printf.sprintf "[%s+%d]" lane_slot (32 * j * a.bytes) in
+    if load then begin
+      emit b "ld.%s.%s %s, [%s];" sp w v src ;
+      emit b "st.shared.%s %s, %s;" w slot v
+    end
+    else begin
+      emit b "ld.shared.%s %s, %s;" w v slot ;
+      emit b "st.%s.%s [%s], %s;" sp w src v
+    end ;
+    emit b "%s %s, %s, %s;" add_step src src step
+  in
+  let copy_all () = List.iter copy (List.init 8 Fun.id) in
+  if load then begin
+    copy_all () ;
+    emit b "bar.warp.sync 0xffffffff;" ;
+    wmma b tile sixteen
+  end
+  else begin
+    wmma b tile sixteen ;
+    emit b "bar.warp.sync 0xffffffff;" ;
+    copy_all ()
+  end ;
+  (* the buffer is reused by the next staged access *)
+  emit b "bar.warp.sync 0xffffffff;" ;
+  emit b "bra %s;" done_label
+
+(** The shape shared by loads and stores: [direct buf addr stride] is the [wmma]
+    instruction on [addr]/[stride]; [staged buf tile sixteen] the same on the
+    staging buffer. Proven aligned: the bare instruction. Unproven with a known
+    block: a warp-uniform branch to the out-of-line slow path. Unproven without
+    a block (no buffer can be sized): the trap. *)
+let emit_guarded buf alloc ~op (a : access) ~load ~direct ~staged =
+  if Sarek_ir_coopmat_align.is_proven alloc.coop_proven op then
+    direct buf a.addr a.stride
+  else if alloc.coop_warps = None then begin
+    let bad = emit_misaligned buf alloc a in
+    emit buf "@%s trap;" bad ;
+    direct buf a.addr a.stride
+  end
+  else begin
+    let bad = emit_misaligned buf alloc a in
+    let slow = new_label alloc and done_ = new_label alloc in
+    emit buf "@%s bra %s;" bad slow ;
+    direct buf a.addr a.stride ;
+    emit buf "%s:" done_ ;
+    emit_slow_path alloc ~label:slow ~done_label:done_ a ~load ~wmma:staged
+  end
+
+let emit_load buf alloc env ~op ~dst ~(frag : C.fragment) ~src ~index ~stride
     ~layout =
   check_fragment frag ;
   let cf = declared alloc dst in
@@ -380,7 +541,7 @@ let emit_load buf alloc env ~dst ~(frag : C.fragment) ~src ~index ~stride
       (Printf.sprintf
          "%s was declared as another fragment than it is loaded as"
          dst) ;
-  let sp, addr, r_stride =
+  let a =
     emit_access buf alloc env ~what:"load" ~frag ~buf_name:src ~index ~stride
   in
   let role =
@@ -389,18 +550,28 @@ let emit_load buf alloc env ~dst ~(frag : C.fragment) ~src ~index ~stride
     | C.Matrix_b -> "b"
     | C.Accumulator -> "c"
   in
-  emit
+  let instr sp b addr stride =
+    emit
+      b
+      "wmma.load.%s.sync.aligned.%s.m16n16k16.%s.%s %s, [%s], %s;"
+      role
+      (layout_suffix layout)
+      sp
+      (ptx_type frag.C.frag_component)
+      (regs_text cf.cf_regs)
+      addr
+      stride
+  in
+  emit_guarded
     buf
-    "wmma.load.%s.sync.aligned.%s.m16n16k16.%s.%s %s, [%s], %s;"
-    role
-    (layout_suffix layout)
-    sp
-    (ptx_type frag.C.frag_component)
-    (regs_text cf.cf_regs)
-    addr
-    r_stride
+    alloc
+    ~op
+    a
+    ~load:true
+    ~direct:(instr (ss a))
+    ~staged:(instr "shared")
 
-let emit_store buf alloc env ~src ~(frag : C.fragment) ~dst ~index ~stride
+let emit_store buf alloc env ~op ~src ~(frag : C.fragment) ~dst ~index ~stride
     ~layout =
   check_fragment frag ;
   if frag.C.frag_use <> C.Accumulator then
@@ -409,18 +580,28 @@ let emit_store buf alloc env ~src ~(frag : C.fragment) ~dst ~index ~stride
       "only an accumulator fragment can be stored (wmma has no store for A or \
        B)" ;
   let cf = declared alloc src in
-  let sp, addr, r_stride =
+  let a =
     emit_access buf alloc env ~what:"store" ~frag ~buf_name:dst ~index ~stride
   in
-  emit
+  let instr sp b addr stride =
+    emit
+      b
+      "wmma.store.d.sync.aligned.%s.m16n16k16.%s.%s [%s], %s, %s;"
+      (layout_suffix layout)
+      sp
+      (ptx_type frag.C.frag_component)
+      addr
+      (regs_text cf.cf_regs)
+      stride
+  in
+  emit_guarded
     buf
-    "wmma.store.d.sync.aligned.%s.m16n16k16.%s.%s [%s], %s, %s;"
-    (layout_suffix layout)
-    sp
-    (ptx_type frag.C.frag_component)
-    addr
-    (regs_text cf.cf_regs)
-    r_stride
+    alloc
+    ~op
+    a
+    ~load:false
+    ~direct:(instr (ss a))
+    ~staged:(instr "shared")
 
 let emit_muladd buf alloc ~dst ~a ~b ~c (cfg : C.config) =
   check_config cfg ;
@@ -456,12 +637,13 @@ let emit_muladd buf alloc ~dst ~a ~b ~c (cfg : C.config) =
     rc
 
 (** [emit_op buf alloc env op] emits one cooperative-matrix statement. *)
-let emit_op buf alloc env = function
+let emit_op buf alloc env (op : coopmat_op) =
+  match op with
   | CM_decl {name; frag} -> emit_decl buf alloc name frag
   | CM_load {dst; frag; src; index; stride; layout} ->
-      emit_load buf alloc env ~dst ~frag ~src ~index ~stride ~layout
+      emit_load buf alloc env ~op ~dst ~frag ~src ~index ~stride ~layout
   | CM_store {src; frag; dst; index; stride; layout} ->
-      emit_store buf alloc env ~src ~frag ~dst ~index ~stride ~layout
+      emit_store buf alloc env ~op ~src ~frag ~dst ~index ~stride ~layout
   | CM_muladd {dst; a; b; c; cfg} -> emit_muladd buf alloc ~dst ~a ~b ~c cfg
   | CM_scale_add _ ->
       refuse "CM_scale_add" Sarek_ir_cuda_coopmat_scale.cuda_reason

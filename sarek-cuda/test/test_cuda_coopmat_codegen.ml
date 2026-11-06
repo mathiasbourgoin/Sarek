@@ -36,9 +36,10 @@ let param name e =
 
 (** One tile; [a_buf] overrides the element type of [a]'s buffer and [store_a]
     stores the A fragment instead of D. *)
-let tile ?a_buf ?(store_a = false) cfg =
+let tile ?a_buf ?(store_a = false) ?(index = 0) ?(stride = 16) cfg =
   let fa, fb, fc, fd = C.fragments_of_config cfg in
-  let i = EConst (CInt32 0l) and s = EConst (CInt32 16l) in
+  let i = EConst (CInt32 (Int32.of_int index))
+  and s = EConst (CInt32 (Int32.of_int stride)) in
   let load dst frag src =
     SCoopmat
       (CM_load
@@ -210,6 +211,52 @@ let test_block () =
     false
     (has src "sarek_cm_")
 
+(* Alignment: constants 0 and 16 are proven (the bare wmma call); a start index
+   or stride that is not a multiple of the element count is not, and with a known
+   block it is staged through a per-warp shared buffer instead of trapping. *)
+let lacks src needle =
+  Alcotest.(check bool) ("no " ^ needle) false (has src needle)
+
+let test_alignment () =
+  let proven = gen ~block:(32, 1, 1) (tile f16) in
+  lacks proven "sarek_cm_require(((" ;
+  lacks proven "if (sarek_cm_misaligned(((" ;
+  lacks proven "sarek_cm_tiles[" ;
+  check_has
+    proven
+    ["nvcuda::wmma::load_matrix_sync(fa, ((const __half *)(a) + (0)), (16));"] ;
+  let staged = gen ~block:(32, 2, 1) (tile ~index:1 ~stride:17 f16) in
+  check_has
+    staged
+    [
+      "if (sarek_cm_misaligned(((const __half *)(a) + (1)), (17), 2)) { __half \
+       *sarek_cm_t = (__half *)sarek_cm_tile();";
+      "sarek_cm_stage_in(sarek_cm_t, ((const __half *)(a) + (1)), (17)); \
+       __syncwarp(); nvcuda::wmma::load_matrix_sync(fa, sarek_cm_t, 16);";
+      "nvcuda::wmma::store_matrix_sync(sarek_cm_t, fc, 16, \
+       nvcuda::wmma::mem_row_major); __syncwarp(); sarek_cm_stage_out(((float \
+       *)(d) + (1)), sarek_cm_t, (17)); __syncwarp();";
+      "__shared__ __align__(32) unsigned char sarek_cm_tiles[2048];";
+      "#if !defined(__HIP_PLATFORM_AMD__)";
+      "return sarek_cm_tiles + w * 1024;";
+    ] ;
+  lacks staged "sarek_cm_require(((" ;
+  (* without a block no buffer can be sized: the trap, no buffer *)
+  let trap = gen (tile ~index:1 ~stride:17 f16) in
+  check_has trap ["sarek_cm_require(((const __half *)(a) + (1)), (17), 2);"] ;
+  lacks trap "sarek_cm_tiles[" ;
+  (* the 8-bit and column-major forms *)
+  let u8 =
+    gen
+      ~block:(32, 1, 1)
+      (tile ~index:1 ~stride:17 (cfg C.Uint8 C.Uint8 C.Sint32 C.Sint32))
+  in
+  check_has
+    u8
+    ["sarek_cm_stage_in(sarek_cm_t, ((const unsigned char *)(a) + (1)), (17));"] ;
+  (* a kernel with no unproven access declares no buffer, whatever the block *)
+  lacks (gen ~block:(1024, 1, 1) (tile f16)) "sarek_cm_tiles["
+
 let () =
   Alcotest.run
     "cuda_coopmat_codegen"
@@ -221,5 +268,9 @@ let () =
           Alcotest.test_case "integer sign flags" `Quick test_int_signs;
           Alcotest.test_case "refusals" `Quick test_refusals;
           Alcotest.test_case "launch block" `Quick test_block;
+          Alcotest.test_case
+            "alignment: proof, staging, trap"
+            `Quick
+            test_alignment;
         ] );
     ]
