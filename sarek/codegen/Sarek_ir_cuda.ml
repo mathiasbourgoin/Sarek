@@ -89,10 +89,10 @@ let proven_narrowing (k : kernel) =
   else Barrier_unless_exact (Sarek_ir_f16_narrowing.of_kernel k)
 
 (** The state for emitting [k]. *)
-let state (k : kernel) : state =
+let state ?block (k : kernel) : state =
   {
     variants = k.kern_variants;
-    coopmat = Sarek_ir_cuda_coopmat.kernel_context k;
+    coopmat = Sarek_ir_cuda_coopmat.kernel_context ?block k;
     narrowing =
       (if single_rounding k then Single_rounding else proven_narrowing k);
     sites = {total = 0; proven = 0};
@@ -1155,11 +1155,16 @@ let generate_with_types ?block
      for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_for_bound.hoist k in
   let k = Sarek_ir_unroll.annotate ~generator:"cuda-c" k in
-  let st = state k in
+  let st = state ?block k in
   let buf = Buffer.create 4096 in
+  (* The body as it is emitted, so the alignment proof names its own nodes. *)
+  let body = Sarek_ir_codegen.fold_local_array_lengths k.kern_body in
+  st.coopmat.proven <- Sarek_ir_coopmat_align.proven_ops body ;
 
   (* Header *)
   Buffer.add_string buf (cuda_header_for k) ;
+  (* where the cooperative-matrix staging buffer is declared, if used *)
+  let tiles_pos = Buffer.length buf in
 
   (* Warp shuffle helpers, one per (operation, value type) the kernel uses *)
   let warp_calls = Sarek_ir_analysis.kernel_warp_calls k in
@@ -1203,7 +1208,7 @@ let generate_with_types ?block
   List.iter (gen_local st buf "  ") k.kern_locals ;
 
   (* Body *)
-  gen_stmt st buf "  " (Sarek_ir_codegen.fold_local_array_lengths k.kern_body) ;
+  gen_stmt st buf "  " body ;
 
   (* Close kernel *)
   Buffer.add_string buf "}\n" ;
@@ -1212,7 +1217,13 @@ let generate_with_types ?block
   Buffer.add_string buf "}\n" ;
 
   report_narrowing k st ;
-  Buffer.contents buf
+  let source = Buffer.contents buf in
+  match Sarek_ir_cuda_coopmat.tiles_declaration st.coopmat with
+  | "" -> source
+  | decl ->
+      String.sub source 0 tiles_pos
+      ^ decl
+      ^ String.sub source tiles_pos (String.length source - tiles_pos)
 
 (** Generate complete CUDA source for a kernel.
 

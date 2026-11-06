@@ -412,6 +412,8 @@ let generate ?(sm_target = "sm_86") ?(soa_params = []) ?block (k : kernel) :
     (fun name -> Hashtbl.replace alloc.read_only name ())
     (Sarek_ir_ptx_readonly.params k) ;
   if Sarek_ir_analysis.kernel_has_coopmat_op k then begin
+    alloc.coop_proven <- Sarek_ir_coopmat_align.proven_ops k.kern_body ;
+    alloc.coop_warps <- Option.map (fun (bx, by, bz) -> bx * by * bz / 32) block ;
     alloc.coop_layouts <- Sarek_ir_ptx_coopmat.operand_layouts k ;
     alloc.coop_buffers <- Sarek_ir_ptx_coopmat.accessed_buffers k
   end ;
@@ -439,6 +441,8 @@ let generate ?(sm_target = "sm_86") ?(soa_params = []) ?block (k : kernel) :
   emit_locals body_buf shared_buf module_buf alloc env k.kern_locals ;
   emit_stmt body_buf alloc env k.kern_body ;
   Buffer.add_string body_buf "    ret;\n" ;
+  (* Out-of-line cooperative-matrix slow paths (Sarek_ir_ptx_coopmat). *)
+  Buffer.add_buffer body_buf alloc.coop_slow ;
   let out = Buffer.create 4096 in
   Buffer.add_string out (make_ptx_header ~sm_target ()) ;
   Buffer.add_char out '\n' ;

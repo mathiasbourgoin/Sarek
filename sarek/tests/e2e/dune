@@ -2039,6 +2039,7 @@
   test_coopmat_scale_add_e2e
   test_ptx_coopmat_e2e
   test_ptx_coopmat_int8_e2e
+  test_coopmat_misalign_e2e
   test_coopmat_layout_e2e
   test_launch_window
   bench_launch_window
@@ -2069,6 +2070,7 @@
   test_coopmat_scale_add_e2e
   test_ptx_coopmat_e2e
   test_ptx_coopmat_int8_e2e
+  test_coopmat_misalign_e2e
   test_coopmat_layout_e2e
   test_launch_window
   bench_launch_window
@@ -2216,6 +2218,17 @@
  (alias runtest)
  (action
   (run %{dep:test_ptx_coopmat_int8_e2e.exe})))
+
+; Cooperative-matrix loads and stores at a misaligned start index and stride
+; against the interpreter, on every device offering the configuration (CUDA/C and
+; CUDA/PTX stage such tiles through shared memory; HIP, Vulkan and Metal need no
+; staging). COOPMAT_MISALIGN_FRAMEWORK restricts the run to one framework. Built
+; by the test_int32_bitcasts stanza.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_coopmat_misalign_e2e.exe})))
 
 ; CM_load / CM_store layouts executed: every row/column-major combination of
 ; A, B, C and D on every device offering a configuration (HIP gfx11, Vulkan

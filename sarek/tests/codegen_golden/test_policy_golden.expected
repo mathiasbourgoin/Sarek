@@ -697,8 +697,53 @@ __device__ __forceinline__ void sarek_cm_store_acc_cm_i32(const sarek_cm_i8 &f, 
    launch that violates the precondition traps instead of computing on a
    misaligned fragment. */
 #include <mma.h>
+__device__ __forceinline__ bool sarek_cm_misaligned(const void *p, long long s, int bytes) {
+  return (((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0;
+}
 __device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int bytes) {
-  if ((((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0) __trap();
+  if (sarek_cm_misaligned(p, s, bytes)) __trap();
+}
+/* A STORE leaves the bare instruction when it is misaligned or when its rows
+   overlap in memory (|stride| < 16): the answer is then the last write of the
+   interpreter's loop, which a matrix-unit store does not promise. */
+__device__ __forceinline__ bool sarek_cm_store_unsafe(const void *p, long long s, int bytes) {
+  return sarek_cm_misaligned(p, s, bytes) || (s > -16 && s < 16);
+}
+__device__ __forceinline__ void sarek_cm_require_store(const void *p, long long s, int bytes) {
+  if (sarek_cm_store_unsafe(p, s, bytes)) __trap();
+}
+/* A misaligned access (not proven aligned at code generation, block known) copies
+   the 16x16 tile element by element through a 32-byte aligned per-warp buffer
+   in shared memory (sarek_cm_tiles, declared by the generator) and runs wmma on
+   the buffer with a leading dimension of 16: element t of the buffer is
+   index + (t / 16) * stride + (t % 16), in either layout. Lane l copies
+   t = l + 32 j, j < 8. */
+template <typename T>
+__device__ __forceinline__ void sarek_cm_stage_in(T *tile, const T *src, long long stride) {
+  unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  for (int j = 0; j < 8; ++j) {
+    unsigned t = lane + 32u * j;
+    tile[t] = src[(long long)(t >> 4) * stride + (t & 15u)];
+  }
+}
+template <typename T>
+__device__ __forceinline__ void sarek_cm_stage_out(T *dst, const T *tile, long long stride, int col) {
+  unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  /* Rows (columns) closer than 16 elements overlap in memory: the answer is the
+     LAST write of the interpreter's loop (rows outer, columns inner), so lane 0
+     writes them in that order instead of racing. */
+  if (stride > -16 && stride < 16) {
+    if (lane == 0)
+      for (int r = 0; r < 16; ++r)
+        for (int c = 0; c < 16; ++c)
+          dst[col ? (long long)c * stride + r : (long long)r * stride + c] =
+              tile[col ? c * 16 + r : r * 16 + c];
+    return;
+  }
+  for (int j = 0; j < 8; ++j) {
+    unsigned t = lane + 32u * j;
+    dst[(long long)(t >> 4) * stride + (t & 15u)] = tile[t];
+  }
 }
 #endif
 
@@ -722,17 +767,17 @@ __global__ void cm_f16(__half* __restrict__ a, int sarek_a_length, __half* __res
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_a_f16(fa, a, (0), (16));
 #else
-  sarek_cm_require(((const __half *)(a) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fa, ((const __half *)(a) + (0)), (16));
+  nvcuda::wmma::load_matrix_sync(fa, ((const __half *)(a) + (0)), (16));
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_b_f16(fb, b, (0), (16));
 #else
-  sarek_cm_require(((const __half *)(b) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fb, ((const __half *)(b) + (0)), (16));
+  nvcuda::wmma::load_matrix_sync(fb, ((const __half *)(b) + (0)), (16));
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_acc_f32(fc, c, (0), (16));
 #else
-  sarek_cm_require(((const float *)(c) + (0)), (16), 4); nvcuda::wmma::load_matrix_sync(fc, ((const float *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
+  nvcuda::wmma::load_matrix_sync(fc, ((const float *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   fc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(fa, fb, fc);
@@ -742,7 +787,7 @@ __global__ void cm_f16(__half* __restrict__ a, int sarek_a_length, __half* __res
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_store_acc_f32(fc, d, (0), (16));
 #else
-  sarek_cm_require(((float *)(d) + (0)), (16), 4); nvcuda::wmma::store_matrix_sync(((float *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
+  nvcuda::wmma::store_matrix_sync(((float *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
 #endif
 }
 }
@@ -770,11 +815,10 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     .param .u32 param_sarek_d_length
 )
 {
-    .reg .u32 %r<20>;
-    .reg .u64 %rd<12>;
+    .reg .u32 %r<12>;
+    .reg .u64 %rd<8>;
     .reg .f32 %f<8>;
     .reg .b32 %fr<16>;
-    .reg .pred %p<8>;
 
     ld.param.u64 %rd0, [param_a];
     ld.param.u32 %r0, [param_sarek_a_length];
@@ -811,48 +855,20 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mov.u32 %r4, 0;
     mov.u32 %r5, 16;
     mad.wide.u32 %rd4, %r4, 2, %rd0;
-    and.b64 %rd5, %rd4, 31;
-    setp.ne.u64 %p0, %rd5, 0;
-    mul.lo.u32 %r6, %r5, 2;
-    and.b32 %r7, %r6, 15;
-    setp.ne.u32 %p1, %r7, 0;
-    or.pred %p0, %p0, %p1;
-    @%p0 trap;
     wmma.load.a.sync.aligned.row.m16n16k16.global.f16 {%fr0, %fr1, %fr2, %fr3, %fr4, %fr5, %fr6, %fr7}, [%rd4], %r5;
+    mov.u32 %r6, 0;
+    mov.u32 %r7, 16;
+    mad.wide.u32 %rd5, %r6, 2, %rd1;
+    wmma.load.b.sync.aligned.row.m16n16k16.global.f16 {%fr8, %fr9, %fr10, %fr11, %fr12, %fr13, %fr14, %fr15}, [%rd5], %r7;
     mov.u32 %r8, 0;
     mov.u32 %r9, 16;
-    mad.wide.u32 %rd6, %r8, 2, %rd1;
-    and.b64 %rd7, %rd6, 31;
-    setp.ne.u64 %p2, %rd7, 0;
-    mul.lo.u32 %r10, %r9, 2;
-    and.b32 %r11, %r10, 15;
-    setp.ne.u32 %p3, %r11, 0;
-    or.pred %p2, %p2, %p3;
-    @%p2 trap;
-    wmma.load.b.sync.aligned.row.m16n16k16.global.f16 {%fr8, %fr9, %fr10, %fr11, %fr12, %fr13, %fr14, %fr15}, [%rd6], %r9;
-    mov.u32 %r12, 0;
-    mov.u32 %r13, 16;
-    mad.wide.u32 %rd8, %r12, 4, %rd2;
-    and.b64 %rd9, %rd8, 31;
-    setp.ne.u64 %p4, %rd9, 0;
-    mul.lo.u32 %r14, %r13, 4;
-    and.b32 %r15, %r14, 15;
-    setp.ne.u32 %p5, %r15, 0;
-    or.pred %p4, %p4, %p5;
-    @%p4 trap;
-    wmma.load.c.sync.aligned.row.m16n16k16.global.f32 {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, [%rd8], %r13;
+    mad.wide.u32 %rd6, %r8, 4, %rd2;
+    wmma.load.c.sync.aligned.row.m16n16k16.global.f32 {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, [%rd6], %r9;
     wmma.mma.sync.aligned.row.row.m16n16k16.f32.f32 {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, {%fr0, %fr1, %fr2, %fr3, %fr4, %fr5, %fr6, %fr7}, {%fr8, %fr9, %fr10, %fr11, %fr12, %fr13, %fr14, %fr15}, {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7};
-    mov.u32 %r16, 0;
-    mov.u32 %r17, 16;
-    mad.wide.u32 %rd10, %r16, 4, %rd3;
-    and.b64 %rd11, %rd10, 31;
-    setp.ne.u64 %p6, %rd11, 0;
-    mul.lo.u32 %r18, %r17, 4;
-    and.b32 %r19, %r18, 15;
-    setp.ne.u32 %p7, %r19, 0;
-    or.pred %p6, %p6, %p7;
-    @%p6 trap;
-    wmma.store.d.sync.aligned.row.m16n16k16.global.f32 [%rd10], {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, %r17;
+    mov.u32 %r10, 0;
+    mov.u32 %r11, 16;
+    mad.wide.u32 %rd7, %r10, 4, %rd3;
+    wmma.store.d.sync.aligned.row.m16n16k16.global.f32 [%rd7], {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, %r11;
     ret;
 }
 === S0 | cm_i32 | cuda-c (HIP, CUDA/C) ===
@@ -952,8 +968,53 @@ __device__ __forceinline__ void sarek_cm_store_acc_cm_i32(const sarek_cm_i8 &f, 
    launch that violates the precondition traps instead of computing on a
    misaligned fragment. */
 #include <mma.h>
+__device__ __forceinline__ bool sarek_cm_misaligned(const void *p, long long s, int bytes) {
+  return (((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0;
+}
 __device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int bytes) {
-  if ((((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0) __trap();
+  if (sarek_cm_misaligned(p, s, bytes)) __trap();
+}
+/* A STORE leaves the bare instruction when it is misaligned or when its rows
+   overlap in memory (|stride| < 16): the answer is then the last write of the
+   interpreter's loop, which a matrix-unit store does not promise. */
+__device__ __forceinline__ bool sarek_cm_store_unsafe(const void *p, long long s, int bytes) {
+  return sarek_cm_misaligned(p, s, bytes) || (s > -16 && s < 16);
+}
+__device__ __forceinline__ void sarek_cm_require_store(const void *p, long long s, int bytes) {
+  if (sarek_cm_store_unsafe(p, s, bytes)) __trap();
+}
+/* A misaligned access (not proven aligned at code generation, block known) copies
+   the 16x16 tile element by element through a 32-byte aligned per-warp buffer
+   in shared memory (sarek_cm_tiles, declared by the generator) and runs wmma on
+   the buffer with a leading dimension of 16: element t of the buffer is
+   index + (t / 16) * stride + (t % 16), in either layout. Lane l copies
+   t = l + 32 j, j < 8. */
+template <typename T>
+__device__ __forceinline__ void sarek_cm_stage_in(T *tile, const T *src, long long stride) {
+  unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  for (int j = 0; j < 8; ++j) {
+    unsigned t = lane + 32u * j;
+    tile[t] = src[(long long)(t >> 4) * stride + (t & 15u)];
+  }
+}
+template <typename T>
+__device__ __forceinline__ void sarek_cm_stage_out(T *dst, const T *tile, long long stride, int col) {
+  unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  /* Rows (columns) closer than 16 elements overlap in memory: the answer is the
+     LAST write of the interpreter's loop (rows outer, columns inner), so lane 0
+     writes them in that order instead of racing. */
+  if (stride > -16 && stride < 16) {
+    if (lane == 0)
+      for (int r = 0; r < 16; ++r)
+        for (int c = 0; c < 16; ++c)
+          dst[col ? (long long)c * stride + r : (long long)r * stride + c] =
+              tile[col ? c * 16 + r : r * 16 + c];
+    return;
+  }
+  for (int j = 0; j < 8; ++j) {
+    unsigned t = lane + 32u * j;
+    dst[(long long)(t >> 4) * stride + (t & 15u)] = tile[t];
+  }
 }
 #endif
 
@@ -977,17 +1038,17 @@ __global__ void cm_i32(unsigned char* __restrict__ a, int sarek_a_length, unsign
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_a_i8(fa, a, (0), (16));
 #else
-  sarek_cm_require(((const unsigned char *)(a) + (0)), (16), 1); nvcuda::wmma::load_matrix_sync(fa, ((const unsigned char *)(a) + (0)), (16));
+  nvcuda::wmma::load_matrix_sync(fa, ((const unsigned char *)(a) + (0)), (16));
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_b_i8(fb, b, (0), (16));
 #else
-  sarek_cm_require(((const unsigned char *)(b) + (0)), (16), 1); nvcuda::wmma::load_matrix_sync(fb, ((const unsigned char *)(b) + (0)), (16));
+  nvcuda::wmma::load_matrix_sync(fb, ((const unsigned char *)(b) + (0)), (16));
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_acc_i32(fc, c, (0), (16));
 #else
-  sarek_cm_require(((const int *)(c) + (0)), (16), 4); nvcuda::wmma::load_matrix_sync(fc, ((const int *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
+  nvcuda::wmma::load_matrix_sync(fc, ((const int *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   fc = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(false, fa, false, fb, fc, false);
@@ -997,7 +1058,7 @@ __global__ void cm_i32(unsigned char* __restrict__ a, int sarek_a_length, unsign
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_store_acc_i32(fc, d, (0), (16));
 #else
-  sarek_cm_require(((int *)(d) + (0)), (16), 4); nvcuda::wmma::store_matrix_sync(((int *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
+  nvcuda::wmma::store_matrix_sync(((int *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
 #endif
 }
 }
@@ -1067,10 +1128,9 @@ EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL 
     .param .u32 param_sarek_d_length
 )
 {
-    .reg .u32 %r<20>;
-    .reg .u64 %rd<12>;
+    .reg .u32 %r<12>;
+    .reg .u64 %rd<8>;
     .reg .b32 %fr<12>;
-    .reg .pred %p<8>;
 
     ld.param.u64 %rd0, [param_a];
     ld.param.u32 %r0, [param_sarek_a_length];
@@ -1095,48 +1155,20 @@ EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL 
     mov.u32 %r4, 0;
     mov.u32 %r5, 16;
     mad.wide.u32 %rd4, %r4, 1, %rd0;
-    and.b64 %rd5, %rd4, 31;
-    setp.ne.u64 %p0, %rd5, 0;
-    mul.lo.u32 %r6, %r5, 1;
-    and.b32 %r7, %r6, 15;
-    setp.ne.u32 %p1, %r7, 0;
-    or.pred %p0, %p0, %p1;
-    @%p0 trap;
     wmma.load.a.sync.aligned.row.m16n16k16.global.u8 {%fr0, %fr1}, [%rd4], %r5;
+    mov.u32 %r6, 0;
+    mov.u32 %r7, 16;
+    mad.wide.u32 %rd5, %r6, 1, %rd1;
+    wmma.load.b.sync.aligned.row.m16n16k16.global.u8 {%fr2, %fr3}, [%rd5], %r7;
     mov.u32 %r8, 0;
     mov.u32 %r9, 16;
-    mad.wide.u32 %rd6, %r8, 1, %rd1;
-    and.b64 %rd7, %rd6, 31;
-    setp.ne.u64 %p2, %rd7, 0;
-    mul.lo.u32 %r10, %r9, 1;
-    and.b32 %r11, %r10, 15;
-    setp.ne.u32 %p3, %r11, 0;
-    or.pred %p2, %p2, %p3;
-    @%p2 trap;
-    wmma.load.b.sync.aligned.row.m16n16k16.global.u8 {%fr2, %fr3}, [%rd6], %r9;
-    mov.u32 %r12, 0;
-    mov.u32 %r13, 16;
-    mad.wide.u32 %rd8, %r12, 4, %rd2;
-    and.b64 %rd9, %rd8, 31;
-    setp.ne.u64 %p4, %rd9, 0;
-    mul.lo.u32 %r14, %r13, 4;
-    and.b32 %r15, %r14, 15;
-    setp.ne.u32 %p5, %r15, 0;
-    or.pred %p4, %p4, %p5;
-    @%p4 trap;
-    wmma.load.c.sync.aligned.row.m16n16k16.global.s32 {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, [%rd8], %r13;
+    mad.wide.u32 %rd6, %r8, 4, %rd2;
+    wmma.load.c.sync.aligned.row.m16n16k16.global.s32 {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, [%rd6], %r9;
     wmma.mma.sync.aligned.row.row.m16n16k16.s32.u8.u8.s32 {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, {%fr0, %fr1}, {%fr2, %fr3}, {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11};
-    mov.u32 %r16, 0;
-    mov.u32 %r17, 16;
-    mad.wide.u32 %rd10, %r16, 4, %rd3;
-    and.b64 %rd11, %rd10, 31;
-    setp.ne.u64 %p6, %rd11, 0;
-    mul.lo.u32 %r18, %r17, 4;
-    and.b32 %r19, %r18, 15;
-    setp.ne.u32 %p7, %r19, 0;
-    or.pred %p6, %p6, %p7;
-    @%p6 trap;
-    wmma.store.d.sync.aligned.row.m16n16k16.global.s32 [%rd10], {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, %r17;
+    mov.u32 %r10, 0;
+    mov.u32 %r11, 16;
+    mad.wide.u32 %rd7, %r10, 4, %rd3;
+    wmma.store.d.sync.aligned.row.m16n16k16.global.s32 [%rd7], {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, %r11;
     ret;
 }
 === S0 | cm_f32_8x8 | cuda-c (HIP, CUDA/C) ===
@@ -1657,8 +1689,53 @@ __device__ __forceinline__ void sarek_cm_store_acc_cm_i32(const sarek_cm_i8 &f, 
    launch that violates the precondition traps instead of computing on a
    misaligned fragment. */
 #include <mma.h>
+__device__ __forceinline__ bool sarek_cm_misaligned(const void *p, long long s, int bytes) {
+  return (((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0;
+}
 __device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int bytes) {
-  if ((((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0) __trap();
+  if (sarek_cm_misaligned(p, s, bytes)) __trap();
+}
+/* A STORE leaves the bare instruction when it is misaligned or when its rows
+   overlap in memory (|stride| < 16): the answer is then the last write of the
+   interpreter's loop, which a matrix-unit store does not promise. */
+__device__ __forceinline__ bool sarek_cm_store_unsafe(const void *p, long long s, int bytes) {
+  return sarek_cm_misaligned(p, s, bytes) || (s > -16 && s < 16);
+}
+__device__ __forceinline__ void sarek_cm_require_store(const void *p, long long s, int bytes) {
+  if (sarek_cm_store_unsafe(p, s, bytes)) __trap();
+}
+/* A misaligned access (not proven aligned at code generation, block known) copies
+   the 16x16 tile element by element through a 32-byte aligned per-warp buffer
+   in shared memory (sarek_cm_tiles, declared by the generator) and runs wmma on
+   the buffer with a leading dimension of 16: element t of the buffer is
+   index + (t / 16) * stride + (t % 16), in either layout. Lane l copies
+   t = l + 32 j, j < 8. */
+template <typename T>
+__device__ __forceinline__ void sarek_cm_stage_in(T *tile, const T *src, long long stride) {
+  unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  for (int j = 0; j < 8; ++j) {
+    unsigned t = lane + 32u * j;
+    tile[t] = src[(long long)(t >> 4) * stride + (t & 15u)];
+  }
+}
+template <typename T>
+__device__ __forceinline__ void sarek_cm_stage_out(T *dst, const T *tile, long long stride, int col) {
+  unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  /* Rows (columns) closer than 16 elements overlap in memory: the answer is the
+     LAST write of the interpreter's loop (rows outer, columns inner), so lane 0
+     writes them in that order instead of racing. */
+  if (stride > -16 && stride < 16) {
+    if (lane == 0)
+      for (int r = 0; r < 16; ++r)
+        for (int c = 0; c < 16; ++c)
+          dst[col ? (long long)c * stride + r : (long long)r * stride + c] =
+              tile[col ? c * 16 + r : r * 16 + c];
+    return;
+  }
+  for (int j = 0; j < 8; ++j) {
+    unsigned t = lane + 32u * j;
+    dst[(long long)(t >> 4) * stride + (t & 15u)] = tile[t];
+  }
 }
 #endif
 
@@ -1682,17 +1759,17 @@ __global__ void cm_f16(__half* __restrict__ a, int sarek_a_length, __half* __res
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_a_f16(fa, a, (0), (16));
 #else
-  sarek_cm_require(((const __half *)(a) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fa, ((const __half *)(a) + (0)), (16));
+  nvcuda::wmma::load_matrix_sync(fa, ((const __half *)(a) + (0)), (16));
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_b_f16(fb, b, (0), (16));
 #else
-  sarek_cm_require(((const __half *)(b) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fb, ((const __half *)(b) + (0)), (16));
+  nvcuda::wmma::load_matrix_sync(fb, ((const __half *)(b) + (0)), (16));
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_acc_f32(fc, c, (0), (16));
 #else
-  sarek_cm_require(((const float *)(c) + (0)), (16), 4); nvcuda::wmma::load_matrix_sync(fc, ((const float *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
+  nvcuda::wmma::load_matrix_sync(fc, ((const float *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   fc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(fa, fb, fc);
@@ -1702,7 +1779,7 @@ __global__ void cm_f16(__half* __restrict__ a, int sarek_a_length, __half* __res
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_store_acc_f32(fc, d, (0), (16));
 #else
-  sarek_cm_require(((float *)(d) + (0)), (16), 4); nvcuda::wmma::store_matrix_sync(((float *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
+  nvcuda::wmma::store_matrix_sync(((float *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
 #endif
 }
 }
@@ -2126,8 +2203,53 @@ __device__ __forceinline__ void sarek_cm_store_acc_cm_i32(const sarek_cm_i8 &f, 
    launch that violates the precondition traps instead of computing on a
    misaligned fragment. */
 #include <mma.h>
+__device__ __forceinline__ bool sarek_cm_misaligned(const void *p, long long s, int bytes) {
+  return (((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0;
+}
 __device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int bytes) {
-  if ((((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0) __trap();
+  if (sarek_cm_misaligned(p, s, bytes)) __trap();
+}
+/* A STORE leaves the bare instruction when it is misaligned or when its rows
+   overlap in memory (|stride| < 16): the answer is then the last write of the
+   interpreter's loop, which a matrix-unit store does not promise. */
+__device__ __forceinline__ bool sarek_cm_store_unsafe(const void *p, long long s, int bytes) {
+  return sarek_cm_misaligned(p, s, bytes) || (s > -16 && s < 16);
+}
+__device__ __forceinline__ void sarek_cm_require_store(const void *p, long long s, int bytes) {
+  if (sarek_cm_store_unsafe(p, s, bytes)) __trap();
+}
+/* A misaligned access (not proven aligned at code generation, block known) copies
+   the 16x16 tile element by element through a 32-byte aligned per-warp buffer
+   in shared memory (sarek_cm_tiles, declared by the generator) and runs wmma on
+   the buffer with a leading dimension of 16: element t of the buffer is
+   index + (t / 16) * stride + (t % 16), in either layout. Lane l copies
+   t = l + 32 j, j < 8. */
+template <typename T>
+__device__ __forceinline__ void sarek_cm_stage_in(T *tile, const T *src, long long stride) {
+  unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  for (int j = 0; j < 8; ++j) {
+    unsigned t = lane + 32u * j;
+    tile[t] = src[(long long)(t >> 4) * stride + (t & 15u)];
+  }
+}
+template <typename T>
+__device__ __forceinline__ void sarek_cm_stage_out(T *dst, const T *tile, long long stride, int col) {
+  unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  /* Rows (columns) closer than 16 elements overlap in memory: the answer is the
+     LAST write of the interpreter's loop (rows outer, columns inner), so lane 0
+     writes them in that order instead of racing. */
+  if (stride > -16 && stride < 16) {
+    if (lane == 0)
+      for (int r = 0; r < 16; ++r)
+        for (int c = 0; c < 16; ++c)
+          dst[col ? (long long)c * stride + r : (long long)r * stride + c] =
+              tile[col ? c * 16 + r : r * 16 + c];
+    return;
+  }
+  for (int j = 0; j < 8; ++j) {
+    unsigned t = lane + 32u * j;
+    dst[(long long)(t >> 4) * stride + (t & 15u)] = tile[t];
+  }
 }
 #endif
 
@@ -2151,17 +2273,17 @@ __global__ void cm_f16(__half* __restrict__ a, int sarek_a_length, __half* __res
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_a_f16(fa, a, (0), (16));
 #else
-  sarek_cm_require(((const __half *)(a) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fa, ((const __half *)(a) + (0)), (16));
+  nvcuda::wmma::load_matrix_sync(fa, ((const __half *)(a) + (0)), (16));
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_b_f16(fb, b, (0), (16));
 #else
-  sarek_cm_require(((const __half *)(b) + (0)), (16), 2); nvcuda::wmma::load_matrix_sync(fb, ((const __half *)(b) + (0)), (16));
+  nvcuda::wmma::load_matrix_sync(fb, ((const __half *)(b) + (0)), (16));
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_load_acc_f32(fc, c, (0), (16));
 #else
-  sarek_cm_require(((const float *)(c) + (0)), (16), 4); nvcuda::wmma::load_matrix_sync(fc, ((const float *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
+  nvcuda::wmma::load_matrix_sync(fc, ((const float *)(c) + (0)), (16), nvcuda::wmma::mem_row_major);
 #endif
 #if defined(__HIP_PLATFORM_AMD__)
   fc = __builtin_amdgcn_wmma_f32_16x16x16_f16_w32(fa, fb, fc);
@@ -2171,7 +2293,7 @@ __global__ void cm_f16(__half* __restrict__ a, int sarek_a_length, __half* __res
 #if defined(__HIP_PLATFORM_AMD__)
   sarek_cm_store_acc_f32(fc, d, (0), (16));
 #else
-  sarek_cm_require(((float *)(d) + (0)), (16), 4); nvcuda::wmma::store_matrix_sync(((float *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
+  nvcuda::wmma::store_matrix_sync(((float *)(d) + (0)), fc, (16), nvcuda::wmma::mem_row_major);
 #endif
 }
 }
