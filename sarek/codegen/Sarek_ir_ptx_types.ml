@@ -68,6 +68,10 @@ type reg_alloc = {
   mutable u64 : int;
   mutable f32 : int;
   mutable f16 : int;
+  mutable frag_b32 : int;
+      (** Counter of the [.b32] registers ([%fr<n>]) holding the f16x2 pairs of
+          a cooperative-matrix operand fragment: ptxas types [wmma] operands
+          strictly and refuses [.u32] registers there. *)
   mutable f64 : int;
   mutable pred : int;
   mutable label : int;
@@ -125,6 +129,7 @@ let make_alloc () =
     u64 = 0;
     f32 = 0;
     f16 = 0;
+    frag_b32 = 0;
     f64 = 0;
     pred = 0;
     label = 0;
@@ -181,6 +186,11 @@ let new_f64 a =
   let n = a.f64 in
   a.f64 <- n + 1 ;
   Printf.sprintf "%%fd%d" n
+
+let new_frag_b32 a =
+  let n = a.frag_b32 in
+  a.frag_b32 <- n + 1 ;
+  Printf.sprintf "%%fr%d" n
 
 let new_f16 a =
   let n = a.f16 in

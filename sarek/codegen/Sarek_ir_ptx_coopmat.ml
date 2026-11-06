@@ -231,8 +231,8 @@ let emit_decl buf alloc name (frag : C.fragment) =
         ( List.init 8 (fun _ -> new_f32 alloc),
           fun r -> emit buf "mov.f32 %s, 0F00000000;" r )
     | C.Matrix_a | C.Matrix_b ->
-        ( List.init 8 (fun _ -> new_u32 alloc),
-          fun r -> emit buf "mov.u32 %s, 0;" r )
+        ( List.init 8 (fun _ -> new_frag_b32 alloc),
+          fun r -> emit buf "mov.b32 %s, 0;" r )
   in
   List.iter zero regs ;
   Hashtbl.replace alloc.coop_frags name {cf_frag = frag; cf_regs = regs}
