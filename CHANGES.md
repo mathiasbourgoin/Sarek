@@ -21,7 +21,12 @@
   misaligned tile is staged element by element through a 32-byte aligned per-warp shared buffer
   (1 KiB per warp, declared only when an access is unproven), so results are the interpreter's for
   any index and stride, in either layout, for loads and stores (a store writes only its tile). With
-  no block known the trap remains. Test: `sarek/tests/e2e/test_coopmat_misalign_e2e.ml`.
+  no block known the trap remains. A kernel whose accesses depend on scalar arguments (a GEMM's `k`
+  and `n`) pays no buffer when the launch arguments are aligned: `Sarek_ir_coopmat_align.derive`
+  reduces "every access is aligned" to a condition on the kernel's int32 parameters (for the GEMM,
+  `k` and `n` multiples of 8), and `Execute` generates and runs the variant without check or buffer
+  when the actual arguments satisfy it, the staged variant otherwise (one source per variant and block;
+  CUDA frameworks only). Test: `sarek/tests/e2e/test_coopmat_misalign_e2e.ml`.
   Not yet executed on NVIDIA hardware.
 
 ## 2026-10

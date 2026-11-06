@@ -682,6 +682,9 @@ let rec gen_stmt st buf indent = function
       gen_expr st buf e ;
       Buffer.add_string buf ";\n" ;
       gen_stmt st buf indent body
+  | SPragma ([hint], body) when hint = Sarek_ir_coopmat_align.aligned_hint ->
+      (* read by [proven_ops]; not a C pragma *)
+      gen_stmt st buf indent body
   | SPragma (hints, body) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "#pragma " ;
