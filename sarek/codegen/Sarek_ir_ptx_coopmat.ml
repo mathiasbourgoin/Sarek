@@ -447,6 +447,10 @@ let emit_slow_path alloc ~label ~done_label (a : access) ~load ~wmma =
   let warp = new_u32 alloc and lane = new_u32 alloc in
   emit b "shr.u32 %s, %s, 5;" warp lin ;
   emit b "and.b32 %s, %s, 31;" lane lin ;
+  (* the buffer was sized for the block this source was generated for *)
+  let beyond = new_pred alloc in
+  emit b "setp.ge.u32 %s, %s, %d;" beyond warp warps ;
+  emit b "@%s trap;" beyond ;
   let tile = new_u32 alloc and tile_base = new_u32 alloc in
   emit b "mov.u32 %s, %s;" tile_base tile_name ;
   emit b "mad.lo.u32 %s, %s, %d, %s;" tile warp tile_bytes_per_warp tile_base ;
@@ -456,12 +460,12 @@ let emit_slow_path alloc ~label ~done_label (a : access) ~load ~wmma =
   let o0 = new_u32 alloc and i0 = new_u32 alloc in
   emit b "shr.u32 %s, %s, 4;" o0 lane ;
   emit b "and.b32 %s, %s, 15;" i0 lane ;
-  let off = new_u32 alloc in
-  emit b "mad.lo.s32 %s, %s, %s, %s;" off o0 a.stride a.index ;
-  emit b "add.s32 %s, %s, %s;" off off i0 ;
   let src, step =
     match a.space with
     | Some SpaceShared ->
+        let off = new_u32 alloc in
+        emit b "mad.lo.s32 %s, %s, %s, %s;" off o0 a.stride a.index ;
+        emit b "add.s32 %s, %s, %s;" off off i0 ;
         let offb = new_u32 alloc and src = new_u32 alloc in
         let step = new_u32 alloc in
         emit b "mul.lo.u32 %s, %s, %d;" offb off a.bytes ;
@@ -469,11 +473,20 @@ let emit_slow_path alloc ~label ~done_label (a : access) ~load ~wmma =
         emit b "mul.lo.u32 %s, %s, %d;" step a.stride (2 * a.bytes) ;
         (src, step)
     | Some SpaceLocal | None ->
-        let offb = new_u64 alloc and src = new_u64 alloc in
-        let step = new_u64 alloc in
-        emit b "mul.wide.u32 %s, %s, %d;" offb off a.bytes ;
+        (* signed 64-bit: a negative stride walks backwards inside the buffer,
+           and an offset past 2^31 elements does not wrap *)
+        let idx64 = new_u64 alloc and i64 = new_u64 alloc in
+        let off64 = new_u64 alloc and offb = new_u64 alloc in
+        let src = new_u64 alloc and step = new_u64 alloc in
+        let stride64 = new_u64 alloc in
+        emit b "cvt.s64.s32 %s, %s;" idx64 a.index ;
+        emit b "mad.wide.s32 %s, %s, %s, %s;" off64 o0 a.stride idx64 ;
+        emit b "cvt.u64.u32 %s, %s;" i64 i0 ;
+        emit b "add.s64 %s, %s, %s;" off64 off64 i64 ;
+        emit b "mul.lo.s64 %s, %s, %d;" offb off64 a.bytes ;
         emit b "add.u64 %s, %s, %s;" src a.base offb ;
-        emit b "mul.wide.u32 %s, %s, %d;" step a.stride (2 * a.bytes) ;
+        emit b "cvt.s64.s32 %s, %s;" stride64 a.stride ;
+        emit b "mul.lo.s64 %s, %s, %d;" step stride64 (2 * a.bytes) ;
         (src, step)
   in
   let lane_slot = new_u32 alloc in
