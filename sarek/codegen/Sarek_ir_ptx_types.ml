@@ -210,8 +210,8 @@ let new_label a =
 (** {1 Type mapping} *)
 
 (* [TUint8] is not a general 8-bit integer here: it is the element type of an
-   8-bit cooperative-matrix operand buffer, and this backend lowers only the
-   f16 cooperative-matrix configuration ({!Sarek_ir_ptx_coopmat}). *)
+   8-bit cooperative-matrix operand buffer ({!Sarek_ir_ptx_coopmat}): it can be
+   an array element (global or shared) but never a scalar register. *)
 let unsupported_coopmat_elttype what =
   unsupported
     (Printf.sprintf
@@ -497,7 +497,7 @@ let rec mov_binding buf ~src ~dst =
 
 let ptx_align_of_elttype = function
   | TFloat16 -> 2
-  | TUint8 -> unsupported_coopmat_elttype "align of uint8"
+  | TUint8 -> 1
   | TFloat32 | TInt32 | TBool -> 4
   | TFloat64 | TInt64 -> 8
   | TUnit -> 4
@@ -513,7 +513,7 @@ let shared_align alloc name elt =
 
 let ptx_btype_of_elttype = function
   | TFloat16 -> "b16"
-  | TUint8 -> unsupported_coopmat_elttype "btype of uint8"
+  | TUint8 -> "b8"
   | TFloat32 | TInt32 | TBool | TUnit -> "b32"
   | TFloat64 | TInt64 -> "b64"
   | TVec _ | TArray _ -> "b64"

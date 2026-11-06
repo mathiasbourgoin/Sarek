@@ -38,7 +38,10 @@ let buffer_elt = function
     [drop_c] never loads C, leaving the declared zero: the C-dropping control
     built from the same IR generator, so it takes the same path as the code it
     controls. *)
-let tile_ir ?(drop_c = false) ?(index = 0) ?(stride = 16) cfg : kernel =
+let tile_ir ?(drop_c = false) ?(index = 0) ?(stride = 16)
+    ?(la = Sarek_coopmat_types.Row_major) ?(lb = Sarek_coopmat_types.Row_major)
+    ?(lc = Sarek_coopmat_types.Row_major) ?(ld = Sarek_coopmat_types.Row_major)
+    cfg : kernel =
   let fa, fb, fc, fd = C.fragments_of_config cfg in
   let v id name elt =
     ( {var_name = name; var_id = id; var_type = TVec elt; var_mutable = false},
@@ -54,17 +57,8 @@ let tile_ir ?(drop_c = false) ?(index = 0) ?(stride = 16) cfg : kernel =
   in
   let k0 = EConst (CInt32 (Int32.of_int index))
   and k16 = EConst (CInt32 (Int32.of_int stride)) in
-  let load dst frag src =
-    SCoopmat
-      (CM_load
-         {
-           dst;
-           frag;
-           src;
-           index = k0;
-           stride = k16;
-           layout = Sarek_coopmat_types.Row_major;
-         })
+  let load dst frag src layout =
+    SCoopmat (CM_load {dst; frag; src; index = k0; stride = k16; layout})
   in
   let body =
     [
@@ -72,10 +66,10 @@ let tile_ir ?(drop_c = false) ?(index = 0) ?(stride = 16) cfg : kernel =
       SCoopmat (CM_decl {name = "fb"; frag = fb});
       SCoopmat (CM_decl {name = "fc"; frag = fc});
       SCoopmat (CM_decl {name = "fd"; frag = fd});
-      load "fa" fa "a";
-      load "fb" fb "b";
+      load "fa" fa "a" la;
+      load "fb" fb "b" lb;
     ]
-    @ (if drop_c then [] else [load "fc" fc "c"])
+    @ (if drop_c then [] else [load "fc" fc "c" lc])
     @ [
         SCoopmat (CM_muladd {dst = "fd"; a = "fa"; b = "fb"; c = "fc"; cfg});
         SCoopmat
@@ -86,7 +80,7 @@ let tile_ir ?(drop_c = false) ?(index = 0) ?(stride = 16) cfg : kernel =
                dst = "d";
                index = k0;
                stride = k16;
-               layout = Sarek_coopmat_types.Row_major;
+               layout = ld;
              });
       ]
   in

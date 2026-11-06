@@ -21,6 +21,7 @@ open Sarek_ir_ptx_types
     [unsupported]. *)
 
 let elt_shift = function
+  | TUint8 -> 0
   | TFloat16 -> 1
   | TFloat32 | TInt32 -> 2
   | TFloat64 | TInt64 -> 3

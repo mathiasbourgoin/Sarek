@@ -2022,6 +2022,7 @@
   test_lsr_unroll
   test_coopmat_hip_e2e
   test_ptx_coopmat_e2e
+  test_ptx_coopmat_int8_e2e
   test_coopmat_layout_e2e
   test_launch_window
   bench_launch_window
@@ -2049,6 +2050,7 @@
   test_lsr_unroll
   test_coopmat_hip_e2e
   test_ptx_coopmat_e2e
+  test_ptx_coopmat_int8_e2e
   test_coopmat_layout_e2e
   test_launch_window
   bench_launch_window
@@ -2174,6 +2176,15 @@
  (alias runtest)
  (action
   (run %{dep:test_ptx_coopmat_e2e.exe})))
+
+; 8-bit SCoopmat on CUDA/PTX (wmma s8/u8, sm_72+): host checks everywhere; the
+; device part runs on each CUDA/PTX device offering 8-bit coopmat and skips
+; otherwise, ZLUDA included. Built by the test_int32_bitcasts stanza.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_ptx_coopmat_int8_e2e.exe})))
 
 ; CM_load / CM_store layouts executed: every row/column-major combination of
 ; A, B, C and D on every device offering a configuration (HIP gfx11, Vulkan
