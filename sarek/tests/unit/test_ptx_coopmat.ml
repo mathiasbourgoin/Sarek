@@ -25,6 +25,13 @@ let check_has what ptx needles =
         Alcotest.failf "%s: expected %S in:\n%s" what needle ptx)
     needles
 
+let check_lacks what ptx needles =
+  List.iter
+    (fun needle ->
+      if contains ~needle ptx then
+        Alcotest.failf "%s: unexpected %S in:\n%s" what needle ptx)
+    needles
+
 let count ~needle s =
   let n = String.length needle and l = String.length s in
   let rec go i acc =
@@ -73,12 +80,13 @@ let k_int n = EConst (CInt32 (Int32.of_int n))
 
 (** One tile [d = a * b + c]; [la]/[lb]/[lc]/[ld] are the layouts of the loads
     and of the store. *)
-let tile ?(la = row) ?(lb = row) ?(lc = row) ?(ld = row) ?(a_buf = None)
-    (c : C.config) : kernel =
+let tile ?(index = 0) ?(stride = 16) ?(la = row) ?(lb = row) ?(lc = row)
+    ?(ld = row) ?(a_buf = None) (c : C.config) : kernel =
   let fa, fb, fc, fd = C.fragments_of_config c in
   let load dst frag src layout =
     SCoopmat
-      (CM_load {dst; frag; src; index = k_int 0; stride = k_int 16; layout})
+      (CM_load
+         {dst; frag; src; index = k_int index; stride = k_int stride; layout})
   in
   {
     default_kernel with
@@ -108,8 +116,8 @@ let tile ?(la = row) ?(lb = row) ?(lc = row) ?(ld = row) ?(a_buf = None)
                  src = "fd";
                  frag = fd;
                  dst = "d";
-                 index = k_int 0;
-                 stride = k_int 16;
+                 index = k_int index;
+                 stride = k_int stride;
                  layout = ld;
                });
         ];
@@ -145,8 +153,9 @@ let test_tile_text () =
       "wmma.load.c.sync.aligned.row.m16n16k16.global.f32 {";
       "wmma.mma.sync.aligned.row.row.m16n16k16.f32.f32 {";
       "wmma.store.d.sync.aligned.row.m16n16k16.global.f32 [";
-      "@%p0 trap;";
     ] ;
+  (* constants 0 and 16: proven aligned, so the bare instructions *)
+  check_lacks "proven tile" src ["trap"; "bra "; "sarek_cm_tiles"; ".shared"] ;
   (* Fragment register groups: the mma consumes exactly the groups the loads
      filled, and stores what it produced. *)
   let a = group_after src "wmma.load.a" and b = group_after src "wmma.load.b" in
@@ -220,7 +229,12 @@ let test_int8_text () =
     ] ;
   (* 1-byte elements: the stride check multiplies by 1, the address is not
      scaled. *)
-  check_has "u8 stride check" src ["mul.lo.u32 %r"; ", 1;"]
+  check_lacks "proven 8-bit tile" src ["trap"; "bra "; "sarek_cm_tiles"] ;
+  (* 1-byte elements: the unproven access multiplies the stride by 1 *)
+  check_has
+    "u8 stride check"
+    (ptx ~block:(32, 1, 1) (tile ~index:1 ~stride:17 u8_cfg))
+    ["mul.lo.u32 %r"; ", 1;"; "ld.global.u8"; "st.shared.u8"]
 
 let test_header_and_targets () =
   (* sm_70 is the first target with wmma; a suffix is ignored. *)
@@ -261,7 +275,7 @@ let test_gemm_snapshot () =
     bt
     ["wmma.mma.sync.aligned.row.col."; "wmma.load.b.sync.aligned.col."]
 
-let shared_acc_kernel () =
+let shared_acc_kernel ?(index = 0) () =
   let frag =
     {
       C.frag_use = C.Accumulator;
@@ -295,7 +309,7 @@ let shared_acc_kernel () =
                      dst = "f";
                      frag;
                      src = "s";
-                     index = k_int 0;
+                     index = k_int index;
                      stride = k_int 16;
                      layout = row;
                    });
@@ -313,7 +327,8 @@ let shared_acc_kernel () =
   }
 
 let test_shared () =
-  let src = ptx (shared_acc_kernel ()) in
+  (* index 1 is not provably aligned: the check is emitted *)
+  let src = ptx (shared_acc_kernel ~index:1 ()) in
   check_has
     "shared source"
     src
@@ -455,6 +470,176 @@ let test_parity () =
   Alcotest.(check int) "grid size" 512 !n ;
   Alcotest.(check int) "accepted configurations" (1 + 4) !accepted
 
+let index_after_ret src =
+  let needle = "    ret;\n" in
+  let n = String.length needle and l = String.length src in
+  let rec last i best =
+    if i + n > l then best
+    else last (i + 1) (if String.sub src i n = needle then i + n else best)
+  in
+  last 0 0
+
+(** {1 Misaligned accesses: static proof, trap, staging} *)
+
+module Align = Sarek_ir_coopmat_align
+
+let ivar ?(mutable_ = false) name =
+  {var_name = name; var_id = 0; var_type = TInt32; var_mutable = mutable_}
+
+let test_factor () =
+  let f ?(env = []) e = Align.factor env e in
+  let v name = EVar (ivar name) in
+  Alcotest.(check int) "16" 16 (f (k_int 16)) ;
+  Alcotest.(check int) "48 has factor 16" 16 (f (k_int 48)) ;
+  Alcotest.(check int) "1" 1 (f (k_int 1)) ;
+  Alcotest.(check bool) "0 is unbounded" true (f (k_int 0) >= 1 lsl 30) ;
+  Alcotest.(check int) "a parameter" 1 (f (v "k")) ;
+  Alcotest.(check int) "k * 16" 16 (f (EBinop (Mul, v "k", k_int 16))) ;
+  Alcotest.(check int)
+    "(k * 16) + 8"
+    8
+    (f (EBinop (Add, EBinop (Mul, v "k", k_int 16), k_int 8))) ;
+  Alcotest.(check int) "k << 5" 32 (f (EBinop (Shl, v "k", k_int 5))) ;
+  Alcotest.(check int) "k / 16 is unknown" 1 (f (EBinop (Div, v "k", k_int 16))) ;
+  Alcotest.(check int)
+    "a let-bound variable takes its definition's factor"
+    32
+    (f ~env:[("row0", 32)] (v "row0")) ;
+  Alcotest.(check int)
+    "a mutable variable is unknown"
+    1
+    (f ~env:[("m", 32)] (EVar (ivar ~mutable_:true "m")))
+
+let accessed_at ~index ~stride body_of =
+  let frag =
+    {
+      C.frag_use = C.Accumulator;
+      frag_shape = shape16;
+      frag_component = C.Float32;
+      frag_scope = C.Subgroup;
+    }
+  in
+  let load =
+    SCoopmat (CM_load {dst = "f"; frag; src = "c"; index; stride; layout = row})
+  in
+  body_of load
+
+let proven body = Align.proven_ops body <> []
+
+let test_proof_walk () =
+  let v name = EVar (ivar name) in
+  let base = EBinop (Mul, v "row0", k_int 4) in
+  let at body_of =
+    proven (accessed_at ~index:base ~stride:(k_int 16) body_of)
+  in
+  (* row0 bound by an immutable let to a multiple of 32: proven *)
+  Alcotest.(check bool)
+    "let-bound multiple"
+    true
+    (at (fun load -> SLet (ivar "row0", EBinop (Mul, v "w", k_int 32), load))) ;
+  (* the same name as a kernel parameter: unknown *)
+  Alcotest.(check bool) "parameter" false (at (fun load -> load)) ;
+  (* a for variable shadows the let-bound fact *)
+  Alcotest.(check bool)
+    "shadowed by a for variable"
+    false
+    (at (fun load ->
+         SLet
+           ( ivar "row0",
+             k_int 32,
+             SFor (ivar "row0", k_int 0, k_int 4, Upto, load) ))) ;
+  (* a mutable let is unknown *)
+  Alcotest.(check bool)
+    "mutable let"
+    false
+    (at (fun load -> SLetMut (ivar "row0", k_int 32, load))) ;
+  (* the stride decides too: a parameter stride is unproven *)
+  Alcotest.(check bool)
+    "parameter stride"
+    false
+    (proven (accessed_at ~index:(k_int 0) ~stride:(v "ld") (fun load -> load))) ;
+  (* f32 elements: stride 4 is 16 bytes, stride 2 is not *)
+  Alcotest.(check bool)
+    "f32 stride of 4 elements"
+    true
+    (proven (accessed_at ~index:(k_int 8) ~stride:(k_int 4) (fun l -> l))) ;
+  Alcotest.(check bool)
+    "f32 stride of 2 elements"
+    false
+    (proven (accessed_at ~index:(k_int 8) ~stride:(k_int 2) (fun l -> l))) ;
+  Alcotest.(check bool)
+    "f32 index of 4 elements is 16 bytes, not 32"
+    false
+    (proven (accessed_at ~index:(k_int 4) ~stride:(k_int 4) (fun l -> l)))
+
+let slow_blocks src =
+  (* everything after the kernel's final ret *)
+  let i = index_after_ret src in
+  String.sub src i (String.length src - i)
+
+let test_staging () =
+  let k = tile ~index:1 ~stride:17 f16_cfg in
+  let src = ptx ~block:(32, 1, 1) k in
+  check_has
+    "staged"
+    src
+    [
+      ".shared .align 32 .b8 sarek_cm_tiles[1024];";
+      "bra L";
+      "mov.u32 %r";
+      "bar.warp.sync 0xffffffff;";
+      "wmma.load.a.sync.aligned.row.m16n16k16.shared.f16 {";
+      "wmma.load.c.sync.aligned.row.m16n16k16.shared.f32 {";
+      "wmma.store.d.sync.aligned.row.m16n16k16.shared.f32 [";
+      "ld.global.b16";
+      "st.shared.b16";
+      "ld.shared.b32";
+      "st.global.b32";
+    ] ;
+  check_lacks "no trap with a known block" src ["trap"] ;
+  (* the direct instruction stays on the fall-through path, the staged one
+     lives after the final ret *)
+  let slow = slow_blocks src in
+  check_has "slow path out of line" slow ["wmma.load.a"; "bar.warp.sync"] ;
+  Alcotest.(check bool)
+    "no staging copy before the ret"
+    false
+    (contains
+       ~needle:"st.shared.b16"
+       (String.sub src 0 (String.length src - String.length slow))) ;
+  (* the buffer is sized from the block: 2 x 2 x 1 / 32 ... here 4 warps *)
+  check_has "four warps" (ptx ~block:(64, 2, 1) k) [".b8 sarek_cm_tiles[4096];"] ;
+  (* the 1-byte and 4-byte copies *)
+  let u8 = ptx ~block:(32, 1, 1) (tile ~index:1 ~stride:17 u8_cfg) in
+  check_has
+    "u8 copies"
+    u8
+    ["ld.global.u8"; "st.shared.u8"; "ld.shared.b32"; "st.global.b32"] ;
+  (* without a block no buffer can be sized: the trap *)
+  let trap = ptx k in
+  check_has "no block: trap" trap ["@%p"; " trap;"] ;
+  check_lacks "no block: no buffer" trap ["sarek_cm_tiles"; "bar.warp.sync"]
+
+let test_gemm_footprint () =
+  let t = Sarek_gemm.Coopmat.default_tiling in
+  let src = ptx ~block:(32 * t.waves, 1, 1) (Sarek_gemm.Coopmat.ir ()) in
+  (* every access of the GEMM takes its stride from a kernel parameter, so none
+     is provable: a staging buffer of one tile per warp *)
+  check_has
+    "GEMM staging buffer"
+    src
+    [Printf.sprintf ".b8 sarek_cm_tiles[%d];" (t.waves * 1024)] ;
+  Alcotest.(check int)
+    "one slow path per load and store"
+    (t.frags_m + t.frags_n + (2 * t.frags_m * t.frags_n))
+    (count ~needle:", sarek_cm_tiles;" src) ;
+  Printf.printf
+    "  GEMM %dx%d, %d warps: %d bytes of staging shared memory\n%!"
+    t.frags_m
+    t.frags_n
+    t.waves
+    (t.waves * 1024)
+
 (** {1 Kernels without cooperative matrices are unchanged} *)
 
 (* MD5 of the PTX of the f16 regression kernels, recorded from the generator
@@ -553,7 +738,15 @@ let test_ptxas () =
     let kernels =
       [
         ("tile row/row", tile f16_cfg);
+        ( "tile staged f16 (index 1, stride 17)",
+          tile ~index:1 ~stride:17 f16_cfg );
+        ( "tile staged col/col f16",
+          tile ~index:3 ~stride:19 ~la:col ~lb:col ~lc:col ~ld:col f16_cfg );
+        ("shared staged accumulator", shared_acc_kernel ~index:1 ());
         ("tile u8*u8+s32", tile u8_cfg);
+        ("tile u8 staged", tile ~index:1 ~stride:17 u8_cfg);
+        ( "tile s8 staged col/col",
+          tile ~index:5 ~stride:23 ~la:col ~lb:col ~lc:col ~ld:col s8_cfg );
         ("tile s8*s8+u32", tile s8_cfg);
         ("tile s8 col/col", tile ~la:col ~lb:col ~lc:col ~ld:col s8_cfg);
         ("tile col/col", tile ~la:col ~lb:col ~lc:col ~ld:col f16_cfg);
@@ -581,7 +774,9 @@ let test_ptxas () =
                 in
                 if is_8bit && sm < 72 then ()
                 else
-                  match assemble (ptx ~sm_target:target k) with
+                  match
+                    assemble (ptx ~block:(64, 1, 1) ~sm_target:target k)
+                  with
                   | Ok () -> Printf.printf "  ptxas OK: %s (%s)\n%!" name target
                   | Error err ->
                       Alcotest.failf
@@ -606,6 +801,13 @@ let () =
           Alcotest.test_case "shared source" `Quick test_shared;
         ] );
       ("refusals", [Alcotest.test_case "unsupported" `Quick test_refusals]);
+      ( "misalignment",
+        [
+          Alcotest.test_case "alignment factor" `Quick test_factor;
+          Alcotest.test_case "proof walk" `Quick test_proof_walk;
+          Alcotest.test_case "staging" `Quick test_staging;
+          Alcotest.test_case "GEMM footprint" `Quick test_gemm_footprint;
+        ] );
       ("parity", [Alcotest.test_case "same cases as CUDA/C" `Quick test_parity]);
       ( "unchanged",
         [Alcotest.test_case "no coopmat: byte-identical" `Quick test_unchanged]
