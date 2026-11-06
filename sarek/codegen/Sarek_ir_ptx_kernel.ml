@@ -391,17 +391,6 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
     ptx_version
     sm_target
 
-(* The cooperative-matrix gate: a per-node refusal names whichever node the
-   emitter happened to reach, and a [TUint8] operand buffer that is only ever
-   stored to reaches none. It also covers helper bodies, which [emit_stmt]
-   visits through a different entry. *)
-let reject_coopmat_kernel (k : kernel) : unit =
-  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
-    Sarek_ir_ptx_types.unsupported
-      "kernel-level cooperative-matrix usage: cooperative matrices and their \
-       uint8 operand buffers are emitted only by the Vulkan and CUDA/HIP \
-       backends (backlog-62)"
-
 (** Generate PTX for a single kernel. Three-phase: (1) emit body to count
     registers, (2) build header with correct register counts, (3) concatenate.
     @param sm_target Override the default [sm_86] target for older hardware.
@@ -413,8 +402,10 @@ let reject_coopmat_kernel (k : kernel) : unit =
       to before. *)
 let generate ?(sm_target = "sm_86") ?(soa_params = []) ?block (k : kernel) :
     string =
-  reject_coopmat_kernel k ;
+  Sarek_ir_ptx_coopmat.check_kernel ~sm_target ?block k ;
   let alloc = make_alloc () in
+  if Sarek_ir_analysis.kernel_has_coopmat_op k then
+    alloc.coop_layouts <- Sarek_ir_ptx_coopmat.operand_layouts k ;
   List.iter
     (fun hf ->
       (* The __sarek_ prefix is reserved for emitter-internal helpers (e.g.

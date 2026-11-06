@@ -19,6 +19,22 @@ open Sarek_ir_ptx_types
     unsupported element types. *)
 val elt_shift : elttype -> int
 
+(** PTX state-space word of an array's accesses: ["shared"], ["local"] or
+    ["global"] for [None]. *)
+val space_qualifier : arr_space option -> string
+
+(** [emit_elt_addr buf alloc r_base r_idx elt_type ~space] emits the element
+    byte-address arithmetic and returns the address register: 32-bit for
+    [Some SpaceShared], 64-bit otherwise. [r_idx] must be an int32 register. *)
+val emit_elt_addr :
+  Buffer.t ->
+  reg_alloc ->
+  string ->
+  string ->
+  elttype ->
+  space:arr_space option ->
+  string
+
 (** [emit_array_read buf alloc r_base r_idx elt_type ~space] emits a
     pointer-arithmetic sequence followed by a typed load and returns the
     destination register name. [Some SpaceShared] uses 32-bit pointer arithmetic

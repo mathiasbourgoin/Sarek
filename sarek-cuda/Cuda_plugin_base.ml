@@ -79,8 +79,8 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
         (* backlog-62: no cooperative-matrix probe here. [None] is "not
            probed", which Sarek_coopmat.verdict maps to Unknown and therefore
            refuses; an empty list would be a positive claim nobody measured.
-           CUDA/C overrides it with {!Cuda_coopmat.support}; CUDA/PTX has no
-           coopmat lowering and keeps this. *)
+           Both CUDA backends override it with {!Cuda_coopmat.support}, each
+           for what its own lowering emits. *)
         coopmat = None;
         supports_atomics = true;
         warp_size = d.warp_size;

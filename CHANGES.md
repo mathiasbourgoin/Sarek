@@ -1,3 +1,19 @@
+## 2026-11
+
+### Added
+
+- CUDA/PTX lowers `SCoopmat` to `wmma.load/mma/store` (tensor cores, PTX ISA 6.0, sm_70+), so the
+  default CUDA backend reaches the matrix units the CUDA/C backend already reached through
+  `nvcuda::wmma`. Same cases as CUDA/C for f16 operands with an f32 accumulator (16x16x16, subgroup
+  scope, any row/column layout); 8-bit operands (`wmma` s8/u8) are not lowered yet and are refused by
+  name; bf16 is refused as on CUDA/C. The generated code traps on a misaligned address or stride, as
+  CUDA/C does. `Cuda_coopmat.support_for ~lowering:Ptx` is the probe the CUDA/PTX plugin now
+  reports (compute capability 7.0 or later, 32-wide warps, never on ZLUDA, which rejects `wmma`).
+  Kernels without cooperative matrices emit byte-identical PTX. Tests: `sarek/tests/unit/test_ptx_coopmat.ml`
+  (snapshots, refusals, parity with CUDA/C, ptxas gate that skips without ptxas) and
+  `sarek/tests/e2e/test_ptx_coopmat_e2e.ml` (differential, needs an NVIDIA GPU; skips elsewhere).
+  Not yet executed on NVIDIA hardware.
+
 ## 2026-10
 
 ### Fixed

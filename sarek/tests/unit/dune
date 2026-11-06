@@ -168,6 +168,15 @@
  (modules test_ptx_snapshot)
  (libraries sarek.codegen ptx_f16_kernels alcotest unix str))
 
+; Cooperative matrices in the PTX backend (wmma.*): snapshots, refusals, parity
+; with the CUDA/C lowering, byte-identity of kernels without coopmat, and a
+; ptxas gate that skips without ptxas. CPU-only.
+
+(test
+ (name test_ptx_coopmat)
+ (modules test_ptx_coopmat)
+ (libraries sarek.codegen sarek.gemm ptx_f16_kernels alcotest unix str))
+
 ; float16 in the PTX backend: the IR kernels (shared with the ptxas gate in
 ; test_ptx_snapshot) and the structural tests over their PTX.
 

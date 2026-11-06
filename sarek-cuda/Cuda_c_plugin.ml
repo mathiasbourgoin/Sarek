@@ -27,8 +27,8 @@ module Backend : Framework_sig.BACKEND = struct
 
   let execution_model = Framework_sig.JIT
 
-  (* Only this backend lowers [SCoopmat] (nvcuda::wmma, {!Cuda_coopmat}); the
-     PTX backend refuses it, so it keeps the base's "not probed". *)
+  (* [SCoopmat] lowers to nvcuda::wmma ({!Cuda_coopmat}); CUDA/PTX has its own
+     lowering and reports the f16 subset of this probe. *)
   module Device = struct
     include Device
 

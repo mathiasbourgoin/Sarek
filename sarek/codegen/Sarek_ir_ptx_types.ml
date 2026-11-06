@@ -54,6 +54,13 @@ type arr_space = SpaceShared | SpaceLocal
     [~soa_params]; consumed by the aggregate load/store paths. *)
 type soa_leaf = {sl_field : string; sl_type : elttype; sl_base : string}
 
+(** A declared cooperative-matrix fragment: the registers the warp's lanes each
+    hold for it. PTX fixes the per-lane register group of a [wmma] fragment, so
+    the group is the fragment: an f16 operand is 8 [.b32] registers (f16x2), an
+    f32 accumulator 8 [.f32] registers (PTX ISA, "Matrix fragments for wmma",
+    m16n16k16). *)
+type coop_frag = {cf_frag : Sarek_coopmat_types.fragment; cf_regs : string list}
+
 (** Counter-based register allocator. Each PTX type has an independent counter
     so that register names stay readable (e.g. %r0, %f0, %rd0). *)
 type reg_alloc = {
@@ -97,6 +104,15 @@ type reg_alloc = {
       (** Per-inline (result binding, end label); SReturn inside an inlined body
           writes the binding (if any) and branches to the label instead of
           emitting [ret]. *)
+  coop_frags : (string, coop_frag) Hashtbl.t;
+      (** Cooperative-matrix fragments declared so far, by name (a later
+          declaration of the same name replaces the earlier one). Empty for
+          every kernel without an [SCoopmat] statement. *)
+  mutable coop_layouts : (string * Sarek_coopmat_types.layout) list;
+      (** The one layout each operand fragment is loaded in, by name, over the
+          whole kernel: a [wmma.mma] names the layouts of A and B, which the
+          instruction does not infer. Set by [generate]; empty without coopmat.
+      *)
 }
 
 let make_alloc () =
@@ -118,6 +134,8 @@ let make_alloc () =
     inline_stack = [];
     inline_budget = Hashtbl.create 4;
     inline_ret = [];
+    coop_frags = Hashtbl.create 4;
+    coop_layouts = [];
   }
 
 (** [arr_space_of alloc name] is the registered non-global state space of array
@@ -176,15 +194,15 @@ let new_label a =
 
 (** {1 Type mapping} *)
 
-(* [TUint8] is not a general 8-bit integer here: it is the element type of a
-   cooperative-matrix operand buffer, meaningful only alongside the [SCoopmat]
-   statements the Vulkan backend emits. *)
+(* [TUint8] is not a general 8-bit integer here: it is the element type of an
+   8-bit cooperative-matrix operand buffer, and this backend lowers only the
+   f16 cooperative-matrix configuration ({!Sarek_ir_ptx_coopmat}). *)
 let unsupported_coopmat_elttype what =
   unsupported
     (Printf.sprintf
-       "%s: uint8 is a cooperative-matrix operand element type, emitted only \
-        by the Vulkan and CUDA/HIP backends, and the PTX backend has no \
-        cooperative-matrix path"
+       "%s: uint8 is an 8-bit cooperative-matrix operand element type, emitted \
+        only by the Vulkan and CUDA/HIP backends; the PTX backend lowers f16 \
+        cooperative matrices only"
        what)
 
 let ptx_reg_type_of = function

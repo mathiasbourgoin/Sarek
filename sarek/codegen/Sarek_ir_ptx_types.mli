@@ -62,6 +62,11 @@ type arr_space = SpaceShared | SpaceLocal
     buffer). *)
 type soa_leaf = {sl_field : string; sl_type : elttype; sl_base : string}
 
+(** A declared cooperative-matrix fragment: the registers each lane holds for it
+    (PTX fixes the group: 8 [.b32] registers for an f16 operand, 8 [.f32] for an
+    f32 accumulator at m16n16k16). *)
+type coop_frag = {cf_frag : Sarek_coopmat_types.fragment; cf_regs : string list}
+
 (** Counter-based register allocator. Each PTX type has an independent counter
     so that register names stay readable (e.g. [%r0], [%f0], [%rd0]). *)
 type reg_alloc = {
@@ -100,6 +105,13 @@ type reg_alloc = {
           have no entry and recursive re-entry stays an error. *)
   mutable inline_ret : (binding option * string) list;
       (** Per-inline (result binding, end label) for SReturn lowering. *)
+  coop_frags : (string, coop_frag) Hashtbl.t;
+      (** Cooperative-matrix fragments declared so far, by name. Empty for every
+          kernel without an [SCoopmat] statement. *)
+  mutable coop_layouts : (string * Sarek_coopmat_types.layout) list;
+      (** The one layout each operand fragment is loaded in, by name, over the
+          whole kernel. Set by [generate]; empty without cooperative matrices.
+      *)
 }
 
 (** [make_alloc ()] returns a fresh zeroed allocator. *)

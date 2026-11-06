@@ -97,6 +97,42 @@ let test_gate () =
     (permits (support (8, 8)) u8) ;
   Alcotest.(check bool) "sm_61 refuses u8" false (permits (support (6, 1)) u8)
 
+(* CUDA/PTX reports the f16 subset: its lowering has no 8-bit wmma yet. *)
+let ptx_support ?(device_name = "NVIDIA GeForce RTX 2080 Super")
+    ?(warp_size = 32) cc =
+  P.support_for ~lowering:P.Ptx ~device_name ~compute_capability:cc ~warp_size
+
+let test_ptx () =
+  let s = ptx_support (7, 5) in
+  Alcotest.(check bool) "sm_75: f16*f16+f32" true (permits s f16) ;
+  Alcotest.(check bool) "sm_75: no 8-bit" false (permits s u8) ;
+  Alcotest.(check bool)
+    "sm_80: no 8-bit"
+    false
+    (permits (ptx_support (8, 0)) u8) ;
+  Alcotest.(check bool) "sm_70: f16" true (permits (ptx_support (7, 0)) f16) ;
+  Alcotest.(check bool)
+    "sm_61: nothing"
+    false
+    (permits (ptx_support (6, 1)) f16) ;
+  Alcotest.(check bool)
+    "wave64: nothing"
+    false
+    (permits (ptx_support ~warp_size:64 (8, 0)) f16) ;
+  Alcotest.(check bool)
+    "ZLUDA: nothing (rejects wmma.*)"
+    false
+    (permits (ptx_support ~device_name:"gfx1100 [ZLUDA]" (8, 8)) f16) ;
+  Alcotest.(check bool)
+    "evidence names CUDA/PTX"
+    true
+    (String.length s.C.ds_evidence >= 9
+    && String.sub s.C.ds_evidence 0 9 = "CUDA/PTX:") ;
+  Alcotest.(check bool)
+    "CUDA/C rule unchanged on sm_75 (still offers 8-bit)"
+    true
+    (permits (support (7, 5)) u8 && permits (support (7, 5)) f16)
+
 let () =
   Alcotest.run
     "cuda_coopmat_probe"
@@ -107,5 +143,6 @@ let () =
           Alcotest.test_case "thresholds" `Quick test_thresholds;
           Alcotest.test_case "refused" `Quick test_refused;
           Alcotest.test_case "launch gate" `Quick test_gate;
+          Alcotest.test_case "CUDA/PTX" `Quick test_ptx;
         ] );
     ]
