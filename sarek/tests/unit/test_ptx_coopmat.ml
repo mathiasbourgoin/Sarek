@@ -596,7 +596,11 @@ let test_staging () =
       "ld.shared.b32";
       "st.global.b32";
     ] ;
-  check_lacks "no trap with a known block" src ["trap"] ;
+  (* the only trap with a known block is the slow path's warp bound *)
+  Alcotest.(check int)
+    "one trap per slow path (warp bound), none on the fast path"
+    (count ~needle:"bra L" (slow_blocks src))
+    (count ~needle:"trap" src) ;
   (* the direct instruction stays on the fall-through path, the staged one
      lives after the final ret *)
   let slow = slow_blocks src in
@@ -639,6 +643,83 @@ let test_gemm_footprint () =
     t.frags_n
     t.waves
     (t.waves * 1024)
+
+(* Review findings: one node under several bindings is proven only if every
+   occurrence is; a signed (possibly negative) stride in the global staging; a
+   launch with more warps than the buffer holds traps; a CUDA/C operand that is
+   not an array parameter is never proven. *)
+let test_review_findings () =
+  let frag =
+    {
+      C.frag_use = C.Accumulator;
+      frag_shape = shape16;
+      frag_component = C.Float32;
+      frag_scope = C.Subgroup;
+    }
+  in
+  let v name = EVar (ivar name) in
+  let load =
+    SCoopmat
+      (CM_load
+         {
+           dst = "f";
+           frag;
+           src = "c";
+           index = EBinop (Mul, v "row0", k_int 4);
+           stride = k_int 16;
+           layout = row;
+         })
+  in
+  let op = match load with SCoopmat op -> op | _ -> assert false in
+  (* the same node under an aligned and an unaligned binding *)
+  let body =
+    SSeq [SLet (ivar "row0", k_int 32, load); SLet (ivar "row0", k_int 1, load)]
+  in
+  Alcotest.(check bool)
+    "one aligned occurrence is not enough"
+    false
+    (Align.is_proven (Align.proven_ops body) op) ;
+  Alcotest.(check bool)
+    "all occurrences aligned"
+    true
+    (Align.is_proven
+       (Align.proven_ops
+          (SSeq
+             [
+               SLet (ivar "row0", k_int 32, load);
+               SLet (ivar "row0", k_int 64, load);
+             ]))
+       op) ;
+  (* signed 64-bit global staging *)
+  let staged = ptx ~block:(32, 1, 1) (tile ~index:1 ~stride:17 f16_cfg) in
+  check_has
+    "signed staging"
+    staged
+    ["cvt.s64.s32"; "mad.wide.s32"; "mul.lo.s64"; "add.s64"] ;
+  check_lacks "no unsigned stride step" (slow_blocks staged) ["mul.wide.u32"] ;
+  (* more warps than the buffer holds *)
+  check_has "warp bound" staged ["setp.ge.u32"; ", 1;"] ;
+  check_has
+    "two-warp block"
+    (ptx ~block:(64, 1, 1) (tile ~index:1 ~stride:17 f16_cfg))
+    ["setp.ge.u32 %p"; ", 2;"] ;
+  (* CUDA/C: a shared source is never proven (its base is not declared 32-byte
+     aligned there), and the tile function checks the warp *)
+  let cu =
+    Sarek_ir_cuda.generate_with_types
+      ~block:(64, 1, 1)
+      ~types:[]
+      (shared_acc_kernel ~index:0 ())
+  in
+  check_has
+    "CUDA/C shared source staged"
+    cu
+    ["if (sarek_cm_misaligned(((const float *)(s)"; "if (w >= 2) __trap();"] ;
+  (* the same constants on an array parameter are proven *)
+  let proven =
+    Sarek_ir_cuda.generate_with_types ~block:(64, 1, 1) ~types:[] (tile f16_cfg)
+  in
+  check_lacks "parameter: proven" proven ["sarek_cm_tiles["]
 
 (** {1 Launch-time variant: derived predicate, marked kernel} *)
 
@@ -965,6 +1046,7 @@ let () =
           Alcotest.test_case "staging" `Quick test_staging;
           Alcotest.test_case "GEMM footprint" `Quick test_gemm_footprint;
           Alcotest.test_case "derived predicate" `Quick test_derive;
+          Alcotest.test_case "review findings" `Quick test_review_findings;
           Alcotest.test_case
             "aligned variant: no buffer"
             `Quick

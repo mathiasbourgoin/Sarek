@@ -181,6 +181,9 @@ type context = {
       (** element types of the kernel's array parameters and shared arrays *)
   operand_layouts : (string * operand_layout) list;
   shared : string list;  (** the kernel's [.shared] arrays *)
+  globals : string list;
+      (** the kernel's array parameters: the only operands whose base is known
+          to be 32-byte aligned (device allocations) *)
   mutable proven : coopmat_op list;
       (** the loads and stores proven aligned ({!Sarek_ir_coopmat_align}), set
           by the generator for the body it emits; physical identity *)
@@ -227,6 +230,15 @@ let shared_arrays (k : kernel) =
     k.kern_locals
   @ declared
 
+(** The kernel's array parameters. *)
+let global_arrays (k : kernel) =
+  List.filter_map
+    (function
+      | DParam (v, Some _) -> Some v.var_name
+      | DParam ({var_type = TVec _; var_name; _}, None) -> Some var_name
+      | DParam _ | DLocal _ | DShared _ -> None)
+    k.kern_params
+
 (** What the [SCoopmat] arm needs from the kernel it is emitting. [block] is the
     launch block when it is known. *)
 let kernel_context ?block (k : kernel) =
@@ -234,6 +246,7 @@ let kernel_context ?block (k : kernel) =
     buffers = kernel_buffers k;
     operand_layouts = operand_layouts k;
     shared = shared_arrays k;
+    globals = global_arrays k;
     proven = [];
     warps = Option.map (fun (bx, by, bz) -> bx * by * bz / 32) block;
     tiles_used = false;
@@ -255,10 +268,12 @@ let tiles_declaration (ctx : context) =
          __device__ __forceinline__ unsigned char *sarek_cm_tile() {\n\
         \  unsigned w = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z \
          * blockDim.x * blockDim.y) >> 5;\n\
+        \  if (w >= %d) __trap();\n\
         \  return sarek_cm_tiles + w * %d;\n\
          }\n\
          #endif\n"
         (warps * tile_bytes_per_warp)
+        warps
         tile_bytes_per_warp
   | _ -> ""
 
@@ -439,8 +454,7 @@ let cuda_mem_layout = function
 let guarded ~(ctx : context) ~op ~buf ~(frag : C.fragment) ~ptr ~stride ~direct
     ~staged =
   let proven =
-    (not (List.mem buf ctx.shared))
-    && Sarek_ir_coopmat_align.is_proven ctx.proven op
+    List.mem buf ctx.globals && Sarek_ir_coopmat_align.is_proven ctx.proven op
   in
   let bytes = cuda_elt_bytes frag.C.frag_component in
   if proven then direct

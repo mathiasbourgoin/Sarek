@@ -92,12 +92,13 @@ let is_marked (body : stmt) =
     variant ({!mark_aligned}). *)
 let proven_ops (body : stmt) : coopmat_op list =
   let assume = is_marked body in
-  let found = ref [] in
+  let found = ref [] and refuted = ref [] in
   let rec walk env = function
     | SCoopmat (CM_load {frag; index; stride; _} as op)
     | SCoopmat (CM_store {frag; index; stride; _} as op) ->
         if assume || access_is_proven env ~frag ~index ~stride then
           found := op :: !found
+        else refuted := op :: !refuted
     | SCoopmat (CM_decl _ | CM_muladd _) -> ()
     | SSeq ss -> List.iter (walk env) ss
     | SIf (_, a, b) ->
@@ -123,7 +124,9 @@ let proven_ops (body : stmt) : coopmat_op list =
         ()
   in
   walk [] body ;
-  !found
+  (* One node can sit under several bindings (a shared IR value): it is proven
+     only if every occurrence is. *)
+  List.filter (fun op -> not (List.exists (fun r -> r == op) !refuted)) !found
 
 (** Whether [op] is one of the [proven] operations (physical identity). *)
 let is_proven proven op = List.exists (fun p -> p == op) proven
