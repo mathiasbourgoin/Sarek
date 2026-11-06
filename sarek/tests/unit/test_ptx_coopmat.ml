@@ -282,7 +282,27 @@ let test_shared () =
       "wmma.load.c.sync.aligned.row.m16n16k16.shared.f32 {";
       "and.b32";
       "wmma.store.d.sync.aligned.row.m16n16k16.global.f32 [";
-    ]
+    ] ;
+  (* A shared array a coopmat statement accesses is declared 32-byte aligned
+     (wmma's requirement), on both declaration paths (SLet-bound, and DShared);
+     one it does not access keeps its element alignment. *)
+  check_has "SLet-bound shared" src [".shared .align 32 .b32 s[256];"] ;
+  let k = shared_acc_kernel () in
+  let declared =
+    {
+      k with
+      kern_locals =
+        [
+          DShared ("s", TFloat32, Some (k_int 256));
+          DShared ("t", TFloat32, Some (k_int 64));
+        ];
+      kern_body = (match k.kern_body with SLet (_, _, body) -> body | b -> b);
+    }
+  in
+  check_has
+    "DShared"
+    (ptx declared)
+    [".shared .align 32 .b32 s[256];"; ".shared .align 4 .b32 t[64];"]
 
 (** {1 Refusals} *)
 

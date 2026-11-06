@@ -85,7 +85,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
         alloc.shared_decls
         (Printf.sprintf
            "    .shared .align %d .%s %s[%d];\n"
-           (ptx_align_of_elttype elt)
+           (shared_align alloc v.var_name elt)
            (ptx_btype_of_elttype elt)
            v.var_name
            n) ;

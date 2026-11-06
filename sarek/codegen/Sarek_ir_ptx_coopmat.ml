@@ -30,8 +30,9 @@
     ([sarek_cm_require]): the element address is 32-byte aligned and
     [stride * element bytes] is a multiple of 16, otherwise the kernel executes
     [trap]. [wmma.load]/[wmma.store] are undefined on a misaligned address; a
-    trap is preferable to wrong results. A [.shared] array is aligned only as
-    its declaration says, so loading from one is subject to the same check.
+    trap is preferable to wrong results. A [.shared] array a cooperative-matrix
+    statement accesses is declared 32-byte aligned, so only a misaligned offset
+    into it traps.
 
     {b What is validated where.} Text and refusals: unit tests, any machine. The
     instructions are checked by [ptxas] where it is installed. Execution needs
@@ -127,6 +128,18 @@ let operand_layouts (k : kernel) : (string * C.layout) list =
                 loaded both row- and column-major"
                name))
     (Sarek_ir_cuda_coopmat.operand_layouts k)
+
+(** The arrays a load or store of the kernel accesses. A [.shared] one among
+    them is declared 32-byte aligned ({!Sarek_ir_ptx_types.shared_align}), so a
+    tile at index 0 passes the address check whatever its neighbours are. *)
+let accessed_buffers (k : kernel) : string list =
+  List.filter_map
+    (function
+      | CM_load {src; _} -> Some src
+      | CM_store {dst; _} -> Some dst
+      | CM_decl _ | CM_muladd _ -> None)
+    (Sarek_ir_analysis.kernel_coopmat_ops k)
+  |> List.sort_uniq String.compare
 
 (** {1 Kernel-level gate} *)
 
