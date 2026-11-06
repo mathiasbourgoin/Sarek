@@ -74,6 +74,10 @@ type reg_alloc = {
   mutable u64 : int;
   mutable f32 : int;
   mutable f16 : int;
+  mutable frag_b32 : int;
+      (** Counter of the [.b32] registers ([%fr<n>]) holding the f16x2 pairs of
+          a cooperative-matrix operand fragment: ptxas types [wmma] operands
+          strictly and refuses [.u32] registers there. *)
   mutable f64 : int;
   mutable pred : int;
   mutable label : int;
@@ -152,6 +156,10 @@ val new_f64 : reg_alloc -> string
 (** Allocate a fresh [.b16] register holding a binary16 value and return its PTX
     name ([%hN]). *)
 val new_f16 : reg_alloc -> string
+
+(** Allocate a fresh [.b32] register ([%frN]) for a cooperative-matrix operand
+    fragment (an f16x2 pair). *)
+val new_frag_b32 : reg_alloc -> string
 
 (** Allocate a fresh [.pred] register and return its PTX name ([%pN]). *)
 val new_pred : reg_alloc -> string

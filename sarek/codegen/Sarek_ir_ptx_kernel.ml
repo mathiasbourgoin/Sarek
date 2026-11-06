@@ -374,6 +374,8 @@ let emit_reg_decls buf alloc =
      it is untyped bits, so no f16 arithmetic is implied (and none is emitted). *)
   if alloc.f16 > 0 then Printf.bprintf buf "    .reg .b16 %%h<%d>;\n" alloc.f16 ;
   if alloc.f64 > 0 then Printf.bprintf buf "    .reg .f64 %%fd<%d>;\n" alloc.f64 ;
+  if alloc.frag_b32 > 0 then
+    Printf.bprintf buf "    .reg .b32 %%fr<%d>;\n" alloc.frag_b32 ;
   if alloc.pred > 0 then
     Printf.bprintf buf "    .reg .pred %%p<%d>;\n" alloc.pred
 
