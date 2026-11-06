@@ -16,7 +16,8 @@
  *      stores; an operand loaded in both layouts is a named #error on CUDA.
  *   2. Every helper takes a 64-bit stride.
  *   3. GLSL: [gl_CooperativeMatrixLayoutColumnMajor].
- *   4. OpenCL, Metal, WGSL and PTX refuse a column-major load.
+ *   4. OpenCL, Metal and WGSL refuse a column-major load.
+ *   5. PTX lowers it: wmma.load / wmma.store take the layout.
  ******************************************************************************)
 
 open Sarek_ir_types
@@ -234,8 +235,20 @@ let test_refusals () =
   in
   refuse "OpenCL" (Sarek_ir_opencl.generate_with_types ~types:[]) ;
   refuse "Metal" (Sarek_ir_metal.generate_with_types ~types:[]) ;
-  refuse "WGSL" (Sarek_ir_wgsl.generate_with_types ~types:[]) ;
-  refuse "PTX" (fun k -> Sarek_ir_ptx.generate_with_types ~types:[] k)
+  refuse "WGSL" (Sarek_ir_wgsl.generate_with_types ~types:[])
+
+(* PTX takes the layout as a [.row] / [.col] qualifier of every wmma access. *)
+let test_ptx_layouts () =
+  let k = tile ~la:c ~lb:c ~lc:c ~ld:c u8 in
+  let src = Sarek_ir_ptx.generate_with_types ~types:[] k in
+  check_contains
+    "PTX"
+    ~needle:"wmma.load.b.sync.aligned.col.m16n16k16.global.u8"
+    src ;
+  check_contains
+    "PTX"
+    ~needle:"wmma.store.d.sync.aligned.col.m16n16k16.global.s32"
+    src
 
 let () =
   Alcotest.run
@@ -255,4 +268,5 @@ let () =
         ] );
       ("glsl", [Alcotest.test_case "column-major" `Quick test_glsl]);
       ("refusals", [Alcotest.test_case "no coopmat" `Quick test_refusals]);
+      ("ptx", [Alcotest.test_case "column-major" `Quick test_ptx_layouts]);
     ]

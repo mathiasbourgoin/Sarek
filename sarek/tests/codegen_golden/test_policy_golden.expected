@@ -1090,7 +1090,101 @@ void main() {
 === S0 | cm_i32 | wgsl ===
 EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL backend has no cooperative-matrix path; cooperative matrices and their uint8 operand buffers are emitted only by the Vulkan and CUDA/HIP backends (backlog-62)
 === S0 | cm_i32 | ptx (CUDA/PTX) ===
-EXN Sarek_codegen.Sarek_ir_ptx_types.Ptx_codegen_error("PTX codegen: unsupported construct: cooperative matrix: integer fragment: the PTX backend lowers f16 operands with an f32 accumulator only; 8-bit operands with a 32-bit integer accumulator (wmma.*.s8/u8, sm_72) are not lowered yet, although the CUDA/C backend lowers them")
+.version 8.0
+.target sm_86
+.address_size 64
+
+.entry cm_i32(
+    .param .u64 param_a,
+    .param .u32 param_sarek_a_length,
+    .param .u64 param_b,
+    .param .u32 param_sarek_b_length,
+    .param .u64 param_c,
+    .param .u32 param_sarek_c_length,
+    .param .u64 param_d,
+    .param .u32 param_sarek_d_length
+)
+{
+    .reg .u32 %r<20>;
+    .reg .u64 %rd<20>;
+    .reg .b32 %fr<12>;
+    .reg .pred %p<8>;
+
+    ld.param.u64 %rd0, [param_a];
+    ld.param.u32 %r0, [param_sarek_a_length];
+    ld.param.u64 %rd1, [param_b];
+    ld.param.u32 %r1, [param_sarek_b_length];
+    ld.param.u64 %rd2, [param_c];
+    ld.param.u32 %r2, [param_sarek_c_length];
+    ld.param.u64 %rd3, [param_d];
+    ld.param.u32 %r3, [param_sarek_d_length];
+    mov.b32 %fr0, 0;
+    mov.b32 %fr1, 0;
+    mov.b32 %fr2, 0;
+    mov.b32 %fr3, 0;
+    mov.b32 %fr4, 0;
+    mov.b32 %fr5, 0;
+    mov.b32 %fr6, 0;
+    mov.b32 %fr7, 0;
+    mov.b32 %fr8, 0;
+    mov.b32 %fr9, 0;
+    mov.b32 %fr10, 0;
+    mov.b32 %fr11, 0;
+    mov.u32 %r4, 0;
+    mov.u32 %r5, 16;
+    cvt.u64.u32 %rd4, %r4;
+    shl.b64 %rd5, %rd4, 0;
+    add.u64 %rd6, %rd0, %rd5;
+    and.b64 %rd7, %rd6, 31;
+    setp.ne.u64 %p0, %rd7, 0;
+    mul.lo.u32 %r6, %r5, 1;
+    and.b32 %r7, %r6, 15;
+    setp.ne.u32 %p1, %r7, 0;
+    or.pred %p0, %p0, %p1;
+    @%p0 trap;
+    wmma.load.a.sync.aligned.row.m16n16k16.global.u8 {%fr0, %fr1}, [%rd6], %r5;
+    mov.u32 %r8, 0;
+    mov.u32 %r9, 16;
+    cvt.u64.u32 %rd8, %r8;
+    shl.b64 %rd9, %rd8, 0;
+    add.u64 %rd10, %rd1, %rd9;
+    and.b64 %rd11, %rd10, 31;
+    setp.ne.u64 %p2, %rd11, 0;
+    mul.lo.u32 %r10, %r9, 1;
+    and.b32 %r11, %r10, 15;
+    setp.ne.u32 %p3, %r11, 0;
+    or.pred %p2, %p2, %p3;
+    @%p2 trap;
+    wmma.load.b.sync.aligned.row.m16n16k16.global.u8 {%fr2, %fr3}, [%rd10], %r9;
+    mov.u32 %r12, 0;
+    mov.u32 %r13, 16;
+    cvt.u64.u32 %rd12, %r12;
+    shl.b64 %rd13, %rd12, 2;
+    add.u64 %rd14, %rd2, %rd13;
+    and.b64 %rd15, %rd14, 31;
+    setp.ne.u64 %p4, %rd15, 0;
+    mul.lo.u32 %r14, %r13, 4;
+    and.b32 %r15, %r14, 15;
+    setp.ne.u32 %p5, %r15, 0;
+    or.pred %p4, %p4, %p5;
+    @%p4 trap;
+    wmma.load.c.sync.aligned.row.m16n16k16.global.s32 {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, [%rd14], %r13;
+    wmma.mma.sync.aligned.row.row.m16n16k16.s32.u8.u8.s32 {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, {%fr0, %fr1}, {%fr2, %fr3}, {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11};
+    mov.u32 %r16, 0;
+    mov.u32 %r17, 16;
+    cvt.u64.u32 %rd16, %r16;
+    shl.b64 %rd17, %rd16, 2;
+    add.u64 %rd18, %rd3, %rd17;
+    and.b64 %rd19, %rd18, 31;
+    setp.ne.u64 %p6, %rd19, 0;
+    mul.lo.u32 %r18, %r17, 4;
+    and.b32 %r19, %r18, 15;
+    setp.ne.u32 %p7, %r19, 0;
+    or.pred %p6, %p6, %p7;
+    @%p6 trap;
+    wmma.store.d.sync.aligned.row.m16n16k16.global.s32 [%rd18], {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, %r17;
+    ret;
+}
 === S0 | cm_f32_8x8 | cuda-c (HIP, CUDA/C) ===
 EXN [CUDA Codegen] Unsupported construct 'cooperative-matrix shape': CUDA/HIP: only 16x16x16 is lowered (RDNA3 WMMA and nvcuda::wmma m16n16k16); got 8x8x8
 === S0 | cm_f32_8x8 | opencl ===

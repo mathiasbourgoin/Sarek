@@ -97,7 +97,7 @@ let test_gate () =
     (permits (support (8, 8)) u8) ;
   Alcotest.(check bool) "sm_61 refuses u8" false (permits (support (6, 1)) u8)
 
-(* CUDA/PTX reports the f16 subset: its lowering has no 8-bit wmma yet. *)
+(* CUDA/PTX reports the same configurations as CUDA/C. *)
 let ptx_support ?(device_name = "NVIDIA GeForce RTX 2080 Super")
     ?(warp_size = 32) cc =
   P.support_for ~lowering:P.Ptx ~device_name ~compute_capability:cc ~warp_size
@@ -105,11 +105,21 @@ let ptx_support ?(device_name = "NVIDIA GeForce RTX 2080 Super")
 let test_ptx () =
   let s = ptx_support (7, 5) in
   Alcotest.(check bool) "sm_75: f16*f16+f32" true (permits s f16) ;
-  Alcotest.(check bool) "sm_75: no 8-bit" false (permits s u8) ;
+  Alcotest.(check bool) "sm_75: u8*u8+s32" true (permits s u8) ;
   Alcotest.(check bool)
-    "sm_80: no 8-bit"
+    "sm_75: s8*s8+u32"
+    true
+    (permits s (cfg C.Sint8 C.Sint8 C.Uint32)) ;
+  Alcotest.(check bool)
+    "sm_75: mixed-sign 8-bit is refused"
     false
-    (permits (ptx_support (8, 0)) u8) ;
+    (permits s (cfg C.Uint8 C.Sint8 C.Sint32)) ;
+  Alcotest.(check bool)
+    "sm_70: f16 but no 8-bit"
+    false
+    (permits (ptx_support (7, 0)) u8) ;
+  Alcotest.(check bool) "sm_72: 8-bit" true (permits (ptx_support (7, 2)) u8) ;
+  Alcotest.(check bool) "sm_80: 8-bit" true (permits (ptx_support (8, 0)) u8) ;
   Alcotest.(check bool) "sm_70: f16" true (permits (ptx_support (7, 0)) f16) ;
   Alcotest.(check bool)
     "sm_61: nothing"
