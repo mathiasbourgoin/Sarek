@@ -3,8 +3,9 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(** The CUDA/C cooperative-matrix probe (specs/coopmat-hip-wmma.md,
-    specs/matrix-pattern-rewrite.md).
+(** The CUDA cooperative-matrix probe (specs/coopmat-hip-wmma.md,
+    specs/matrix-pattern-rewrite.md), shared by the CUDA/C and CUDA/PTX
+    backends.
 
     The CUDA driver has no query that lists matrix-instruction configurations,
     so the probe is a rule over two facts it does report: the compute capability
@@ -36,6 +37,11 @@ let config a b acc =
 
 let f16_configs = [config C.Float16 C.Float16 C.Float32]
 
+(** Which CUDA backend the probe answers for. *)
+type lowering = Cuda_c | Ptx
+
+let lowering_name = function Cuda_c -> "CUDA/C" | Ptx -> "CUDA/PTX"
+
 (* Both accumulator signednesses: a 32-bit wrapping sum has the same bits
    either way, and the lowering accepts both. *)
 let int8_configs =
@@ -59,16 +65,20 @@ let is_zluda ~device_name ~compute_capability =
   in
   at 0 || compute_capability = (8, 8)
 
-(** [support ~device_name ~compute_capability ~warp_size] is the rule, separated
-    from the device record so a test can drive it with any device's facts. *)
-let support ~device_name ~compute_capability:(major, minor) ~warp_size =
+(** [support_for ~lowering ~device_name ~compute_capability ~warp_size] is the
+    rule, separated from the device record so a test can drive it with any
+    device's facts. [Ptx] drops the 8-bit family. *)
+let support_for ~lowering ~device_name ~compute_capability:(major, minor)
+    ~warp_size =
   let at_least (m, n) = (major, minor) >= (m, n) in
   let zluda = is_zluda ~device_name ~compute_capability:(major, minor) in
+  let who = lowering_name lowering in
+  let int8 = match lowering with Cuda_c -> at_least (7, 2) | Ptx -> false in
   let configs =
     if warp_size <> 32 || zluda then []
     else
       (if at_least (7, 0) then f16_configs else [])
-      @ if at_least (7, 2) then int8_configs else []
+      @ if int8 then int8_configs else []
   in
   {
     C.ds_configs = configs;
@@ -78,20 +88,29 @@ let support ~device_name ~compute_capability:(major, minor) ~warp_size =
     ds_evidence =
       (if configs <> [] then
          Printf.sprintf
-           "CUDA/C: compute capability %d.%d, %d-wide warps: nvcuda::wmma \
-            16x16x16"
+           "%s: compute capability %d.%d, %d-wide warps: %s 16x16x16"
+           who
            major
            minor
            warp_size
+           (match lowering with
+           | Cuda_c -> "nvcuda::wmma"
+           | Ptx -> "wmma.* instructions")
        else if zluda then
-         "CUDA/C: ZLUDA rejects wmma.* and unsigned 8-bit mma (the module does \
-          not load); the rewrite is not offered there"
+         Printf.sprintf
+           "%s: ZLUDA rejects wmma.* and unsigned 8-bit mma (the module does \
+            not load); the rewrite is not offered there"
+           who
        else
          Printf.sprintf
-           "CUDA/C: nvcuda::wmma needs compute capability 7.0 (f16) or 7.2 \
-            (8-bit) and 32-wide warps; this device reports %d.%d and warp size \
-            %d"
+           "%s: wmma needs compute capability 7.0 (f16)%s and 32-wide warps; \
+            this device reports %d.%d and warp size %d"
+           who
+           (match lowering with Cuda_c -> " or 7.2 (8-bit)" | Ptx -> "")
            major
            minor
            warp_size);
   }
+
+(** The CUDA/C rule. *)
+let support = support_for ~lowering:Cuda_c

@@ -30,6 +30,7 @@
   Sarek_ir_ptx_mem
   Sarek_ir_softmath
   Sarek_ir_ptx_expr
+  Sarek_ir_ptx_coopmat
   Sarek_ir_ptx_stmt
   Sarek_ir_ptx_kernel)
  (preprocess no_preprocessing)

@@ -16,8 +16,11 @@
     (gfx1100) against the interpreter: bit-identical for the integer
     configurations, within the derived bound for f16. The NVIDIA arm is
     compile-checked only (NVRTC, and ptxas/nvdisasm when present): no NVIDIA GPU
-    was available, and the CUDA backend does not probe [coopmat], so the launch
-    gate refuses it before this code is ever compiled for a device. *)
+    was available to run it. The CUDA/C backend does probe [coopmat]
+    ([Cuda_coopmat.support]: f16 from sm_70, 8-bit from sm_72, never on ZLUDA),
+    so on an NVIDIA device the launch gate admits what this arm emits. The
+    CUDA/PTX backend does not use this module: it lowers to [wmma.*]
+    instructions itself ({!Sarek_ir_ptx_coopmat}), for the f16 subset. *)
 
 open Sarek_ir_types
 module C = Sarek_coopmat_types

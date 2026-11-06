@@ -30,6 +30,25 @@ module Backend : Framework_sig.BACKEND = struct
 
   let execution_model = Framework_sig.JIT
 
+  (* Cooperative matrices lower to [wmma.*] ({!Sarek_ir_ptx_coopmat}); the
+     probe is the CUDA/C one restricted to what PTX lowers. *)
+  module Device = struct
+    include Device
+
+    let capabilities (d : t) : Framework_sig.capabilities =
+      let caps = capabilities d in
+      {
+        caps with
+        Framework_sig.coopmat =
+          Some
+            (Cuda_coopmat.support_for
+               ~lowering:Cuda_coopmat.Ptx
+               ~device_name:(name d)
+               ~compute_capability:caps.Framework_sig.compute_capability
+               ~warp_size:caps.Framework_sig.warp_size);
+      }
+  end
+
   (* A located [Ptx_codegen_error] (its string message carries the unsupported
      IR node) is allowed to PROPAGATE so callers surface it, rather than being
      converted to [None] and re-raised by Execute as the opaque
