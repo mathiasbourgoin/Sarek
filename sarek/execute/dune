@@ -33,6 +33,7 @@
   Launch_epilogue
   Matrix_admission
   Matrix_specialise
+  Coopmat_variant
   Execute
   Execute_error
   Soa_launch)

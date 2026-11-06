@@ -640,6 +640,163 @@ let test_gemm_footprint () =
     t.waves
     (t.waves * 1024)
 
+(** {1 Launch-time variant: derived predicate, marked kernel} *)
+
+let int_param name =
+  DParam
+    ({var_name = name; var_id = 0; var_type = TInt32; var_mutable = false}, None)
+
+(* [tile] with the start index and stride read from the kernel parameters
+   [off] and [ld]. *)
+let tile_with_params (c : C.config) : kernel =
+  let k = tile c in
+  let var name = EVar (ivar name) in
+  let rec subst = function
+    | SSeq ss -> SSeq (List.map subst ss)
+    | SCoopmat (CM_load r) ->
+        SCoopmat (CM_load {r with index = var "off"; stride = var "ld"})
+    | SCoopmat (CM_store r) ->
+        SCoopmat (CM_store {r with index = var "off"; stride = var "ld"})
+    | st -> st
+  in
+  {
+    k with
+    kern_params = k.kern_params @ [int_param "off"; int_param "ld"];
+    kern_body = subst k.kern_body;
+  }
+
+let atoms = function
+  | Some [conj] -> conj
+  | Some p -> Alcotest.failf "expected one conjunction, got %d" (List.length p)
+  | None -> Alcotest.fail "no predicate derived"
+
+let test_derive () =
+  (* f16 GEMM: A and B are f16 (index multiple of 16, stride multiple of 8
+     elements), C and D f32 (8 and 4); k and n are the strides *)
+  let gemm = atoms (Align.derive (Sarek_gemm.Coopmat.ir ())) in
+  Alcotest.(check (list (pair string int)))
+    "GEMM: k and n multiples of 8"
+    [("k", 8); ("n", 8)]
+    gemm ;
+  let p = Option.get (Align.derive (Sarek_gemm.Coopmat.ir ())) in
+  let holds k n = Align.holds p [("k", k); ("n", n); ("m", 64)] in
+  Alcotest.(check bool) "k = n = 64" true (holds 64 64) ;
+  Alcotest.(check bool) "k = 24, n = 40" true (holds 24 40) ;
+  Alcotest.(check bool) "k = 12" false (holds 12 64) ;
+  Alcotest.(check bool) "n = 20" false (holds 64 20) ;
+  Alcotest.(check bool) "a missing argument" false (Align.holds p [("k", 64)]) ;
+  (* a tile whose index and stride are parameters *)
+  let tp = Option.get (Align.derive (tile_with_params f16_cfg)) in
+  let ok off ld = Align.holds tp [("off", off); ("ld", ld)] in
+  Alcotest.(check bool) "off 0, ld 16" true (ok 0 16) ;
+  Alcotest.(check bool) "off 32, ld 24" true (ok 32 24) ;
+  Alcotest.(check bool) "off 1" false (ok 1 16) ;
+  Alcotest.(check bool) "off 8 (f16: 16 bytes)" false (ok 8 16) ;
+  Alcotest.(check bool) "ld 17" false (ok 0 17) ;
+  Alcotest.(check bool) "ld 4 (f16: 8 bytes)" false (ok 0 4) ;
+  (* 8-bit: off multiple of 32, ld multiple of 16 *)
+  let u8p = Option.get (Align.derive (tile_with_params u8_cfg)) in
+  Alcotest.(check bool)
+    "u8: off 32, ld 16"
+    true
+    (Align.holds u8p [("off", 32); ("ld", 16)]) ;
+  Alcotest.(check bool)
+    "u8: off 16"
+    false
+    (Align.holds u8p [("off", 16); ("ld", 16)]) ;
+  (* a proven kernel needs no condition *)
+  Alcotest.(check bool)
+    "constants: always true"
+    true
+    (Align.derive (tile f16_cfg) = Some [[]]) ;
+  (* an index the rules cannot reduce: no predicate, always staged *)
+  let unknown =
+    let k = tile_with_params f16_cfg in
+    let rec subst = function
+      | SSeq ss -> SSeq (List.map subst ss)
+      | SCoopmat (CM_load r) ->
+          SCoopmat
+            (CM_load {r with index = EBinop (Div, EVar (ivar "off"), k_int 2)})
+      | st -> st
+    in
+    {k with kern_body = subst k.kern_body}
+  in
+  Alcotest.(check bool) "unreducible" true (Align.derive unknown = None) ;
+  (* a let-bound multiple and a shadowing loop variable *)
+  let with_let name_in_for =
+    let k = tile_with_params f16_cfg in
+    let row0 = ivar "row0" in
+    let rec subst = function
+      | SSeq ss -> SSeq (List.map subst ss)
+      | SCoopmat (CM_load r) ->
+          SCoopmat (CM_load {r with index = EVar row0; stride = k_int 16})
+      | SCoopmat (CM_store r) ->
+          SCoopmat (CM_store {r with index = EVar row0; stride = k_int 16})
+      | st -> st
+    in
+    let body = subst k.kern_body in
+    let inner =
+      if name_in_for then SFor (row0, k_int 0, k_int 2, Upto, body) else body
+    in
+    {
+      k with
+      kern_body = SLet (row0, EBinop (Mul, EVar (ivar "off"), k_int 16), inner);
+    }
+  in
+  Alcotest.(check bool)
+    "let-bound off * 16: always aligned for f16 (16 elements = 32 bytes)"
+    true
+    (Align.derive (with_let false) = Some [[]]) ;
+  Alcotest.(check bool)
+    "shadowed by a for variable: unknown"
+    true
+    (Align.derive (with_let true) = None)
+
+let test_marked_variant () =
+  List.iter
+    (fun (t : Sarek_gemm.Coopmat.tiling) ->
+      List.iter
+        (fun b_layout ->
+          let ir = Sarek_gemm.Coopmat.ir ~tiling:t ~b_layout () in
+          let marked = Align.mark_aligned ir in
+          let block = (32 * t.waves, 1, 1) in
+          let src = ptx ~block marked in
+          check_lacks
+            "marked GEMM, PTX"
+            src
+            ["sarek_cm_tiles"; "trap"; ".shared"; "bar.warp.sync"] ;
+          check_has "marked GEMM, PTX" src ["wmma.mma.sync"] ;
+          let cu = Sarek_ir_cuda.generate_with_types ~block ~types:[] marked in
+          check_lacks
+            "marked GEMM, CUDA/C"
+            cu
+            [
+              "sarek_cm_tiles[";
+              "if (sarek_cm_misaligned(((";
+              "sarek_cm_require(((";
+            ] ;
+          (* the same kernel unmarked keeps the staged variant *)
+          let staged = ptx ~block ir in
+          check_has
+            "unmarked GEMM, PTX"
+            staged
+            [Printf.sprintf ".b8 sarek_cm_tiles[%d];" (t.waves * 1024)])
+        [C.Row_major; C.Col_major])
+    Sarek_gemm.Coopmat.
+      [
+        default_tiling;
+        {frags_m = 1; frags_n = 1; waves = 1};
+        {frags_m = 2; frags_n = 1; waves = 2};
+        {frags_m = 4; frags_n = 2; waves = 4};
+      ] ;
+  (* a marked kernel is a distinct value and marking is idempotent *)
+  let ir = Sarek_gemm.Coopmat.ir () in
+  let m = Align.mark_aligned ir in
+  Alcotest.(check bool) "distinct" true (m != ir) ;
+  Alcotest.(check bool) "idempotent" true (Align.mark_aligned m == m) ;
+  Alcotest.(check bool) "marked" true (Align.is_marked m.kern_body) ;
+  Alcotest.(check bool) "original unmarked" false (Align.is_marked ir.kern_body)
+
 (** {1 Kernels without cooperative matrices are unchanged} *)
 
 (* MD5 of the PTX of the f16 regression kernels. Recorded from the generator
@@ -812,6 +969,11 @@ let () =
           Alcotest.test_case "proof walk" `Quick test_proof_walk;
           Alcotest.test_case "staging" `Quick test_staging;
           Alcotest.test_case "GEMM footprint" `Quick test_gemm_footprint;
+          Alcotest.test_case "derived predicate" `Quick test_derive;
+          Alcotest.test_case
+            "aligned variant: no buffer"
+            `Quick
+            test_marked_variant;
         ] );
       ("parity", [Alcotest.test_case "same cases as CUDA/C" `Quick test_parity]);
       ( "unchanged",
