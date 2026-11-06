@@ -569,16 +569,26 @@ let test_ptxas () =
         | Error _ ->
             Printf.printf "  SKIP: local ptxas does not accept %s\n%!" target
         | Ok () ->
+            let sm =
+              Option.value (Sarek_ir_ptx_coopmat.sm_number target) ~default:0
+            in
             List.iter
               (fun (name, k) ->
-                match assemble (ptx ~sm_target:target k) with
-                | Ok () -> Printf.printf "  ptxas OK: %s (%s)\n%!" name target
-                | Error err ->
-                    Alcotest.failf
-                      "ptxas rejected %s at %s:\n%s"
-                      name
-                      target
-                      err)
+                (* 8-bit wmma starts at sm_72: the generator refuses it below *)
+                let is_8bit =
+                  (String.length name >= 7 && String.sub name 0 7 = "tile u8")
+                  || (String.length name >= 7 && String.sub name 0 7 = "tile s8")
+                in
+                if is_8bit && sm < 72 then ()
+                else
+                  match assemble (ptx ~sm_target:target k) with
+                  | Ok () -> Printf.printf "  ptxas OK: %s (%s)\n%!" name target
+                  | Error err ->
+                      Alcotest.failf
+                        "ptxas rejected %s at %s:\n%s"
+                        name
+                        target
+                        err)
               kernels)
       ["sm_70"; "sm_75"; "sm_80"; "sm_86"; "sm_90"]
 
