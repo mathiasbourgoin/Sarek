@@ -170,11 +170,15 @@ type metrics = {
   ldg : int;
   constant : int;
   in_flight : int;
+  imad : int;
+  imad_wide : int;
+  lea : int;
   sass_lines : int;
 }
 
 let analyse_sass sass registers =
   let ldg = ref 0 and constant = ref 0 in
+  let imad = ref 0 and imad_wide = ref 0 and lea = ref 0 in
   let run = ref 0 and best = ref 0 in
   let cut () =
     best := max !best !run ;
@@ -185,6 +189,10 @@ let analyse_sass sass registers =
       if starts_with (String.trim line) ".L_" then cut ()
       else
         match opcode line with
+        | Some op when starts_with op "IMAD" ->
+            incr imad ;
+            if starts_with op "IMAD.WIDE" then incr imad_wide
+        | Some op when starts_with op "LEA" -> incr lea
         | Some op when starts_with op "LDG" ->
             incr ldg ;
             incr run ;
@@ -201,6 +209,9 @@ let analyse_sass sass registers =
     ldg = !ldg;
     constant = !constant;
     in_flight = !best;
+    imad = !imad;
+    imad_wide = !imad_wide;
+    lea = !lea;
     sass_lines = List.length (lines sass);
   }
 
@@ -236,11 +247,16 @@ let compile label ptx =
 
 let print_row label m =
   Printf.printf
-    "  %-34s LDG %3d  CONSTANT %3d  in flight %3d  SASS lines %5d  %s\n%!"
+    "  %-34s LDG %3d  CONSTANT %3d  in flight %3d  IMAD %4d (WIDE %3d)  LEA \
+     %4d  SASS lines %5d  %s\n\
+     %!"
     label
     m.ldg
     m.constant
     m.in_flight
+    m.imad
+    m.imad_wide
+    m.lea
     m.sass_lines
     m.registers
 
@@ -256,7 +272,7 @@ let () =
     if not nvrtc then print_endline "(libnvrtc absent: no NVRTC column)" ;
     List.iter
       (fun (name, kernel, streaming, all_constant) ->
-        let ir = ir_of kernel in
+        let ir = kernel in
         let spoc =
           Sarek_codegen.Sarek_ir_ptx.generate
             ~sm_target:"sm_75"
@@ -299,10 +315,14 @@ let () =
                m_spoc.constant
                m_spoc.ldg))
       [
-        ("dot (runtime-trip while, 2 loads)", dot, true, true);
-        ("quantised matvec (6 loads)", quantised, true, true);
-        ("for loop with a runtime bound", for_dot, true, true);
-        ("staging through shared memory", staging, false, false);
+        ("dot (runtime-trip while, 2 loads)", ir_of dot, true, true);
+        ("quantised matvec (6 loads)", ir_of quantised, true, true);
+        ("for loop with a runtime bound", ir_of for_dot, true, true);
+        ("staging through shared memory", ir_of staging, false, false);
+        ( "staged matvec, horizontally fused",
+          Staged_kernels.fused (),
+          false,
+          false );
       ] ;
     match !failures with
     | [] -> ()
