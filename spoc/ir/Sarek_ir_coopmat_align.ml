@@ -80,6 +80,20 @@ let tile_bytes (f : C.fragment) = 256 * element_bytes f
     bare instruction; every other consumer ignores a pragma. *)
 let aligned_hint = "sarek.coopmat_aligned"
 
+(** Pragma hint of the {e checked} variant: no static proof is used, every
+    access is tested at run time (and staged when misaligned). Selected when a
+    launch argument's base pointer is not 32-byte aligned, which every static
+    proof otherwise assumes. *)
+let checked_hint = "sarek.coopmat_checked"
+
+let is_checked (body : stmt) =
+  let rec go = function
+    | SPragma (hints, _) when List.mem checked_hint hints -> true
+    | SPragma (_, s) | SBlock s -> go s
+    | _ -> false
+  in
+  go body
+
 let is_marked (body : stmt) =
   let rec go = function
     | SPragma (hints, _) when List.mem aligned_hint hints -> true
@@ -93,40 +107,43 @@ let is_marked (body : stmt) =
 let proven_ops (body : stmt) : coopmat_op list =
   let assume = is_marked body in
   let found = ref [] and refuted = ref [] in
-  let rec walk env = function
-    | SCoopmat (CM_load {frag; index; stride; _} as op)
-    | SCoopmat (CM_store {frag; index; stride; _} as op) ->
-        if assume || access_is_proven env ~frag ~index ~stride then
-          found := op :: !found
-        else refuted := op :: !refuted
-    | SCoopmat (CM_decl _ | CM_muladd _) -> ()
-    | SSeq ss -> List.iter (walk env) ss
-    | SIf (_, a, b) ->
-        walk env a ;
-        Option.iter (walk env) b
-    | SWhile (_, s) | SPragma (_, s) | SBlock s -> walk env s
-    | SFor (v, _, _, _, s) -> walk ((v.var_name, 1) :: env) s
-    | SLet (v, e, s) -> walk ((v.var_name, factor env e) :: env) s
-    | SLetMut (v, _, s) -> walk ((v.var_name, 1) :: env) s
-    | SMatch (_, arms) ->
-        List.iter
-          (fun (pat, s) ->
-            let env =
-              match pat with
-              | PConstr (_, names) ->
-                  List.fold_left (fun env n -> (n, 1) :: env) env names
-              | PWild -> env
-            in
-            walk env s)
-          arms
-    | SAssign _ | SReturn _ | SBarrier | SWarpBarrier | SExpr _ | SEmpty
-    | SMemFence | SNative _ ->
-        ()
-  in
-  walk [] body ;
-  (* One node can sit under several bindings (a shared IR value): it is proven
+  if is_checked body then []
+  else begin
+    let rec walk env = function
+      | SCoopmat (CM_load {frag; index; stride; _} as op)
+      | SCoopmat (CM_store {frag; index; stride; _} as op) ->
+          if assume || access_is_proven env ~frag ~index ~stride then
+            found := op :: !found
+          else refuted := op :: !refuted
+      | SCoopmat (CM_decl _ | CM_muladd _) -> ()
+      | SSeq ss -> List.iter (walk env) ss
+      | SIf (_, a, b) ->
+          walk env a ;
+          Option.iter (walk env) b
+      | SWhile (_, s) | SPragma (_, s) | SBlock s -> walk env s
+      | SFor (v, _, _, _, s) -> walk ((v.var_name, 1) :: env) s
+      | SLet (v, e, s) -> walk ((v.var_name, factor env e) :: env) s
+      | SLetMut (v, _, s) -> walk ((v.var_name, 1) :: env) s
+      | SMatch (_, arms) ->
+          List.iter
+            (fun (pat, s) ->
+              let env =
+                match pat with
+                | PConstr (_, names) ->
+                    List.fold_left (fun env n -> (n, 1) :: env) env names
+                | PWild -> env
+              in
+              walk env s)
+            arms
+      | SAssign _ | SReturn _ | SBarrier | SWarpBarrier | SExpr _ | SEmpty
+      | SMemFence | SNative _ ->
+          ()
+    in
+    walk [] body ;
+    (* One node can sit under several bindings (a shared IR value): it is proven
      only if every occurrence is. *)
-  List.filter (fun op -> not (List.exists (fun r -> r == op) !refuted)) !found
+    List.filter (fun op -> not (List.exists (fun r -> r == op) !refuted)) !found
+  end
 
 (** Whether [op] is one of the [proven] operations (physical identity). *)
 let is_proven proven op = List.exists (fun p -> p == op) proven
@@ -306,3 +323,21 @@ let holds (p : predicate) (args : (string * int) list) =
 let mark_aligned (k : kernel) : kernel =
   if is_marked k.kern_body then k
   else {k with kern_body = SPragma ([aligned_hint], k.kern_body)}
+
+(** The kernel with every static proof switched off: the checked variant. *)
+let mark_checked (k : kernel) : kernel =
+  if is_checked k.kern_body then k
+  else {k with kern_body = SPragma ([checked_hint], k.kern_body)}
+
+(** The arrays the kernel's cooperative-matrix loads and stores read or write,
+    in order of first appearance. *)
+let arrays_accessed (k : kernel) : string list =
+  let seen = ref [] in
+  let note name = if not (List.mem name !seen) then seen := name :: !seen in
+  List.iter
+    (function
+      | CM_load {src; _} -> note src
+      | CM_store {dst; _} -> note dst
+      | CM_decl _ | CM_muladd _ -> ())
+    (Sarek_ir_analysis.kernel_coopmat_ops k) ;
+  List.rev !seen
