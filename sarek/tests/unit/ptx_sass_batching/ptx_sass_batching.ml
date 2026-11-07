@@ -330,11 +330,20 @@ let () =
           if dump_sass name then begin
             print_histogram "SPOC" sass_spoc ;
             print_histogram "NVRTC" sass_nvrtc ;
-            Printf.printf
-              "==== SPOC PTX\n%s\n==== SPOC SASS\n%s\n==== NVRTC SASS\n%s\n"
-              spoc
-              sass_spoc
-              sass_nvrtc
+            let compact sass =
+              String.concat
+                "\n"
+                (List.filter_map
+                   (fun l ->
+                     match String.rindex_opt l '/' with
+                     | Some i when contains l "/*" ->
+                         Some
+                           (String.trim
+                              (String.sub l (i + 1) (String.length l - i - 1)))
+                     | _ -> None)
+                   (lines sass))
+            in
+            Printf.printf "==== SPOC SASS\n%s\n==== END\n" (compact sass_spoc)
           end
         end ;
         if streaming then
