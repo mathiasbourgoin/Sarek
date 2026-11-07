@@ -80,6 +80,12 @@ type reg_alloc = {
   const_vars : (string, int) Hashtbl.t;
       (** [let v = <int32 literal>] bindings in scope, by name, so an index
           [v + e] folds the literal into an immediate offset. *)
+  stable_vars : (string, unit) Hashtbl.t;
+      (** Scalars that hold a register of their own that nothing writes: scalar
+          parameters and [let]s of a computed value. *)
+  affine_vars : (string, var * int) Hashtbl.t;
+      (** [let v = a + c] with [a] stable and [c] a literal: [v] is [a] plus
+          [c]. *)
   read_only : (string, unit) Hashtbl.t;
       (** Global vector parameters the kernel never writes (see
           {!Sarek_ir_ptx_readonly}): their loads are [ld.global.nc]. *)
@@ -142,6 +148,8 @@ let make_alloc () =
     arr_elt_types = Hashtbl.create 8;
     arr_memspaces = Hashtbl.create 8;
     const_vars = Hashtbl.create 8;
+    stable_vars = Hashtbl.create 8;
+    affine_vars = Hashtbl.create 8;
     read_only = Hashtbl.create 8;
     arr_soa = Hashtbl.create 4;
     shared_decls = Buffer.create 128;

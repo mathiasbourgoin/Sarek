@@ -52,6 +52,33 @@ let refuse_aggregate_state_space_array ~what ~(name : string) (elt : elttype) :
   | TArray _ | TVec _ ->
       ()
 
+(** What the emitter knows about [let v = e] that lets an array index fold: a
+    literal ([const_vars]), a register nobody writes ([stable_vars]), and
+    [a + c] with [a] such a register ([affine_vars]). Called after [e] is
+    emitted. *)
+let record_let_facts alloc ~(mutable_ : bool) (v : var) (e : expr) : unit =
+  let name = v.var_name in
+  Hashtbl.remove alloc.const_vars name ;
+  Hashtbl.remove alloc.affine_vars name ;
+  Hashtbl.remove alloc.stable_vars name ;
+  if not mutable_ then begin
+    (match e with
+    | EConst (CInt32 n) ->
+        Hashtbl.replace alloc.const_vars name (Int32.to_int n)
+    | _ -> (
+        match split_offset alloc e with
+        | Some (EVar a), c
+          when c <> 0 && Hashtbl.mem alloc.stable_vars a.var_name ->
+            Hashtbl.replace alloc.affine_vars name (a, c)
+        | _ -> ())) ;
+    (* A [let] of a bare variable (or a no-op cast of one) shares that
+       variable's register, so only a computed value has one of its own. *)
+    match e with
+    | EBinop _ | EUnop _ | EIntrinsic _ | EArrayRead _ | EArrayReadExpr _ ->
+        Hashtbl.replace alloc.stable_vars name ()
+    | _ -> ()
+  end
+
 (** {1 Statement emitter} *)
 
 let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
@@ -148,10 +175,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
          register set. *)
       let b = emit_value buf alloc env e in
       env_bind_binding env v.var_name b ;
-      (match e with
-      | EConst (CInt32 n) when not v.var_mutable ->
-          Hashtbl.replace alloc.const_vars v.var_name (Int32.to_int n)
-      | _ -> Hashtbl.remove alloc.const_vars v.var_name) ;
+      record_let_facts alloc ~mutable_:false v e ;
       emit_stmt buf alloc env body
   | SLetMut (v, e, body) ->
       (* Mutable binding: copy into fresh registers (leaf-wise for
@@ -160,7 +184,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
          clobber y. *)
       let b_init = emit_value buf alloc env e in
       env_bind_binding env v.var_name (copy_binding buf alloc b_init) ;
-      Hashtbl.remove alloc.const_vars v.var_name ;
+      record_let_facts alloc ~mutable_:true v e ;
       emit_stmt buf alloc env body
   | SAssign (lv, e) -> emit_assign buf alloc env lv e
   | SIf (cond, then_s, else_opt) -> (
@@ -190,7 +214,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
       let r_loop = new_u32 alloc in
       emit buf "mov.u32 %s, %s;" r_loop r_start ;
       env_bind env v.var_name r_loop ;
-      Hashtbl.remove alloc.const_vars v.var_name ;
+      record_let_facts alloc ~mutable_:true v (EConst CUnit) ;
       let l_header = new_label alloc in
       let l_exit = new_label alloc in
       emit_label buf l_header ;
@@ -262,6 +286,9 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
 and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
   match lv with
   | LVar v -> (
+      Hashtbl.remove alloc.const_vars v.var_name ;
+      Hashtbl.remove alloc.affine_vars v.var_name ;
+      Hashtbl.remove alloc.stable_vars v.var_name ;
       match env_lookup_binding env v.var_name with
       | Scalar r_dst ->
           let r_val = emit_expr buf alloc env e in

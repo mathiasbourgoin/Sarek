@@ -49,6 +49,12 @@ val emit_match_arms :
     inferred from the register-name prefix of the first operand. *)
 val emit_binop : Buffer.t -> reg_alloc -> env -> binop -> expr -> expr -> string
 
+(** [split_offset alloc idx] is [(rest, off)] with [idx = rest + off]: the
+    literals that the [+]/[-] spine of [idx] adds (a product of literals counts
+    as one), variables bound to a literal, and the literal of a variable defined
+    as [a + c], taken out. [rest] is [None] when nothing else remains. *)
+val split_offset : reg_alloc -> expr -> expr option * int
+
 (** [emit_split_index buf alloc env idx] emits the variable part of the array
     index [idx] and returns its register ([None] when the index is a constant)
     with the constant part in elements: the literals added by the [+]/[-] spine

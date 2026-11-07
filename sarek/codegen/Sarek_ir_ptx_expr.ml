@@ -491,8 +491,9 @@ let intrinsic_entries_memo :
     index without them ([None] when nothing else remains), in the original order
     of its terms. Only the [+]/[-] spine is traversed, never a product, so
     [xs.(xi + 3)] is the address of [xi] plus 3 elements and [a.(b * 4 + 1)] is
-    that of [b * 4] plus 1. See {!Sarek_ir_ptx_mem.emit_elt_ref} for when the
-    result is the address the unsplit index gives. *)
+    that of [b * 4] plus 1; a variable defined as [a + c] ([alloc.affine_vars])
+    stands for [a] and the literal [c]. See {!Sarek_ir_ptx_mem.emit_elt_ref} for
+    when the result is the address the unsplit index gives. *)
 let rec split_offset alloc (idx : expr) : expr option * int =
   let join op a b =
     match (a, b) with
@@ -506,13 +507,23 @@ let rec split_offset alloc (idx : expr) : expr option * int =
   | EVar v -> (
       match Hashtbl.find_opt alloc.const_vars v.var_name with
       | Some n -> (None, n)
-      | None -> (Some idx, 0))
+      | None -> (
+          match Hashtbl.find_opt alloc.affine_vars v.var_name with
+          | Some (atom, c) -> (Some (EVar atom), c)
+          | None -> (Some idx, 0)))
   | EBinop (Add, a, b) ->
       let ra, ca = split_offset alloc a and rb, cb = split_offset alloc b in
       (join Add ra rb, ca + cb)
   | EBinop (Sub, a, b) ->
       let ra, ca = split_offset alloc a and rb, cb = split_offset alloc b in
       (join Sub ra rb, ca - cb)
+  | EBinop (Mul, a, b) -> (
+      (* a product of literals only: a constant, never a split of a product *)
+      match (split_offset alloc a, split_offset alloc b) with
+      | (None, ca), (None, cb) when abs (ca * cb) <= Int32.to_int Int32.max_int
+        ->
+          (None, ca * cb)
+      | _ -> (Some idx, 0))
   | _ -> (Some idx, 0)
 
 (** {1 Expression emitter}
@@ -877,7 +888,11 @@ and emit_app_inline buf alloc env hf args : binding =
   (* The callee sees only its own variables, so a caller's literal binding of
      the same name must not fold into its indices. *)
   let caller_consts = Hashtbl.copy alloc.const_vars in
+  let caller_stable = Hashtbl.copy alloc.stable_vars in
+  let caller_affine = Hashtbl.copy alloc.affine_vars in
   Hashtbl.reset alloc.const_vars ;
+  Hashtbl.reset alloc.stable_vars ;
+  Hashtbl.reset alloc.affine_vars ;
   alloc.inline_stack <- hf.hf_name :: alloc.inline_stack ;
   alloc.inline_ret <- (ret, l_end) :: alloc.inline_ret ;
   !stmt_emitter buf alloc callee_env hf.hf_body ;
@@ -886,6 +901,10 @@ and emit_app_inline buf alloc env hf args : binding =
   emit_label buf l_end ;
   Hashtbl.reset alloc.const_vars ;
   Hashtbl.iter (Hashtbl.replace alloc.const_vars) caller_consts ;
+  Hashtbl.reset alloc.stable_vars ;
+  Hashtbl.iter (Hashtbl.replace alloc.stable_vars) caller_stable ;
+  Hashtbl.reset alloc.affine_vars ;
+  Hashtbl.iter (Hashtbl.replace alloc.affine_vars) caller_affine ;
   restore_helper_array_meta alloc saved ;
   match ret with
   | Some b -> b
