@@ -592,13 +592,14 @@ let gen_store ~ctx ~op ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst
          ~staged:(fun tile ->
            Printf.sprintf
              "nvcuda::wmma::store_matrix_sync(%s, %s, 16, %s); __syncwarp(); \
-              sarek_cm_stage_out(%s, %s, (%s)); __syncwarp();"
+              sarek_cm_stage_out(%s, %s, (%s), %d); __syncwarp();"
              tile
              src
              (cuda_mem_layout layout)
              ptr
              tile
-             stride))
+             stride
+             (match layout with C.Row_major -> 0 | C.Col_major -> 1)))
 
 let gen_muladd ~indent ~dst ~a ~b ~c (cfg : C.config) =
   check_config cfg ;

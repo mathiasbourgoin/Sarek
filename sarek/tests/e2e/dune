@@ -2040,6 +2040,7 @@
   test_ptx_coopmat_e2e
   test_ptx_coopmat_int8_e2e
   test_coopmat_misalign_e2e
+  bench_coopmat_gemm
   test_coopmat_layout_e2e
   test_launch_window
   bench_launch_window
@@ -2071,6 +2072,7 @@
   test_ptx_coopmat_e2e
   test_ptx_coopmat_int8_e2e
   test_coopmat_misalign_e2e
+  bench_coopmat_gemm
   test_coopmat_layout_e2e
   test_launch_window
   bench_launch_window

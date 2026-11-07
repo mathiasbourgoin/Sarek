@@ -39,20 +39,26 @@ module Fw = Spoc_framework.Framework_sig
 
 let () =
   Backend_hip.init () ;
+  Backend_cuda_c.register () ;
   Test_helpers.Benchmarks.init_backends ()
 
 let failures = ref 0
 
 let ok fmt = Printf.ksprintf (fun s -> print_endline ("  OK  " ^ s)) fmt
 
+(* A failed check is reported and counted and the next case still runs: every
+   failure of a device run is wanted, not the first. *)
+exception Case_failed
+
 let fail fmt =
   Printf.ksprintf
     (fun s ->
       incr failures ;
       print_endline ("  FAIL " ^ s) ;
-      print_endline "stopping at the first failure" ;
-      exit 1)
+      raise Case_failed)
     fmt
+
+let guarded f = try f () with Case_failed -> ()
 
 let offers dev cfg =
   Sarek_capability.permits
@@ -145,6 +151,7 @@ let check_config dev cfg =
     (fun (lname, (la, lb, lc, ld)) ->
       List.iter
         (fun (index, stride) ->
+          guarded @@ fun () ->
           let len = buffer_len ~index ~stride in
           let ir = tile_ir ~index ~stride ~la ~lb ~lc ~ld cfg in
           let want = run ~gpu:None ir ~len in
@@ -211,6 +218,171 @@ let check_config dev cfg =
               stride)
         cases)
     layouts
+
+(* {1 Overlapping tiles}
+
+   A leading dimension below 16 makes the rows (columns) of a tile overlap in
+   memory. A load then reads shared cells, which is harmless; a STORE writes
+   some cells twice, and the interpreter's answer is the last write of its loop
+   (rows outer, columns inner, in either layout). The staged CUDA path wrote
+   them in parallel and on an RTX 2080 (f16, off 16, ld 12) the cells written by
+   two lanes of one instruction kept the other writer: 55 elements differed. It
+   now writes an overlapping tile serially in the interpreter's order. A copy
+   kernel (load an accumulator, store it) makes the order visible, and a model
+   of the loop pins it on the host as well as on every device. *)
+
+let overlap_kernel ~index ~stride ~layout =
+  let frag =
+    {
+      C.frag_use = C.Accumulator;
+      frag_shape = shape;
+      frag_component = C.Float32;
+      frag_scope = C.Subgroup;
+    }
+  in
+  let vec id name =
+    Sarek_ir_types.DParam
+      ( {
+          Sarek_ir_types.var_name = name;
+          var_id = id;
+          var_type = Sarek_ir_types.TVec Sarek_ir_types.TFloat32;
+          var_mutable = false;
+        },
+        Some
+          {
+            Sarek_ir_types.arr_elttype = Sarek_ir_types.TFloat32;
+            arr_memspace = Sarek_ir_types.Global;
+          } )
+  in
+  let k n = Sarek_ir_types.EConst (Sarek_ir_types.CInt32 (Int32.of_int n)) in
+  {
+    Sarek_ir_types.default_kernel with
+    kern_name = "coopmat_overlap";
+    kern_params = [vec 0 "c"; vec 1 "d"];
+    kern_body =
+      Sarek_ir_types.SSeq
+        [
+          Sarek_ir_types.SCoopmat (Sarek_ir_types.CM_decl {name = "f"; frag});
+          Sarek_ir_types.SCoopmat
+            (Sarek_ir_types.CM_load
+               {
+                 dst = "f";
+                 frag;
+                 src = "c";
+                 index = k index;
+                 stride = k stride;
+                 layout;
+               });
+          Sarek_ir_types.SCoopmat
+            (Sarek_ir_types.CM_store
+               {
+                 src = "f";
+                 frag;
+                 dst = "d";
+                 index = k index;
+                 stride = k stride;
+                 layout;
+               });
+        ];
+  }
+
+let overlap_len ~index = index + (16 * 15) + 40
+
+let overlap_input p = float_of_int (p + 1)
+
+let overlap_init p = -.float_of_int (p + 1)
+
+(* The interpreter's loop, on arrays. *)
+let overlap_model ~index ~stride ~layout =
+  let len = overlap_len ~index in
+  let element r c =
+    match layout with
+    | C.Row_major -> index + (r * stride) + c
+    | C.Col_major -> index + (c * stride) + r
+  in
+  let tile = Array.make 256 0.0 in
+  for r = 0 to 15 do
+    for c = 0 to 15 do
+      tile.((r * 16) + c) <- overlap_input (element r c)
+    done
+  done ;
+  let d = Array.init len overlap_init in
+  for r = 0 to 15 do
+    for c = 0 to 15 do
+      d.(element r c) <- tile.((r * 16) + c)
+    done
+  done ;
+  d
+
+let run_overlap ~gpu ~index ~stride ~layout =
+  let len = overlap_len ~index in
+  let c = f32_vec (Array.init len overlap_input) in
+  let d = f32_vec (Array.init len overlap_init) in
+  let ir = overlap_kernel ~index ~stride ~layout in
+  let args = Execute.[Vec c; Vec d] in
+  (match gpu with
+  | Some dev -> run_gpu dev ir args ~block:wave ~grid:one
+  | None -> run_interp ir args ~block:wave ~grid:one) ;
+  Array.map (fun x -> x) (Vector.to_array d)
+
+let overlap_cases =
+  [(0, 0); (0, 1); (3, 4); (16, 12); (16, 15); (8, 8); (64, -3); (0, 16)]
+
+let layout_name = function
+  | C.Row_major -> "row-major"
+  | C.Col_major -> "col-major"
+
+let check_overlap what ~gpu =
+  List.iter
+    (fun layout ->
+      List.iter
+        (fun (index, stride) ->
+          guarded @@ fun () ->
+          let want = overlap_model ~index ~stride ~layout in
+          let got =
+            try run_overlap ~gpu ~index ~stride ~layout with
+            | e when gpu <> None && refused_by_measurement e ->
+                raise Skip_config
+            | e when gpu <> None ->
+                fail
+                  "%s overlap %s index %d stride %d: %s"
+                  what
+                  (layout_name layout)
+                  index
+                  stride
+                  (Printexc.to_string e)
+          in
+          let wrong = ref 0 and first = ref (-1) in
+          Array.iteri
+            (fun p g ->
+              if g <> want.(p) then begin
+                incr wrong ;
+                if !first < 0 then first := p
+              end)
+            got ;
+          if !wrong > 0 then
+            fail
+              "%s overlap %s index %d stride %d: %d of %d elements differ from \
+               the loop order (first: element %d, got %g, want %g)"
+              what
+              (layout_name layout)
+              index
+              stride
+              !wrong
+              (Array.length got)
+              !first
+              got.(!first)
+              want.(!first)
+          else
+            ok
+              "%s overlap %s index %d stride %d: the last write of the loop \
+               wins"
+              what
+              (layout_name layout)
+              index
+              stride)
+        overlap_cases)
+    [C.Row_major; C.Col_major]
 
 (* {1 Launch-time variant}
 
@@ -290,6 +462,7 @@ let check_variants dev cfg =
   let ir = param_tile cfg in
   List.iter
     (fun (off, ld, aligned) ->
+      guarded @@ fun () ->
       let len = off + (16 * ld) + 32 in
       let extra = Execute.[Int32 (Int32.of_int off); Int32 (Int32.of_int ld)] in
       let run ~gpu =
@@ -366,6 +539,7 @@ let check_gemm_variant dev =
       [Vec dummy; Vec dummy; Vec dummy; Vec dummy; Int32 m; Int32 n; Int32 k]
   in
   let expect what args want =
+    guarded @@ fun () ->
     let got = Execute.coopmat_variant ~device:dev ir args in
     let want =
       if is_cuda dev then want else Sarek_execute.Coopmat_variant.Not_applicable
@@ -414,6 +588,7 @@ let host_variants () =
   in
   let block = (64, 1, 1) in
   let check ?bases what ~framework ir scalars want =
+    guarded @@ fun () ->
     let k, got = V.choose ~count:false ?bases ~framework ir scalars in
     if got <> want then
       fail
@@ -512,6 +687,7 @@ let host_variants () =
      the scalar arguments say; an aligned one does not *)
   let by_pointer p = V.alignment_of_pointer (Nativeint.of_int p) in
   let check_int what want got =
+    guarded @@ fun () ->
     if want <> got then fail "%s: %d, expected %d" what got want
     else ok "%s: %d" what got
   in
@@ -527,6 +703,7 @@ let host_variants () =
   List.iter
     (fun framework ->
       let run what bases want =
+        guarded @@ fun () ->
         let _, got = V.choose ~count:false ~bases ~framework tile scalars in
         if got <> want then
           fail
@@ -551,7 +728,8 @@ let host_variants () =
           tile
           [("off", 1); ("ld", 24)]
       in
-      if got <> V.Staged then fail "off=1 with aligned bases must be staged")
+      guarded (fun () ->
+          if got <> V.Staged then fail "off=1 with aligned bases must be staged"))
     V.frameworks ;
   (* the checked variant: constants that are proven everywhere else are tested
      here, and a buffer is declared *)
@@ -575,14 +753,16 @@ let host_variants () =
     V.frameworks ;
   (* any other framework: the kernel as given *)
   let k, got = V.choose ~count:false ~framework:"HIP" gemm [("n", 64)] in
-  if got <> V.Not_applicable || k != gemm then
-    fail "HIP: the kernel must be left alone" ;
-  ok "HIP: kernel left alone"
+  guarded (fun () ->
+      if got <> V.Not_applicable || k != gemm then
+        fail "HIP: the kernel must be left alone" ;
+      ok "HIP: kernel left alone")
 
 let () =
   C.accept_relaxed_accumulation
     ~reason:"test_coopmat_misalign_e2e: exact small-integer inputs" ;
   host_variants () ;
+  check_overlap "interpreter" ~gpu:None ;
   let wanted = Sys.getenv_opt "COOPMAT_MISALIGN_FRAMEWORK" in
   let devices =
     Device.init () |> Array.to_list
@@ -601,6 +781,13 @@ let () =
             dev.Device.name
             dev.Device.framework ;
           check_gemm_variant dev ;
+          (if offers dev f16_config then
+             try
+               check_overlap
+                 (Printf.sprintf "%s [%s]" dev.Device.name dev.Device.framework)
+                 ~gpu:(Some dev)
+             with Skip_config ->
+               Printf.printf "  SKIP overlap: refused by the backend\n%!") ;
           List.iter
             (fun cfg ->
               try
@@ -612,6 +799,10 @@ let () =
                   (C.config_name cfg))
             offered)
     devices ;
+  if !failures > 0 then begin
+    Printf.printf "%d failure(s)\n" !failures ;
+    exit 1
+  end ;
   if !ran = 0 then
     print_endline
       "[SKIP] no device offers a cooperative-matrix configuration (or none \

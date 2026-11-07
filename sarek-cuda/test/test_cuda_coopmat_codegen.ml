@@ -235,7 +235,7 @@ let test_alignment () =
        __syncwarp(); nvcuda::wmma::load_matrix_sync(fa, sarek_cm_t, 16);";
       "nvcuda::wmma::store_matrix_sync(sarek_cm_t, fc, 16, \
        nvcuda::wmma::mem_row_major); __syncwarp(); sarek_cm_stage_out(((float \
-       *)(d) + (1)), sarek_cm_t, (17)); __syncwarp();";
+       *)(d) + (1)), sarek_cm_t, (17), 0); __syncwarp();";
       "__shared__ __align__(32) unsigned char sarek_cm_tiles[2048];";
       "#if !defined(__HIP_PLATFORM_AMD__)";
       "return sarek_cm_tiles + w * 1024;";
