@@ -390,6 +390,12 @@ let check_variant dev v =
         if !first = None then first := Some (k, x, y)
       end)
     gpu ;
+  (* Without accumulation and with a column scale, the small-scale tiles give
+     subnormal results; require them, so the subnormal path is exercised. *)
+  if (not v.accumulate) && v.col && !subnormal = 0 then
+    fail
+      "%s: no subnormal result, the subnormal path was not exercised"
+      (variant_name v) ;
   match !first with
   | None ->
       ok
@@ -449,7 +455,19 @@ let isa ~contract source =
   (try Sys.remove asm with Sys_error _ -> ()) ;
   if status = 0 then Some text else None
 
-let fused_ops = ["v_fma"; "v_fmac"; "v_mac_f32"; "v_mad_f32"; "v_pk_fma"]
+(* Plain and gfx11 dual-issue forms ([v_dual_fmac_f32], [v_dual_fmaak_f32],
+   [v_dual_fmamk_f32]). *)
+let fused_ops =
+  [
+    "v_fma";
+    "v_fmac";
+    "v_mac_f32";
+    "v_mad_f32";
+    "v_pk_fma";
+    "v_dual_fma";
+    "fmaak";
+    "fmamk";
+  ]
 
 let has_fused text = List.exists (fun needle -> contains ~needle text) fused_ops
 

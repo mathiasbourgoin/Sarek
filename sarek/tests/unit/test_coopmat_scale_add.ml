@@ -494,8 +494,8 @@ let test_hip_lowering () =
       if not (contains ~needle src) then
         failf "the CUDA/HIP source lacks %S:\n%s" needle src)
     [
-      "sarek_cm_scale_add<true, true, true>(fd, fs, r, (1), c, (2), p, (3), q, \
-       (5));";
+      "sarek_cm_scale_add<true, true, true, sarek_cm_i8>(fd, fs, r, (1), c, \
+       (2), p, (3), q, (5));";
       "#error \"Sarek cooperative matrix: CUDA: CM_scale_add is not lowered";
     ]
 
