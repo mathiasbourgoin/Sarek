@@ -35,6 +35,50 @@ val emit_elt_addr :
   space:arr_space option ->
   string
 
+(** [emit_elt_ref buf alloc r_base ~idx ~off elt_type ~space] is the memory
+    operand ([[reg]] or [[reg+imm]]) of the element [idx + off]: [~idx] is the
+    register of the variable part of the index ([None] when the index is the
+    constant [off]), [~off] its constant part in elements, folded into the
+    instruction's immediate. With [~off:0] it is the address {!emit_elt_addr}
+    computes. A shared address is modular 32-bit arithmetic, exact. A global or
+    local one is [base + sext idx * size] plus the immediate, equal to the
+    address of the 32-bit index [idx + off] when that index is in bounds (as
+    every access must be) and the partial sum [idx] does not wrap around the
+    32-bit range. *)
+val emit_elt_ref :
+  Buffer.t ->
+  reg_alloc ->
+  string ->
+  idx:string option ->
+  off:int ->
+  elttype ->
+  space:arr_space option ->
+  string
+
+(** {!emit_array_read} of the element [idx + off] ({!emit_elt_ref}). *)
+val emit_array_read_at :
+  ?nc:bool ->
+  Buffer.t ->
+  reg_alloc ->
+  string ->
+  idx:string option ->
+  off:int ->
+  elttype ->
+  space:arr_space option ->
+  string
+
+(** {!emit_array_write} of the element [idx + off] ({!emit_elt_ref}). *)
+val emit_array_write_at :
+  Buffer.t ->
+  reg_alloc ->
+  string ->
+  idx:string option ->
+  off:int ->
+  string ->
+  elttype ->
+  space:arr_space option ->
+  unit
+
 (** [emit_array_read buf alloc r_base r_idx elt_type ~space] emits a
     pointer-arithmetic sequence followed by a typed load and returns the
     destination register name. [Some SpaceShared] uses 32-bit pointer arithmetic

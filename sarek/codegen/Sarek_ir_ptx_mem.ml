@@ -49,51 +49,94 @@ let emit_elt_addr buf alloc r_base r_idx elt_type ~space =
       emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
       r_addr
   | Some SpaceLocal | None ->
-      (* One [mad.wide.u32] for [zero_extend idx * size + base]: the product of
-         a 32-bit index and a power-of-two size is exact in 64 bits, so this
-         is bit-for-bit the address the former cvt/shl/add triple computed. *)
+      (* One [mad.wide.s32] for [sign_extend idx * size + base]: the product of
+         a 32-bit index and a power-of-two size is exact in 64 bits. For an
+         index in bounds (non-negative, below 2^31) the sign extension is the
+         zero extension the former cvt/shl/add triple used, so the address is
+         the same; an out-of-bounds access is undefined either way. The signed
+         form is what lets [ptxas] emit one IMAD.WIDE. *)
       let r_addr = new_u64 alloc in
       emit
         buf
-        "mad.wide.u32 %s, %s, %d, %s;"
+        "mad.wide.s32 %s, %s, %d, %s;"
         r_addr
         r_idx
         (1 lsl elt_shift elt_type)
         r_base ;
       r_addr
 
+(** The memory operand of an element access, with a constant element offset
+    folded into the instruction's immediate: [[%rd]] or [[%rd+imm]].
+
+    [~idx] is the register of the variable part of the index ([None]: the index
+    is the constant [off] alone) and [~off] the constant part, in elements, so
+    the element is [idx + off]. Without an offset the address is exactly what
+    {!emit_elt_addr} computes. With one:
+
+    - shared arrays: the address register holds [base + (idx << shift)] and the
+      offset is added by the instruction. 32-bit address arithmetic is modular,
+      so this is the address [base + ((idx + off) << shift)] always;
+    - global and local arrays: the 64-bit address is [base + sext(idx) * size]
+      ([mad.wide.s32]) plus the immediate. It equals the address of the 32-bit
+      index [idx + off] provided that index is in bounds, which every access
+      must be (an out-of-bounds access is undefined) and provided the partial
+      sum [idx] does not wrap around the 32-bit range, the same assumption
+      CUDA-C's signed integer arithmetic gives NVVM. The sign extension is what
+      makes a negative [idx] with a positive [off] right. *)
+let emit_elt_ref buf alloc r_base ~(idx : string option) ~(off : int) elt_type
+    ~space : string =
+  let imm = off * (1 lsl elt_shift elt_type) in
+  let operand r =
+    if imm = 0 then Printf.sprintf "[%s]" r else Printf.sprintf "[%s+%d]" r imm
+  in
+  match idx with
+  | None -> operand r_base
+  | Some r_idx -> operand (emit_elt_addr buf alloc r_base r_idx elt_type ~space)
+
 (** [~nc:true] emits the read-only data-path load [ld.global.nc]. It is honoured
     for global loads only: the caller decides it from {!Sarek_ir_ptx_readonly}.
-*)
-let emit_array_read ?(nc = false) buf alloc r_base r_idx elt_type ~space =
+    [~idx]/[~off] as in {!emit_elt_ref}. *)
+let emit_array_read_at ?(nc = false) buf alloc r_base ~idx ~off elt_type ~space
+    =
   let sp =
     match space with None when nc -> "global.nc" | _ -> space_qualifier space
   in
-  let r_addr = emit_elt_addr buf alloc r_base r_idx elt_type ~space in
+  let r_ref = emit_elt_ref buf alloc r_base ~idx ~off elt_type ~space in
   match elt_type with
   | TFloat16 ->
       (* Raw 16-bit load into a [.b16] register; widening is an explicit
          [cvt.f32.f16] cast, never implied by the load. *)
       let r = new_f16 alloc in
-      emit buf "ld.%s.b16 %s, [%s];" sp r r_addr ;
+      emit buf "ld.%s.b16 %s, %s;" sp r r_ref ;
       r
   | TFloat32 ->
       let r = new_f32 alloc in
-      emit buf "ld.%s.f32 %s, [%s];" sp r r_addr ;
+      emit buf "ld.%s.f32 %s, %s;" sp r r_ref ;
       r
   | TInt32 ->
       let r = new_u32 alloc in
-      emit buf "ld.%s.s32 %s, [%s];" sp r r_addr ;
+      emit buf "ld.%s.s32 %s, %s;" sp r r_ref ;
       r
   | TFloat64 ->
       let r = new_f64 alloc in
-      emit buf "ld.%s.f64 %s, [%s];" sp r r_addr ;
+      emit buf "ld.%s.f64 %s, %s;" sp r r_ref ;
       r
   | TInt64 ->
       let r = new_u64 alloc in
-      emit buf "ld.%s.s64 %s, [%s];" sp r r_addr ;
+      emit buf "ld.%s.s64 %s, %s;" sp r r_ref ;
       r
   | t -> unsupported (sp ^ " array read of element type " ^ ptx_reg_type_of t)
+
+let emit_array_read ?nc buf alloc r_base r_idx elt_type ~space =
+  emit_array_read_at
+    ?nc
+    buf
+    alloc
+    r_base
+    ~idx:(Some r_idx)
+    ~off:0
+    elt_type
+    ~space
 
 (* The value register of a store must have the element's width: a 16-bit store
    of a 32-bit register (or the reverse) is an operand-size mismatch that ptxas
@@ -112,17 +155,28 @@ let check_store_value_class sp elt_type r_val =
              r_val)
   | _ -> reject_f16_operand (sp ^ " array write") r_val
 
-let emit_array_write buf alloc r_base r_idx r_val elt_type ~space =
+let emit_array_write_at buf alloc r_base ~idx ~off r_val elt_type ~space =
   let sp = space_qualifier space in
   check_store_value_class sp elt_type r_val ;
-  let r_addr = emit_elt_addr buf alloc r_base r_idx elt_type ~space in
+  let r_ref = emit_elt_ref buf alloc r_base ~idx ~off elt_type ~space in
   match elt_type with
-  | TFloat16 -> emit buf "st.%s.b16 [%s], %s;" sp r_addr r_val
-  | TFloat32 -> emit buf "st.%s.f32 [%s], %s;" sp r_addr r_val
-  | TInt32 -> emit buf "st.%s.s32 [%s], %s;" sp r_addr r_val
-  | TFloat64 -> emit buf "st.%s.f64 [%s], %s;" sp r_addr r_val
-  | TInt64 -> emit buf "st.%s.s64 [%s], %s;" sp r_addr r_val
+  | TFloat16 -> emit buf "st.%s.b16 %s, %s;" sp r_ref r_val
+  | TFloat32 -> emit buf "st.%s.f32 %s, %s;" sp r_ref r_val
+  | TInt32 -> emit buf "st.%s.s32 %s, %s;" sp r_ref r_val
+  | TFloat64 -> emit buf "st.%s.f64 %s, %s;" sp r_ref r_val
+  | TInt64 -> emit buf "st.%s.s64 %s, %s;" sp r_ref r_val
   | t -> unsupported (sp ^ " array write of element type " ^ ptx_reg_type_of t)
+
+let emit_array_write buf alloc r_base r_idx r_val elt_type ~space =
+  emit_array_write_at
+    buf
+    alloc
+    r_base
+    ~idx:(Some r_idx)
+    ~off:0
+    r_val
+    elt_type
+    ~space
 
 let infer_elt_type alloc arr_name =
   match Hashtbl.find_opt alloc.arr_elt_types arr_name with

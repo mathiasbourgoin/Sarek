@@ -83,6 +83,10 @@ type reg_alloc = {
   mutable label : int;
   arr_elt_types : (string, elttype) Hashtbl.t;
   arr_memspaces : (string, arr_space) Hashtbl.t;
+  const_vars : (string, int) Hashtbl.t;
+      (** Variables bound to an int32 literal by an immutable [let], by name.
+          Lets an array index [v + e] fold the literal into the access's
+          immediate offset; reset while a helper body is inlined. *)
   read_only : (string, unit) Hashtbl.t;
       (** Global vector parameters the kernel never writes (see
           {!Sarek_ir_ptx_readonly}); their loads are [ld.global.nc]. Names

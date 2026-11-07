@@ -49,6 +49,14 @@ val emit_match_arms :
     inferred from the register-name prefix of the first operand. *)
 val emit_binop : Buffer.t -> reg_alloc -> env -> binop -> expr -> expr -> string
 
+(** [emit_split_index buf alloc env idx] emits the variable part of the array
+    index [idx] and returns its register ([None] when the index is a constant)
+    with the constant part in elements: the literals added by the [+]/[-] spine
+    of [idx], and variables bound to a literal, are not emitted but folded into
+    the access's immediate offset (see {!Sarek_ir_ptx_mem.emit_elt_ref}). *)
+val emit_split_index :
+  Buffer.t -> reg_alloc -> env -> expr -> string option * int
+
 (** [emit_operand buf alloc env what e] is {!emit_expr} for an operand of [what]
     (an operator, condition, bound or intrinsic): it raises
     {!Sarek_ir_ptx_types.Ptx_codegen_error} when the value is a float16

@@ -308,6 +308,58 @@ let unroll_for ctx (v : var) start stop dir body =
                                    iteration );
                              ] ) ) ) ))
 
+(** {1 Constant-trip loops}
+
+    A [for] loop with constant bounds and at most {!max_const_trip} iterations
+    is expanded into one copy of the body per iteration, the loop variable bound
+    to its value by a [let]. [ptxas] unrolls such loops itself, but only after
+    the PTX is written: expanding them here lets the address of an element
+    [a.(base + i)] take the iteration's [i] as an immediate offset
+    (Sarek_ir_ptx_expr.split_offset), where [ptxas] would be left recomputing a
+    full address per element. The copies run in the loop's order. *)
+
+let max_const_trip = 16
+
+let max_const_expansion = 512
+
+let rec const_int = function
+  | EConst (CInt32 n) -> Some (Int32.to_int n)
+  | ECast (TInt32, e) -> const_int e
+  | EBinop (((Add | Sub | Mul) as op), a, b) -> (
+      match (const_int a, const_int b) with
+      | Some x, Some y ->
+          let r = match op with Add -> x + y | Sub -> x - y | _ -> x * y in
+          if r >= Int32.to_int Int32.min_int && r <= Int32.to_int Int32.max_int
+          then Some r
+          else None
+      | _ -> None)
+  | _ -> None
+
+let unroll_const ctx (v : var) start stop dir body =
+  match (const_int start, const_int stop) with
+  | Some lo, Some hi when v.var_type = TInt32 ->
+      let trips =
+        match dir with Upto -> hi - lo + 1 | Downto -> lo - hi + 1
+      in
+      let nodes = count_nodes body in
+      if
+        trips >= 1 && trips <= max_const_trip
+        && trips * nodes <= max_const_expansion
+        && duplicable body
+        && not (List.exists (same_var v) (assigned_in body))
+      then begin
+        ctx.rewritten <- ctx.rewritten + 1 ;
+        let value k =
+          EConst
+            (CInt32
+               (Int32.of_int
+                  (match dir with Upto -> lo + k | Downto -> lo - k)))
+        in
+        Some (SSeq (List.init trips (fun k -> SLet (v, value k, body))))
+      end
+      else None
+  | _ -> None
+
 let is_sarek_directive = function
   | h :: _ -> String.length h >= 6 && String.sub h 0 6 = "sarek."
   | [] -> false
@@ -318,13 +370,18 @@ let rec rewrite_stmt ctx (s : stmt) : stmt =
   let go = rewrite_stmt ctx in
   match s with
   | SWhile (cond, body) -> (
+      let body = go body in
       match unroll_while ctx cond body with
       | Some unrolled -> unrolled
-      | None -> SWhile (cond, go body))
+      | None -> SWhile (cond, body))
   | SFor (v, start, stop, dir, body) -> (
-      match unroll_for ctx v start stop dir body with
-      | Some unrolled -> unrolled
-      | None -> SFor (v, start, stop, dir, go body))
+      let body = go body in
+      match unroll_const ctx v start stop dir body with
+      | Some expanded -> expanded
+      | None -> (
+          match unroll_for ctx v start stop dir body with
+          | Some unrolled -> unrolled
+          | None -> SFor (v, start, stop, dir, body)))
   | SPragma (h, ((SWhile _ | SFor _) as loop)) when not (is_sarek_directive h)
     -> (
       match loop with

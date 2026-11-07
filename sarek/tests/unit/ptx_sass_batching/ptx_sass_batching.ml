@@ -13,7 +13,7 @@
  * the CUDA-C by 16. The PTX generator now unrolls such loops itself
  * (Sarek_ir_ptx_unroll), marks the loads of never-written vector parameters
  * [ld.global.nc] (Sarek_ir_ptx_readonly) and forms an address with one
- * [mad.wide.u32]. This test measures it on the machine code, with host tools
+ * [mad.wide.s32]. This test measures it on the machine code, with host tools
  * only (no NVIDIA device): [ptxas -v] for registers, [nvdisasm -c] for the
  * SASS, then
  *   - LDG:      load instructions in the SASS;

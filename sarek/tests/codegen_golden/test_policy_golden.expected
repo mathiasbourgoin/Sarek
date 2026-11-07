@@ -100,15 +100,15 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mov.u32 %r7, %ntid.x;
     mul.lo.u32 %r8, %r6, %r7;
     add.u32 %r9, %r5, %r8;
-    mad.wide.u32 %rd5, %r9, 2, %rd1;
+    mad.wide.s32 %rd5, %r9, 2, %rd1;
     ld.global.nc.b16 %h0, [%rd5];
     cvt.f32.f16 %f0, %h0;
-    mad.wide.u32 %rd6, %r9, 2, %rd2;
+    mad.wide.s32 %rd6, %r9, 2, %rd2;
     ld.global.nc.b16 %h1, [%rd6];
     cvt.f32.f16 %f1, %h1;
     add.f32 %f2, %f0, %f1;
     cvt.rn.f16.f32 %h2, %f2;
-    mad.wide.u32 %rd7, %r9, 2, %rd0;
+    mad.wide.s32 %rd7, %r9, 2, %rd0;
     st.global.b16 [%rd7], %h2;
     ret;
 }
@@ -206,19 +206,19 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mov.u32 %r7, %ntid.x;
     mul.lo.u32 %r8, %r6, %r7;
     add.u32 %r9, %r5, %r8;
-    mad.wide.u32 %rd5, %r9, 2, %rd1;
+    mad.wide.s32 %rd5, %r9, 2, %rd1;
     ld.global.nc.b16 %h0, [%rd5];
     cvt.f32.f16 %f0, %h0;
-    mad.wide.u32 %rd6, %r9, 4, %rd3;
+    mad.wide.s32 %rd6, %r9, 4, %rd3;
     ld.global.nc.s32 %r10, [%rd6];
     mov.u32 %r11, 15;
     and.b32 %r12, %r10, %r11;
     cvt.rn.f32.s32 %f1, %r12;
     mul.f32 %f2, %f0, %f1;
-    mad.wide.u32 %rd7, %r9, 2, %rd2;
+    mad.wide.s32 %rd7, %r9, 2, %rd2;
     ld.global.nc.b16 %h1, [%rd7];
     cvt.f32.f16 %f3, %h1;
-    mad.wide.u32 %rd8, %r9, 4, %rd3;
+    mad.wide.s32 %rd8, %r9, 4, %rd3;
     ld.global.nc.s32 %r13, [%rd8];
     mov.u32 %r14, 4;
     shr.s32 %r15, %r13, %r14;
@@ -228,7 +228,7 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mul.f32 %f5, %f3, %f4;
     sub.f32 %f6, %f2, %f5;
     cvt.rn.f16.f32 %h2, %f6;
-    mad.wide.u32 %rd9, %r9, 2, %rd0;
+    mad.wide.s32 %rd9, %r9, 2, %rd0;
     st.global.b16 [%rd9], %h2;
     ret;
 }
@@ -326,13 +326,13 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mov.u32 %r7, %ntid.x;
     mul.lo.u32 %r8, %r6, %r7;
     add.u32 %r9, %r5, %r8;
-    mad.wide.u32 %rd5, %r9, 2, %rd1;
+    mad.wide.s32 %rd5, %r9, 2, %rd1;
     ld.global.nc.b16 %h0, [%rd5];
     cvt.f32.f16 %f0, %h0;
     mov.f32 %f1, 0F3F8CCCCD;
     mul.f32 %f2, %f0, %f1;
     cvt.rn.f16.f32 %h1, %f2;
-    mad.wide.u32 %rd6, %r9, 2, %rd0;
+    mad.wide.s32 %rd6, %r9, 2, %rd0;
     st.global.b16 [%rd6], %h1;
     ret;
 }
@@ -435,10 +435,9 @@ fn main(
     .param .u32 param_sarek_x_length
 )
 {
-    .reg .u32 %r<10>;
-    .reg .u64 %rd<5>;
-    .reg .f32 %f<3>;
-    .reg .pred %p<1>;
+    .reg .u32 %r<16>;
+    .reg .u64 %rd<29>;
+    .reg .f32 %f<27>;
 
     ld.param.u64 %rd0, [param_acc];
     ld.param.u32 %r0, [param_sarek_acc_length];
@@ -450,21 +449,77 @@ fn main(
     mul.lo.u32 %r5, %r3, %r4;
     add.u32 %r6, %r2, %r5;
     mov.u32 %r7, 0;
-    mov.u32 %r8, 8;
-    mov.u32 %r9, %r7;
-L0:
-    setp.gt.s32 %p0, %r9, %r8;
-    @%p0 bra L1;
-    mad.wide.u32 %rd2, %r6, 4, %rd0;
+    mad.wide.s32 %rd2, %r6, 4, %rd0;
     ld.global.f32 %f0, [%rd2];
-    mad.wide.u32 %rd3, %r6, 4, %rd1;
+    mad.wide.s32 %rd3, %r6, 4, %rd1;
     ld.global.nc.f32 %f1, [%rd3];
     add.f32 %f2, %f0, %f1;
-    mad.wide.u32 %rd4, %r6, 4, %rd0;
+    mad.wide.s32 %rd4, %r6, 4, %rd0;
     st.global.f32 [%rd4], %f2;
-    add.u32 %r9, %r9, 1;
-    bra L0;
-L1:
+    mov.u32 %r8, 1;
+    mad.wide.s32 %rd5, %r6, 4, %rd0;
+    ld.global.f32 %f3, [%rd5];
+    mad.wide.s32 %rd6, %r6, 4, %rd1;
+    ld.global.nc.f32 %f4, [%rd6];
+    add.f32 %f5, %f3, %f4;
+    mad.wide.s32 %rd7, %r6, 4, %rd0;
+    st.global.f32 [%rd7], %f5;
+    mov.u32 %r9, 2;
+    mad.wide.s32 %rd8, %r6, 4, %rd0;
+    ld.global.f32 %f6, [%rd8];
+    mad.wide.s32 %rd9, %r6, 4, %rd1;
+    ld.global.nc.f32 %f7, [%rd9];
+    add.f32 %f8, %f6, %f7;
+    mad.wide.s32 %rd10, %r6, 4, %rd0;
+    st.global.f32 [%rd10], %f8;
+    mov.u32 %r10, 3;
+    mad.wide.s32 %rd11, %r6, 4, %rd0;
+    ld.global.f32 %f9, [%rd11];
+    mad.wide.s32 %rd12, %r6, 4, %rd1;
+    ld.global.nc.f32 %f10, [%rd12];
+    add.f32 %f11, %f9, %f10;
+    mad.wide.s32 %rd13, %r6, 4, %rd0;
+    st.global.f32 [%rd13], %f11;
+    mov.u32 %r11, 4;
+    mad.wide.s32 %rd14, %r6, 4, %rd0;
+    ld.global.f32 %f12, [%rd14];
+    mad.wide.s32 %rd15, %r6, 4, %rd1;
+    ld.global.nc.f32 %f13, [%rd15];
+    add.f32 %f14, %f12, %f13;
+    mad.wide.s32 %rd16, %r6, 4, %rd0;
+    st.global.f32 [%rd16], %f14;
+    mov.u32 %r12, 5;
+    mad.wide.s32 %rd17, %r6, 4, %rd0;
+    ld.global.f32 %f15, [%rd17];
+    mad.wide.s32 %rd18, %r6, 4, %rd1;
+    ld.global.nc.f32 %f16, [%rd18];
+    add.f32 %f17, %f15, %f16;
+    mad.wide.s32 %rd19, %r6, 4, %rd0;
+    st.global.f32 [%rd19], %f17;
+    mov.u32 %r13, 6;
+    mad.wide.s32 %rd20, %r6, 4, %rd0;
+    ld.global.f32 %f18, [%rd20];
+    mad.wide.s32 %rd21, %r6, 4, %rd1;
+    ld.global.nc.f32 %f19, [%rd21];
+    add.f32 %f20, %f18, %f19;
+    mad.wide.s32 %rd22, %r6, 4, %rd0;
+    st.global.f32 [%rd22], %f20;
+    mov.u32 %r14, 7;
+    mad.wide.s32 %rd23, %r6, 4, %rd0;
+    ld.global.f32 %f21, [%rd23];
+    mad.wide.s32 %rd24, %r6, 4, %rd1;
+    ld.global.nc.f32 %f22, [%rd24];
+    add.f32 %f23, %f21, %f22;
+    mad.wide.s32 %rd25, %r6, 4, %rd0;
+    st.global.f32 [%rd25], %f23;
+    mov.u32 %r15, 8;
+    mad.wide.s32 %rd26, %r6, 4, %rd0;
+    ld.global.f32 %f24, [%rd26];
+    mad.wide.s32 %rd27, %r6, 4, %rd1;
+    ld.global.nc.f32 %f25, [%rd27];
+    add.f32 %f26, %f24, %f25;
+    mad.wide.s32 %rd28, %r6, 4, %rd0;
+    st.global.f32 [%rd28], %f26;
     ret;
 }
 === S0 | plain_f32 | cuda-c (HIP, CUDA/C) ===
@@ -564,11 +619,11 @@ fn main(
     mov.u32 %r4, %ntid.x;
     mul.lo.u32 %r5, %r3, %r4;
     add.u32 %r6, %r2, %r5;
-    mad.wide.u32 %rd2, %r6, 4, %rd1;
+    mad.wide.s32 %rd2, %r6, 4, %rd1;
     ld.global.nc.f32 %f0, [%rd2];
     mov.f32 %f1, 0F40000000;
     mul.f32 %f2, %f0, %f1;
-    mad.wide.u32 %rd3, %r6, 4, %rd0;
+    mad.wide.s32 %rd3, %r6, 4, %rd0;
     st.global.f32 [%rd3], %f2;
     ret;
 }
@@ -810,7 +865,7 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mov.f32 %f7, 0F00000000;
     mov.u32 %r4, 0;
     mov.u32 %r5, 16;
-    mad.wide.u32 %rd4, %r4, 2, %rd0;
+    mad.wide.s32 %rd4, %r4, 2, %rd0;
     and.b64 %rd5, %rd4, 31;
     setp.ne.u64 %p0, %rd5, 0;
     mul.lo.u32 %r6, %r5, 2;
@@ -821,7 +876,7 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     wmma.load.a.sync.aligned.row.m16n16k16.global.f16 {%fr0, %fr1, %fr2, %fr3, %fr4, %fr5, %fr6, %fr7}, [%rd4], %r5;
     mov.u32 %r8, 0;
     mov.u32 %r9, 16;
-    mad.wide.u32 %rd6, %r8, 2, %rd1;
+    mad.wide.s32 %rd6, %r8, 2, %rd1;
     and.b64 %rd7, %rd6, 31;
     setp.ne.u64 %p2, %rd7, 0;
     mul.lo.u32 %r10, %r9, 2;
@@ -832,7 +887,7 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     wmma.load.b.sync.aligned.row.m16n16k16.global.f16 {%fr8, %fr9, %fr10, %fr11, %fr12, %fr13, %fr14, %fr15}, [%rd6], %r9;
     mov.u32 %r12, 0;
     mov.u32 %r13, 16;
-    mad.wide.u32 %rd8, %r12, 4, %rd2;
+    mad.wide.s32 %rd8, %r12, 4, %rd2;
     and.b64 %rd9, %rd8, 31;
     setp.ne.u64 %p4, %rd9, 0;
     mul.lo.u32 %r14, %r13, 4;
@@ -844,7 +899,7 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     wmma.mma.sync.aligned.row.row.m16n16k16.f32.f32 {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, {%fr0, %fr1, %fr2, %fr3, %fr4, %fr5, %fr6, %fr7}, {%fr8, %fr9, %fr10, %fr11, %fr12, %fr13, %fr14, %fr15}, {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7};
     mov.u32 %r16, 0;
     mov.u32 %r17, 16;
-    mad.wide.u32 %rd10, %r16, 4, %rd3;
+    mad.wide.s32 %rd10, %r16, 4, %rd3;
     and.b64 %rd11, %rd10, 31;
     setp.ne.u64 %p6, %rd11, 0;
     mul.lo.u32 %r18, %r17, 4;
@@ -1094,7 +1149,7 @@ EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL 
     mov.b32 %fr11, 0;
     mov.u32 %r4, 0;
     mov.u32 %r5, 16;
-    mad.wide.u32 %rd4, %r4, 1, %rd0;
+    mad.wide.s32 %rd4, %r4, 1, %rd0;
     and.b64 %rd5, %rd4, 31;
     setp.ne.u64 %p0, %rd5, 0;
     mul.lo.u32 %r6, %r5, 1;
@@ -1105,7 +1160,7 @@ EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL 
     wmma.load.a.sync.aligned.row.m16n16k16.global.u8 {%fr0, %fr1}, [%rd4], %r5;
     mov.u32 %r8, 0;
     mov.u32 %r9, 16;
-    mad.wide.u32 %rd6, %r8, 1, %rd1;
+    mad.wide.s32 %rd6, %r8, 1, %rd1;
     and.b64 %rd7, %rd6, 31;
     setp.ne.u64 %p2, %rd7, 0;
     mul.lo.u32 %r10, %r9, 1;
@@ -1116,7 +1171,7 @@ EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL 
     wmma.load.b.sync.aligned.row.m16n16k16.global.u8 {%fr2, %fr3}, [%rd6], %r9;
     mov.u32 %r12, 0;
     mov.u32 %r13, 16;
-    mad.wide.u32 %rd8, %r12, 4, %rd2;
+    mad.wide.s32 %rd8, %r12, 4, %rd2;
     and.b64 %rd9, %rd8, 31;
     setp.ne.u64 %p4, %rd9, 0;
     mul.lo.u32 %r14, %r13, 4;
@@ -1128,7 +1183,7 @@ EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL 
     wmma.mma.sync.aligned.row.row.m16n16k16.s32.u8.u8.s32 {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, {%fr0, %fr1}, {%fr2, %fr3}, {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11};
     mov.u32 %r16, 0;
     mov.u32 %r17, 16;
-    mad.wide.u32 %rd10, %r16, 4, %rd3;
+    mad.wide.s32 %rd10, %r16, 4, %rd3;
     and.b64 %rd11, %rd10, 31;
     setp.ne.u64 %p6, %rd11, 0;
     mul.lo.u32 %r18, %r17, 4;

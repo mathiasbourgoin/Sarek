@@ -54,12 +54,12 @@ let vector_add_ptx =
     selp.u32 %r9, 1, 0, %p0;
     setp.ne.u32 %p1, %r9, 0;
     @!%p1 bra L0;
-    mad.wide.u32 %rd3, %r8, 4, %rd0;
+    mad.wide.s32 %rd3, %r8, 4, %rd0;
     ld.global.nc.f32 %f0, [%rd3];
-    mad.wide.u32 %rd4, %r8, 4, %rd1;
+    mad.wide.s32 %rd4, %r8, 4, %rd1;
     ld.global.nc.f32 %f1, [%rd4];
     add.f32 %f2, %f0, %f1;
-    mad.wide.u32 %rd5, %r8, 4, %rd2;
+    mad.wide.s32 %rd5, %r8, 4, %rd2;
     st.global.f32 [%rd5], %f2;
 L0:
     ret;

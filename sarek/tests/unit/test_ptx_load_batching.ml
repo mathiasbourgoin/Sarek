@@ -6,7 +6,7 @@
 (** The PTX generator's memory-level parallelism: unrolling of innermost
     runtime-trip loops ([Sarek_ir_ptx_unroll]), [ld.global.nc] for the vector
     parameters a kernel never writes ([Sarek_ir_ptx_readonly]) and one
-    [mad.wide.u32] per global address. Device-free: text checks on the PTX, and
+    [mad.wide.s32] per global address. Device-free: text checks on the PTX, and
     the Interpreter as the oracle that the unrolled IR computes the very same
     values as the loop it replaces. *)
 
@@ -215,6 +215,30 @@ let staged =
       done ;
       y.(tid) <- acc]
 
+(* Constant-trip loops: expanded, the iteration's value an immediate offset. *)
+let const_up =
+  [%kernel
+    fun (a : float32 vector) (b : float32 vector) (n : int32) ->
+      let acc = mut 0.0 in
+      for i = 0 to 3 do
+        acc := (acc *. 0.5) +. a.(n + i)
+      done ;
+      b.(0l) <- acc]
+
+let const_down =
+  [%kernel
+    fun (a : float32 vector) (b : float32 vector) (n : int32) ->
+      let acc = mut 0.0 in
+      for i = 5 downto 2 do
+        acc := (acc *. 0.5) +. a.(n + (i * 2l))
+      done ;
+      b.(0l) <- acc]
+
+let offset_plus =
+  [%kernel
+    fun (a : float32 vector) (b : float32 vector) (n : int32) ->
+      b.(n + 2l) <- a.(n + 1l) +. a.(n - 2l) +. a.(n)]
+
 (******************************************************************************
  * ld.global.nc and mad.wide
  ******************************************************************************)
@@ -254,7 +278,7 @@ let test_shared_reads_are_not_nc () =
 
 let test_mad_wide_addresses () =
   let ptx = ptx_of (ir_of dot_while) in
-  Alcotest.(check bool) "mad.wide.u32" true (contains ptx "mad.wide.u32") ;
+  Alcotest.(check bool) "mad.wide.s32" true (contains ptx "mad.wide.s32") ;
   Alcotest.(check bool)
     "no cvt.u64.u32/shl.b64 address recomputation"
     false
@@ -359,6 +383,74 @@ let test_helper_param_shadows_read_only_name () =
     "the helper's read of its x (the written y) is a plain load"
     1
     (count ptx "ld.global.f32")
+
+(* A literal part of an index is the access's immediate offset. *)
+let test_offsets_fold () =
+  let ptx = ptx_of (ir_of offset_plus) in
+  Alcotest.(check bool)
+    "n + 1: +4"
+    true
+    (contains ptx "ld.global.nc.f32 %f0, [") ;
+  Alcotest.(check bool) "offset +4" true (contains ptx "+4];") ;
+  Alcotest.(check bool) "offset -8" true (contains ptx "+-8];") ;
+  Alcotest.(check bool) "offset +8 on the store" true (contains ptx "+8], ") ;
+  Alcotest.(check bool)
+    "a signed multiply-add for the address"
+    true
+    (contains ptx "mad.wide.s32")
+
+let test_constant_index_needs_no_address () =
+  let ptx = ptx_of (ir_of const_up) in
+  Alcotest.(check bool)
+    "b.(0) is a store at the base register"
+    true
+    (contains ptx "st.global.f32 [%rd1]")
+
+let test_const_loops_expand () =
+  let ptx = ptx_of (ir_of const_up) in
+  Alcotest.(check int) "4 iterations, 4 loads" 4 (count ptx "ld.global.nc.f32") ;
+  Alcotest.(check bool) "no loop left" false (contains ptx "bra L")
+
+(* A caller's literal binding must not fold into a helper's own variable of the
+   same name. *)
+let test_helper_does_not_see_caller_literals () =
+  let var name ty =
+    {var_name = name; var_id = 0; var_type = ty; var_mutable = false}
+  in
+  let c_caller = var "c" TInt32 and c_param = var "c" TInt32 in
+  let p = var "p" (TVec TFloat32) and y = var "y" (TVec TFloat32) in
+  let n = var "n" TInt32 in
+  let helper =
+    {
+      hf_name = "h";
+      hf_params = [var "p" (TVec TFloat32); c_param];
+      hf_ret_type = TFloat32;
+      hf_body = SReturn (EArrayRead ("p", EVar c_param));
+    }
+  in
+  let param v =
+    DParam (v, Some {arr_elttype = TFloat32; arr_memspace = Global})
+  in
+  let k =
+    {
+      default_kernel with
+      kern_name = "scope";
+      kern_params = [param p; param y; DParam (n, None)];
+      kern_funcs = [helper];
+      kern_body =
+        SLet
+          ( c_caller,
+            EConst (CInt32 5l),
+            SAssign
+              ( LArrayElem ("y", EConst (CInt32 0l)),
+                EApp (EVar (var "h" TFloat32), [EVar p; EVar n]) ) );
+    }
+  in
+  let ptx = ptx_of k in
+  Alcotest.(check bool)
+    "the helper indexes with its own c, not the caller's literal 5"
+    false
+    (contains ptx "+20]")
 
 (******************************************************************************
  * Which loops are unrolled
@@ -550,6 +642,31 @@ let test_quantised_oracle () =
         ])
     [0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 12; 25]
 
+let test_const_oracle () =
+  List.iter
+    (fun (name, kernel) ->
+      let ir = ir_of kernel in
+      let unrolled = Sarek_ir_ptx_unroll.rewrite ir in
+      Alcotest.(check bool)
+        (name ^ " rewritten")
+        true
+        (not (same_body unrolled ir)) ;
+      List.iter
+        (fun n ->
+          same_outputs
+            (Printf.sprintf "%s n=%d" name n)
+            ir
+            unrolled
+            ~block:(1, 1, 1)
+            ~grid:(1, 1, 1)
+            [
+              ("a", `Floats (floats 64 11));
+              ("b", `Floats (floats 8 12));
+              ("n", `Int n);
+            ])
+        [0; 1; 7; 20])
+    [("const_up", const_up); ("const_down", const_down)]
+
 let test_for_oracle () =
   List.iter
     (fun (name, kernel, (first, second)) ->
@@ -635,6 +752,19 @@ let () =
             test_shared_reads_are_not_nc;
           Alcotest.test_case "mad.wide addresses" `Quick test_mad_wide_addresses;
           Alcotest.test_case "read-only analysis" `Quick test_readonly_analysis;
+          Alcotest.test_case "literal offsets fold" `Quick test_offsets_fold;
+          Alcotest.test_case
+            "constant index needs no address"
+            `Quick
+            test_constant_index_needs_no_address;
+          Alcotest.test_case
+            "constant-trip loops expand"
+            `Quick
+            test_const_loops_expand;
+          Alcotest.test_case
+            "helper does not see the caller's literals"
+            `Quick
+            test_helper_does_not_see_caller_literals;
           Alcotest.test_case
             "helper parameter shadowing a read-only name"
             `Quick
@@ -670,6 +800,7 @@ let () =
           Alcotest.test_case "while <=" `Quick test_while_le_oracle;
           Alcotest.test_case "quantised" `Quick test_quantised_oracle;
           Alcotest.test_case "for up and down" `Quick test_for_oracle;
+          Alcotest.test_case "constant-trip loops" `Quick test_const_oracle;
         ] );
       ( "policy",
         [

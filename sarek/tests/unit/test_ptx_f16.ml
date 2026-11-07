@@ -68,7 +68,7 @@ let test_scale_markers () =
   check_has ptx "cvt.f32.f16 %f0, %h0;" ;
   check_has ptx "cvt.rn.f16.f32" ;
   check_has ptx "st.global.b16" ;
-  check_has ptx "mad.wide.u32" ;
+  check_has ptx "mad.wide.s32" ;
   (* 2-byte stride: the element size operand of the address *)
   check_has ptx ", 2, %rd" ;
   check_absent ptx "ld.global.f16" ;

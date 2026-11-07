@@ -483,6 +483,38 @@ let intrinsic_entries_memo :
     (string * intrinsic_category * intrinsic_handler) list option ref =
   ref None
 
+(** {1 Constant part of an array index}
+
+    [split_offset alloc idx] is [(rest, off)] with [idx = rest + off]: the
+    literals (and variables bound to a literal, [alloc.const_vars]) that the
+    spine of additions and subtractions of [idx] adds, taken out. [rest] is the
+    index without them ([None] when nothing else remains), in the original order
+    of its terms. Only the [+]/[-] spine is traversed, never a product, so
+    [xs.(xi + 3)] is the address of [xi] plus 3 elements and [a.(b * 4 + 1)] is
+    that of [b * 4] plus 1. See {!Sarek_ir_ptx_mem.emit_elt_ref} for when the
+    result is the address the unsplit index gives. *)
+let rec split_offset alloc (idx : expr) : expr option * int =
+  let join op a b =
+    match (a, b) with
+    | Some x, Some y -> Some (EBinop (op, x, y))
+    | Some x, None -> Some x
+    | None, Some y -> Some (match op with Sub -> EUnop (Neg, y) | _ -> y)
+    | None, None -> None
+  in
+  match idx with
+  | EConst (CInt32 n) -> (None, Int32.to_int n)
+  | EVar v -> (
+      match Hashtbl.find_opt alloc.const_vars v.var_name with
+      | Some n -> (None, n)
+      | None -> (Some idx, 0))
+  | EBinop (Add, a, b) ->
+      let ra, ca = split_offset alloc a and rb, cb = split_offset alloc b in
+      (join Add ra rb, ca + cb)
+  | EBinop (Sub, a, b) ->
+      let ra, ca = split_offset alloc a and rb, cb = split_offset alloc b in
+      (join Sub ra rb, ca - cb)
+  | _ -> (Some idx, 0)
+
 (** {1 Expression emitter}
 
     Returns the PTX register name holding the result. Emits instructions into
@@ -559,18 +591,19 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
         r
   | EArrayRead (arr_name, idx_expr) ->
       let r_base = env_lookup env arr_name in
-      let r_idx = emit_expr buf alloc env idx_expr in
-      emit_array_read
+      let idx, off = emit_split_index buf alloc env idx_expr in
+      emit_array_read_at
         ~nc:(Hashtbl.mem alloc.read_only arr_name)
         buf
         alloc
         r_base
-        r_idx
+        ~idx
+        ~off
         (infer_elt_type alloc arr_name)
         ~space:(arr_space_of alloc arr_name)
   | EArrayReadExpr (base_expr, idx_expr) ->
       let r_base = emit_expr buf alloc env base_expr in
-      let r_idx = emit_expr buf alloc env idx_expr in
+      let idx, off = emit_split_index buf alloc env idx_expr in
       let arr_name_opt =
         match base_expr with EVar v -> Some v.var_name | _ -> None
       in
@@ -590,7 +623,7 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
         | Some n -> Hashtbl.mem alloc.read_only n
         | None -> false
       in
-      emit_array_read ~nc buf alloc r_base r_idx elt_type ~space
+      emit_array_read_at ~nc buf alloc r_base ~idx ~off elt_type ~space
   | EIntrinsic (path, name, args) -> emit_intrinsic buf alloc env path name args
   | ECast (ty, e) ->
       let r_src = emit_expr buf alloc env e in
@@ -841,12 +874,18 @@ and emit_app_inline buf alloc env hf args : binding =
     | TUnit -> None
     | t -> Some (binding_of_elttype alloc t)
   in
+  (* The callee sees only its own variables, so a caller's literal binding of
+     the same name must not fold into its indices. *)
+  let caller_consts = Hashtbl.copy alloc.const_vars in
+  Hashtbl.reset alloc.const_vars ;
   alloc.inline_stack <- hf.hf_name :: alloc.inline_stack ;
   alloc.inline_ret <- (ret, l_end) :: alloc.inline_ret ;
   !stmt_emitter buf alloc callee_env hf.hf_body ;
   alloc.inline_ret <- List.tl alloc.inline_ret ;
   alloc.inline_stack <- List.tl alloc.inline_stack ;
   emit_label buf l_end ;
+  Hashtbl.reset alloc.const_vars ;
+  Hashtbl.iter (Hashtbl.replace alloc.const_vars) caller_consts ;
   restore_helper_array_meta alloc saved ;
   match ret with
   | Some b -> b
@@ -1278,6 +1317,13 @@ and emit_bitwise buf alloc op r1 r2 : string =
     let r = new_u32 alloc in
     emit buf "%s.b32 %s, %s, %s;" op r r1 r2 ;
     r
+
+(** Emit the variable part of an array index and return its register with the
+    constant part ({!split_offset}). *)
+and emit_split_index buf alloc env idx_expr : string option * int =
+  match split_offset alloc idx_expr with
+  | None, off -> (None, off)
+  | Some rest, off -> (Some (emit_expr buf alloc env rest), off)
 
 (** Evaluate an operand of an arithmetic operator or intrinsic and refuse an f16
     result: f16 is a storage type, so such an operand means the IR bypassed the
