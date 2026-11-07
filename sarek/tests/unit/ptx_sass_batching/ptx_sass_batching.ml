@@ -13,7 +13,7 @@
  * the CUDA-C by 16. The PTX generator now unrolls such loops itself
  * (Sarek_ir_ptx_unroll), marks the loads of never-written vector parameters
  * [ld.global.nc] (Sarek_ir_ptx_readonly) and forms an address with one
- * [mad.wide.u32]. This test measures it on the machine code, with host tools
+ * [mul.wide.s32]. This test measures it on the machine code, with host tools
  * only (no NVIDIA device): [ptxas -v] for registers, [nvdisasm -c] for the
  * SASS, then
  *   - LDG:      load instructions in the SASS;
@@ -167,14 +167,19 @@ let starts_with s prefix =
 
 type metrics = {
   registers : string;
+  reg_count : int;
   ldg : int;
   constant : int;
   in_flight : int;
+  imad : int;
+  imad_wide : int;
+  lea : int;
   sass_lines : int;
 }
 
 let analyse_sass sass registers =
   let ldg = ref 0 and constant = ref 0 in
+  let imad = ref 0 and imad_wide = ref 0 and lea = ref 0 in
   let run = ref 0 and best = ref 0 in
   let cut () =
     best := max !best !run ;
@@ -185,6 +190,10 @@ let analyse_sass sass registers =
       if starts_with (String.trim line) ".L_" then cut ()
       else
         match opcode line with
+        | Some op when starts_with op "IMAD" ->
+            incr imad ;
+            if starts_with op "IMAD.WIDE" then incr imad_wide
+        | Some op when starts_with op "LEA" -> incr lea
         | Some op when starts_with op "LDG" ->
             incr ldg ;
             incr run ;
@@ -198,9 +207,25 @@ let analyse_sass sass registers =
   cut () ;
   {
     registers;
+    reg_count =
+      (try
+         Scanf.sscanf
+           (let i =
+              Str.search_forward
+                (Str.regexp "Used \\([0-9]+\\) registers")
+                registers
+                0
+            in
+            String.sub registers i (String.length registers - i))
+           "Used %d registers"
+           Fun.id
+       with _ -> max_int);
     ldg = !ldg;
     constant = !constant;
     in_flight = !best;
+    imad = !imad;
+    imad_wide = !imad_wide;
+    lea = !lea;
     sass_lines = List.length (lines sass);
   }
 
@@ -234,13 +259,45 @@ let compile label ptx =
   List.iter (fun f -> try Sys.remove f with Sys_error _ -> ()) [ptx_f; cubin] ;
   (analyse_sass sass (registers_of info), sass)
 
+(* Opcode histogram of a SASS text: where the instructions of a kernel go. *)
+let print_histogram label sass =
+  let table = Hashtbl.create 64 in
+  List.iter
+    (fun line ->
+      match opcode line with
+      | Some op ->
+          let op =
+            match String.index_opt op '.' with
+            | Some i -> String.sub op 0 i
+            | None -> op
+          in
+          Hashtbl.replace
+            table
+            op
+            (1 + Option.value ~default:0 (Hashtbl.find_opt table op))
+      | None -> ())
+    (lines sass) ;
+  let rows =
+    List.sort
+      (fun (_, a) (_, b) -> compare b a)
+      (List.of_seq (Hashtbl.to_seq table))
+  in
+  Printf.printf "  histogram %s:" label ;
+  List.iter (fun (op, n) -> if n >= 4 then Printf.printf " %s=%d" op n) rows ;
+  print_newline ()
+
 let print_row label m =
   Printf.printf
-    "  %-34s LDG %3d  CONSTANT %3d  in flight %3d  SASS lines %5d  %s\n%!"
+    "  %-34s LDG %3d  CONSTANT %3d  in flight %3d  IMAD %4d (WIDE %3d)  LEA \
+     %4d  SASS lines %5d  %s\n\
+     %!"
     label
     m.ldg
     m.constant
     m.in_flight
+    m.imad
+    m.imad_wide
+    m.lea
     m.sass_lines
     m.registers
 
@@ -256,7 +313,7 @@ let () =
     if not nvrtc then print_endline "(libnvrtc absent: no NVRTC column)" ;
     List.iter
       (fun (name, kernel, streaming, all_constant) ->
-        let ir = ir_of kernel in
+        let ir = kernel in
         let spoc =
           Sarek_codegen.Sarek_ir_ptx.generate
             ~sm_target:"sm_75"
@@ -264,7 +321,7 @@ let () =
             ir
         in
         Printf.printf "######## %s\n" name ;
-        let m_spoc, _ = compile (name ^ " SPOC PTX") spoc in
+        let m_spoc, sass_spoc = compile (name ^ " SPOC PTX") spoc in
         print_row "SPOC PTX" m_spoc ;
         if nvrtc then begin
           let cuda =
@@ -279,8 +336,29 @@ let () =
               ~arch:"compute_75"
               cuda
           in
-          let m_nvrtc, _ = compile (name ^ " NVRTC PTX") ptx in
-          print_row "NVRTC PTX of the CUDA-C" m_nvrtc
+          let m_nvrtc, sass_nvrtc = compile (name ^ " NVRTC PTX") ptx in
+          print_row "NVRTC PTX of the CUDA-C" m_nvrtc ;
+          print_histogram "SPOC" sass_spoc ;
+          print_histogram "NVRTC" sass_nvrtc ;
+          (* The fused staged matvec: SASS size and registers stay close to what
+             NVRTC gets for the CUDA-C of the same IR (generous margins: this is
+             a regression gate, the table is the measurement). *)
+          if contains name "fused" then begin
+            expect
+              (m_spoc.sass_lines * 10 <= m_nvrtc.sass_lines * 13)
+              (Printf.sprintf
+                 "%s: %d SASS lines against NVRTC's %d"
+                 name
+                 m_spoc.sass_lines
+                 m_nvrtc.sass_lines) ;
+            expect
+              (m_spoc.reg_count <= m_nvrtc.reg_count)
+              (Printf.sprintf
+                 "%s: %d registers against NVRTC's %d"
+                 name
+                 m_spoc.reg_count
+                 m_nvrtc.reg_count)
+          end
         end ;
         if streaming then
           expect
@@ -299,10 +377,14 @@ let () =
                m_spoc.constant
                m_spoc.ldg))
       [
-        ("dot (runtime-trip while, 2 loads)", dot, true, true);
-        ("quantised matvec (6 loads)", quantised, true, true);
-        ("for loop with a runtime bound", for_dot, true, true);
-        ("staging through shared memory", staging, false, false);
+        ("dot (runtime-trip while, 2 loads)", ir_of dot, true, true);
+        ("quantised matvec (6 loads)", ir_of quantised, true, true);
+        ("for loop with a runtime bound", ir_of for_dot, true, true);
+        ("staging through shared memory", ir_of staging, false, false);
+        ( "staged matvec, horizontally fused",
+          Staged_kernels.fused (),
+          false,
+          false );
       ] ;
     match !failures with
     | [] -> ()

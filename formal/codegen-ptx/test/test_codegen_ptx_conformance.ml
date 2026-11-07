@@ -890,13 +890,19 @@ let make_kernel ?(params = []) ?(locals = []) ?(body = SEmpty) name =
 
 (* AC-1: DShared TFloat32 static → .shared .align 4 .b32 + st.shared.f32 *)
 let test_dshared_f32_emit () =
+  let v_idx = make_var "idx" TInt32 in
   let k =
     make_kernel
       "test_shmem_f32"
-      ~locals:[DShared ("shmem", TFloat32, Some (EConst (CInt32 256l)))]
+      ~locals:
+        [
+          DLocal (v_idx, Some (EConst (CInt32 0l)));
+          DShared ("shmem", TFloat32, Some (EConst (CInt32 256l)));
+        ]
       ~body:
         (SAssign
-           (LArrayElem ("shmem", EConst (CInt32 0l)), EConst (CFloat32 1.0)))
+           ( LArrayElem ("shmem", EBinop (Add, EVar v_idx, EConst (CInt32 1l))),
+             EConst (CFloat32 1.0) ))
   in
   let ptx = Sarek_codegen.Sarek_ir_ptx_kernel.generate k in
   if not (contains_sub ptx ".shared .align 4 .b32 shmem[256]") then
@@ -907,11 +913,15 @@ let test_dshared_f32_emit () =
     Alcotest.failf "expected 'st.shared.f32' in:\n%s" ptx ;
   if contains_sub ptx "st.global" then
     Alcotest.failf "unexpected 'st.global' for shared array in:\n%s" ptx ;
-  (* stride: f32 is 4 bytes → shift = 2; assert the exact shl.b32 is present *)
+  (* stride: f32 is 4 bytes → shift = 2; assert the exact shl.b32 is present,
+     and that the literal part of the index [idx + 1] is the instruction's
+     immediate offset (one element = 4 bytes) *)
   if not (contains_sub ptx "shl.b32") then
     Alcotest.failf
       "expected 'shl.b32' (32-bit shared pointer arithmetic) in:\n%s"
-      ptx
+      ptx ;
+  if not (contains_sub ptx "+4], ") then
+    Alcotest.failf "expected the literal offset '+4]' in:\n%s" ptx
 
 (* AC-2: DShared TInt32 static write → st.shared.s32 *)
 let test_dshared_int32_write () =

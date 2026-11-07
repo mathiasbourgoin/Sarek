@@ -58,7 +58,7 @@ let barrier_intrinsics = ["block_barrier"; "warp_barrier"; "memory_fence"]
    loop, a match), or that is opaque (native code). *)
 let blocks_unrolling_leaf = function
   | EIntrinsic (_, name, _) -> List.mem name barrier_intrinsics
-  | EApp _ | EArrayCreate _ -> true
+  | EApp _ | EArrayCreate _ | EMatch _ -> true
   | _ -> false
 
 let blocks_unrolling_stmt = function
@@ -219,7 +219,83 @@ let i64 e = ECast (TInt64, e)
 
 let i64_const n = EConst (CInt64 (Int64.of_int n))
 
-let copies u body = SSeq (List.init u (fun _ -> body))
+(** {1 Induction variable shifted per copy}
+
+    In the [j]-th copy of an unrolled body the induction variable [k] holds
+    [k + j * c]: the copies read [k + j * c] (a sum, so that an index
+    [a.(base + k)] becomes [a.(base + k)] plus the literal [j * c] for the
+    address, Sarek_ir_ptx_expr.split_offset) instead of incrementing [k] between
+    them, and [k] is advanced by [u * c] once after the last copy. Same values
+    in the same order, in the same (wrapping) int32 arithmetic. *)
+
+let rec subst_expr (k : var) (r : expr) (e : expr) : expr =
+  let go = subst_expr k r in
+  match e with
+  | EVar v when same_var v k -> r
+  | EConst _ | EVar _ | EArrayLen _ -> e
+  | EBinop (op, a, b) -> EBinop (op, go a, go b)
+  | EUnop (op, a) -> EUnop (op, go a)
+  | EArrayRead (name, i) -> EArrayRead (name, go i)
+  | EArrayReadExpr (b, i) -> EArrayReadExpr (go b, go i)
+  | ERecordField (a, f) -> ERecordField (go a, f)
+  | EIntrinsic (path, name, args) -> EIntrinsic (path, name, List.map go args)
+  | ECast (t, a) -> ECast (t, go a)
+  | ETuple l -> ETuple (List.map go l)
+  | EApp (f, args) -> EApp (go f, List.map go args)
+  | ERecord (n, fields) -> ERecord (n, List.map (fun (f, x) -> (f, go x)) fields)
+  | EVariant (n, c, args) -> EVariant (n, c, List.map go args)
+  | EArrayCreate (t, size, m) -> EArrayCreate (t, go size, m)
+  | EIf (c, a, b) -> EIf (go c, go a, go b)
+  | EMatch (scrut, cases) ->
+      EMatch (go scrut, List.map (fun (p, x) -> (p, go x)) cases)
+
+let rec subst_lvalue k r = function
+  | LVar _ as lv -> lv
+  | LArrayElem (n, i) -> LArrayElem (n, subst_expr k r i)
+  | LArrayElemExpr (b, i) -> LArrayElemExpr (subst_expr k r b, subst_expr k r i)
+  | LRecordField (lv, f) -> LRecordField (subst_lvalue k r lv, f)
+
+(* Only the statement forms a duplicable body can have: anything else is left
+   alone, and cannot occur ([duplicable] refused it). *)
+let rec subst_stmt k r (s : stmt) : stmt =
+  let ex = subst_expr k r and go = subst_stmt k r in
+  match s with
+  | SAssign (lv, e) -> SAssign (subst_lvalue k r lv, ex e)
+  | SSeq l -> SSeq (List.map go l)
+  | SIf (c, t, e) -> SIf (ex c, go t, Option.map go e)
+  | SLet (v, e, b) -> SLet (v, ex e, go b)
+  | SLetMut (v, e, b) -> SLetMut (v, ex e, go b)
+  | SBlock b -> SBlock (go b)
+  | SPragma (h, b) -> SPragma (h, go b)
+  | SExpr e -> SExpr (ex e)
+  | SWhile _ | SFor _ | SMatch _ | SReturn _ | SBarrier | SWarpBarrier | SEmpty
+  | SMemFence | SNative _ | SCoopmat _ ->
+      s
+
+(* The body without its trailing [k := k + c] (the statement
+   [trailing_increment] found). *)
+let rec drop_trailing_increment (k : var) (s : stmt) : stmt =
+  match s with
+  | SSeq stmts -> (
+      match
+        List.rev (List.filter (function SEmpty -> false | _ -> true) stmts)
+      with
+      | last :: rest -> SSeq (List.rev (drop_trailing_increment k last :: rest))
+      | [] -> s)
+  | SBlock b -> SBlock (drop_trailing_increment k b)
+  | SLet (v, e, b) -> SLet (v, e, drop_trailing_increment k b)
+  | SLetMut (v, e, b) -> SLetMut (v, e, drop_trailing_increment k b)
+  | SAssign (LVar v, _) when same_var v k -> SEmpty
+  | _ -> s
+
+(* [u] copies of [core], copy [j] reading [k] as [k + j * step] ([step] negative
+   for a counter that goes down), then [k := k + u * step]. *)
+let shifted_copies u ~(k : var) ~step core =
+  let advance n = EBinop (Add, EVar k, EConst (CInt32 (Int32.of_int n))) in
+  SSeq
+    (List.init u (fun j ->
+         if j = 0 then core else subst_stmt k (advance (j * step)) core)
+    @ [SAssign (LVar k, advance (u * step))])
 
 (* [while k < bound do body done], [body] ending in [k := k + c]. The main loop
    runs while [k + (u - 1) * c < bound], i.e. [k < bound - (u - 1) * c] in 64
@@ -235,8 +311,7 @@ let unroll_while ctx cond body =
              && (not (is_constant bound))
              && invariant ~assigned:(k :: assigned) bound -> (
           match qualifying_body ctx body with
-          | None -> None
-          | Some u ->
+          | Some u when u * Int32.to_int c <= 0x3fffffff ->
               let lim = fresh_var ctx "lim" TInt64 in
               let delta = (u - 1) * Int32.to_int c in
               ctx.rewritten <- ctx.rewritten + 1 ;
@@ -247,9 +322,15 @@ let unroll_while ctx cond body =
                      SSeq
                        [
                          SWhile
-                           (EBinop (op, i64 (EVar k), EVar lim), copies u body);
+                           ( EBinop (op, i64 (EVar k), EVar lim),
+                             shifted_copies
+                               u
+                               ~k
+                               ~step:(Int32.to_int c)
+                               (drop_trailing_increment k body) );
                          SWhile (cond, body);
-                       ] )))
+                       ] ))
+          | Some _ | None -> None)
       | _ -> None)
   | _ -> None
 
@@ -302,11 +383,70 @@ let unroll_for ctx (v : var) start stop dir body =
                                SWhile
                                  ( EBinop
                                      (main_cmp, i64 (EVar counter), EVar lim),
-                                   copies u iteration );
+                                   shifted_copies
+                                     u
+                                     ~k:counter
+                                     ~step:
+                                       (match dir with
+                                       | Upto -> 1
+                                       | Downto -> -1)
+                                     body );
                                SWhile
                                  ( EBinop (tail_cmp, EVar counter, EVar stop_v),
                                    iteration );
                              ] ) ) ) ))
+
+(** {1 Constant-trip loops}
+
+    A [for] loop with constant bounds and at most {!max_const_trip} iterations
+    is expanded into one copy of the body per iteration, the loop variable bound
+    to its value by a [let]. [ptxas] unrolls such loops itself, but only after
+    the PTX is written: expanding them here lets the address of an element
+    [a.(base + i)] take the iteration's [i] as an immediate offset
+    (Sarek_ir_ptx_expr.split_offset), where [ptxas] would be left recomputing a
+    full address per element. The copies run in the loop's order. *)
+
+let max_const_trip = 16
+
+let max_const_expansion = 2048
+
+let rec const_int = function
+  | EConst (CInt32 n) -> Some (Int32.to_int n)
+  | ECast (TInt32, e) -> const_int e
+  | EBinop (((Add | Sub | Mul) as op), a, b) -> (
+      match (const_int a, const_int b) with
+      | Some x, Some y ->
+          let r = match op with Add -> x + y | Sub -> x - y | _ -> x * y in
+          if r >= Int32.to_int Int32.min_int && r <= Int32.to_int Int32.max_int
+          then Some r
+          else None
+      | _ -> None)
+  | _ -> None
+
+let unroll_const ctx (v : var) start stop dir body =
+  match (const_int start, const_int stop) with
+  | Some lo, Some hi when v.var_type = TInt32 ->
+      let trips =
+        match dir with Upto -> hi - lo + 1 | Downto -> lo - hi + 1
+      in
+      let nodes = count_nodes body in
+      if
+        trips >= 1 && trips <= max_const_trip
+        && trips * nodes <= max_const_expansion
+        && duplicable body
+        && not (List.exists (same_var v) (assigned_in body))
+      then begin
+        ctx.rewritten <- ctx.rewritten + 1 ;
+        let value k =
+          EConst
+            (CInt32
+               (Int32.of_int
+                  (match dir with Upto -> lo + k | Downto -> lo - k)))
+        in
+        Some (SSeq (List.init trips (fun k -> SLet (v, value k, body))))
+      end
+      else None
+  | _ -> None
 
 let is_sarek_directive = function
   | h :: _ -> String.length h >= 6 && String.sub h 0 6 = "sarek."
@@ -318,13 +458,18 @@ let rec rewrite_stmt ctx (s : stmt) : stmt =
   let go = rewrite_stmt ctx in
   match s with
   | SWhile (cond, body) -> (
+      let body = go body in
       match unroll_while ctx cond body with
       | Some unrolled -> unrolled
-      | None -> SWhile (cond, go body))
+      | None -> SWhile (cond, body))
   | SFor (v, start, stop, dir, body) -> (
-      match unroll_for ctx v start stop dir body with
-      | Some unrolled -> unrolled
-      | None -> SFor (v, start, stop, dir, go body))
+      let body = go body in
+      match unroll_const ctx v start stop dir body with
+      | Some expanded -> expanded
+      | None -> (
+          match unroll_for ctx v start stop dir body with
+          | Some unrolled -> unrolled
+          | None -> SFor (v, start, stop, dir, body)))
   | SPragma (h, ((SWhile _ | SFor _) as loop)) when not (is_sarek_directive h)
     -> (
       match loop with

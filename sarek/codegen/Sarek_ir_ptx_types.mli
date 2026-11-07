@@ -83,6 +83,22 @@ type reg_alloc = {
   mutable label : int;
   arr_elt_types : (string, elttype) Hashtbl.t;
   arr_memspaces : (string, arr_space) Hashtbl.t;
+  const_vars : (string, int) Hashtbl.t;
+      (** Variables bound to an int32 literal by an immutable [let], by name.
+          Lets an array index [v + e] fold the literal into the access's
+          immediate offset; reset while a helper body is inlined. *)
+  range_vars : (string, int * int) Hashtbl.t;
+      (** Inclusive bounds of an immutable int32 [let] whose value is bounded by
+          construction (thread indices, masks, small arithmetic of those): lets
+          a division by a power of two be one shift. *)
+  stable_vars : (string, unit) Hashtbl.t;
+      (** Scalars with a register of their own that nothing writes: scalar
+          parameters and immutable [let]s of a computed value (an operation, an
+          intrinsic or a load: never a bare variable, whose register a [let]
+          shares). *)
+  affine_vars : (string, var * int) Hashtbl.t;
+      (** [let v = a + c], [a] a stable variable and [c] a literal: [v] is [a]
+          plus [c], so an index [v + e] is [a + e] plus the literal [c]. *)
   read_only : (string, unit) Hashtbl.t;
       (** Global vector parameters the kernel never writes (see
           {!Sarek_ir_ptx_readonly}); their loads are [ld.global.nc]. Names

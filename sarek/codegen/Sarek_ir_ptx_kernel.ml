@@ -435,6 +435,11 @@ let generate ?(sm_target = "sm_86") ?(soa_params = []) ?block (k : kernel) :
   let shared_buf = Buffer.create 256 in
   let module_buf = Buffer.create 128 in
   let param_str = emit_params body_buf alloc env ~soa_params k.kern_params in
+  List.iter
+    (function
+      | DParam (v, None) -> Hashtbl.replace alloc.stable_vars v.var_name ()
+      | DParam (_, Some _) | DLocal _ | DShared _ -> ())
+    k.kern_params ;
   emit_locals body_buf shared_buf module_buf alloc env k.kern_locals ;
   emit_stmt body_buf alloc env k.kern_body ;
   Buffer.add_string body_buf "    ret;\n" ;

@@ -4,7 +4,15 @@
 
 (test
  (name ptx_sass_batching)
- (libraries sarek sarek.stdlib sarek.codegen sarek_ir sarek_cuda unix)
+ (libraries
+  sarek
+  sarek.stdlib
+  sarek.codegen
+  sarek.execute
+  sarek_ir
+  sarek_cuda
+  str
+  unix)
  (preprocess
   (pps sarek_ppx))
  (flags

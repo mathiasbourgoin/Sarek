@@ -52,6 +52,43 @@ let refuse_aggregate_state_space_array ~what ~(name : string) (elt : elttype) :
   | TArray _ | TVec _ ->
       ()
 
+(** What the emitter knows about [let v = e] that lets an array index fold: a
+    literal ([const_vars]), a register nobody writes ([stable_vars]), and
+    [a + c] with [a] such a register ([affine_vars]). Called after [e] is
+    emitted. *)
+let record_let_facts alloc ~(mutable_ : bool) (v : var) (e : expr) : unit =
+  let name = v.var_name in
+  forget_name alloc name ;
+  if not mutable_ then begin
+    (match range_of alloc e with
+    | Some r -> Hashtbl.replace alloc.range_vars name r
+    | None -> ()) ;
+    (match e with
+    | EConst (CInt32 n) ->
+        Hashtbl.replace alloc.const_vars name (Int32.to_int n)
+    | _ -> (
+        match split_offset alloc e with
+        | Some (EVar a), c
+          when c <> 0 && Hashtbl.mem alloc.stable_vars a.var_name ->
+            Hashtbl.replace alloc.affine_vars name (a, c)
+        | _ -> ())) ;
+    (* A [let] of a bare variable (or a no-op cast of one) shares that
+       variable's register, so only a computed value has one of its own. *)
+    match e with
+    | EBinop _ | EUnop _ | EArrayRead _ | EArrayReadExpr _ ->
+        Hashtbl.replace alloc.stable_vars name ()
+    | EIntrinsic
+        ( _,
+          ( "thread_idx_x" | "thread_idx_y" | "thread_idx_z" | "block_idx_x"
+          | "block_idx_y" | "block_idx_z" | "block_dim_x" | "block_dim_y"
+          | "block_dim_z" | "grid_dim_x" | "grid_dim_y" | "grid_dim_z" ),
+          [] ) ->
+        (* special-register reads: always a register of their own; other
+           intrinsics (a cast to int32, say) may return their operand's *)
+        Hashtbl.replace alloc.stable_vars name ()
+    | _ -> ()
+  end
+
 (** {1 Statement emitter} *)
 
 let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
@@ -148,6 +185,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
          register set. *)
       let b = emit_value buf alloc env e in
       env_bind_binding env v.var_name b ;
+      record_let_facts alloc ~mutable_:false v e ;
       emit_stmt buf alloc env body
   | SLetMut (v, e, body) ->
       (* Mutable binding: copy into fresh registers (leaf-wise for
@@ -156,6 +194,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
          clobber y. *)
       let b_init = emit_value buf alloc env e in
       env_bind_binding env v.var_name (copy_binding buf alloc b_init) ;
+      record_let_facts alloc ~mutable_:true v e ;
       emit_stmt buf alloc env body
   | SAssign (lv, e) -> emit_assign buf alloc env lv e
   | SIf (cond, then_s, else_opt) -> (
@@ -185,6 +224,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
       let r_loop = new_u32 alloc in
       emit buf "mov.u32 %s, %s;" r_loop r_start ;
       env_bind env v.var_name r_loop ;
+      record_let_facts alloc ~mutable_:true v (EConst CUnit) ;
       let l_header = new_label alloc in
       let l_exit = new_label alloc in
       emit_label buf l_header ;
@@ -256,6 +296,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
 and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
   match lv with
   | LVar v -> (
+      forget_name alloc v.var_name ;
       match env_lookup_binding env v.var_name with
       | Scalar r_dst ->
           let r_val = emit_expr buf alloc env e in
@@ -270,19 +311,20 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
   | LArrayElem (arr_name, idx_expr) ->
       let r_base = env_lookup env arr_name in
       let r_val = emit_expr buf alloc env e in
-      let r_idx = emit_expr buf alloc env idx_expr in
-      emit_array_write
+      let idx, off = emit_split_index buf alloc env idx_expr in
+      emit_array_write_at
         buf
         alloc
         r_base
-        r_idx
+        ~idx
+        ~off
         r_val
         (infer_elt_type alloc arr_name)
         ~space:(arr_space_of alloc arr_name)
   | LArrayElemExpr (base_expr, idx_expr) ->
       let r_base = emit_expr buf alloc env base_expr in
       let r_val = emit_expr buf alloc env e in
-      let r_idx = emit_expr buf alloc env idx_expr in
+      let idx, off = emit_split_index buf alloc env idx_expr in
       let arr_name_opt =
         match base_expr with EVar v -> Some v.var_name | _ -> None
       in
@@ -297,7 +339,7 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
       let space =
         match arr_name_opt with Some n -> arr_space_of alloc n | None -> None
       in
-      emit_array_write buf alloc r_base r_idx r_val elt_type ~space
+      emit_array_write_at buf alloc r_base ~idx ~off r_val elt_type ~space
   | LRecordField (root, field) -> (
       match split_elem_field_lvalue alloc (LRecordField (root, field)) with
       | Some (arr_name, idx_expr, path) ->
