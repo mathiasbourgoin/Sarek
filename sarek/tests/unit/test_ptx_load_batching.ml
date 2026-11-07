@@ -174,6 +174,17 @@ let bound_assigned_in_body =
       done ;
       b.(0l) <- acc]
 
+let for_bound_assigned_in_body =
+  [%kernel
+    fun (a : float32 vector) (b : float32 vector) (n0 : int32) ->
+      let acc = mut 0.0 in
+      let n = mut n0 in
+      for i = 0 to n do
+        acc := acc +. a.(i) ;
+        n := n - 1l
+      done ;
+      b.(0l) <- acc]
+
 let nested_loops =
   [%kernel
     fun (a : float32 vector) (b : float32 vector) (n : int32) (m : int32) ->
@@ -641,6 +652,7 @@ let () =
           unchanged "variable step" variable_step;
           unchanged "barrier in the body" barrier_in_loop;
           unchanged "bound assigned in the body" bound_assigned_in_body;
+          unchanged "for bound assigned in the body" for_bound_assigned_in_body;
           changed "inner loop of a nest" nested_loops;
           Alcotest.test_case
             "factor follows the loads"
