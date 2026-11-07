@@ -167,7 +167,8 @@ layout above (element `e` of lane `l`: row `2e + l/16`, column `l mod 16`) by th
 preamble's `sarek_cm_scale_add` template; non-contraction rests on hiprtc's
 `-ffp-contract=off`. Strict: bit-identical to the interpreter on gfx1100
 (`sarek/tests/e2e/test_coopmat_scale_add_e2e.ml`). The CUDA arm of the shared
-source is a named `#error`; the HIP probe sets `ds_scale_add` on gfx11 only.
+source is a named `#error`; the HIP probe sets `ds_scale_add` on gfx1100 (compute capability 11.0,
+wave32) only, the one chip it was executed on.
 
 ## Exactness contract (tests)
 

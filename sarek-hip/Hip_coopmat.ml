@@ -56,21 +56,29 @@ let gfx11_configs =
     device record so a test can drive it with any device's facts. *)
 let support ~compute_capability:(major, minor) ~warp_size =
   let lowered = major = 11 && warp_size = 32 in
+  (* CM_scale_add is lowered for the whole gfx11 family but has been executed
+     only on gfx1100 (compute capability 11.0), so only 11.0 offers it.
+     docs/design/coopmat-scaled-accumulate.md §6. *)
+  let scale_add = lowered && minor = 0 in
   let configs = if lowered then gfx11_configs else [] in
   {
     C.ds_configs = configs;
     ds_robust_buffer_access = false;
     ds_subgroup_size = warp_size;
     ds_advertised_count = List.length configs;
-    ds_scale_add = lowered;
+    ds_scale_add = scale_add;
     ds_evidence =
       (if lowered then
          Printf.sprintf
-           "HIP: gfx%d family (compute capability %d.%d), wave%d: RDNA3 WMMA"
+           "HIP: gfx%d family (compute capability %d.%d), wave%d: RDNA3 WMMA%s"
            major
            major
            minor
            warp_size
+           (if scale_add then ""
+            else
+              "; CM_scale_add is lowered for gfx11 but executed only on \
+               gfx1100 (compute capability 11.0), so it is not offered here")
        else
          Printf.sprintf
            "HIP: the WMMA lowering covers gfx11 (RDNA3) with 32-wide \

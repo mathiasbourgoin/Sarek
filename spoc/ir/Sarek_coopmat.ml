@@ -414,12 +414,12 @@ let device_lacks_scale_add ~evidence =
     cap_evidence =
       Sarek_capability.Quoted
         (scale_add_design
-       ^ " §3: lowered on HIP gfx11 only; CUDA, Vulkan, Metal and the backends \
-          without cooperative matrices refuse it");
+       ^ " §3 and §6: offered on HIP gfx1100 only; CUDA, Vulkan, Metal and the \
+          backends without cooperative matrices refuse it");
     cap_remedy =
       Some
-        "Run the kernel on a HIP gfx11 device or on the interpreter, or store \
-         the fragment and apply the scales with scalar code.";
+        "Run the kernel on a HIP gfx1100 device or on the interpreter, or \
+         store the fragment and apply the scales with scalar code.";
   }
 
 let scale_add_verdict ~support ~dst_frag ~src_frag =
