@@ -878,6 +878,35 @@ let test_marked_variant () =
   Alcotest.(check bool) "marked" true (Align.is_marked m.kern_body) ;
   Alcotest.(check bool) "original unmarked" false (Align.is_marked ir.kern_body)
 
+(* The checked variant (a launch argument's base pointer is not aligned): no
+   static proof is used, so even constant, provably aligned accesses are tested
+   and staged. *)
+let test_checked_variant () =
+  let k = tile f16_cfg in
+  Alcotest.(check bool)
+    "constants are proven"
+    true
+    (Align.proven_ops k.kern_body <> []) ;
+  let c = Align.mark_checked k in
+  Alcotest.(check bool) "checked" true (Align.is_checked c.kern_body) ;
+  Alcotest.(check bool) "distinct" true (c != k) ;
+  Alcotest.(check bool) "idempotent" true (Align.mark_checked c == c) ;
+  Alcotest.(check bool) "nothing proven" true (Align.proven_ops c.kern_body = []) ;
+  let block = (32, 1, 1) in
+  check_has
+    "checked, PTX"
+    (ptx ~block c)
+    [".b8 sarek_cm_tiles[1024];"; "bra L"; "bar.warp.sync"] ;
+  check_has
+    "checked, CUDA/C"
+    (Sarek_ir_cuda.generate_with_types ~block ~types:[] c)
+    ["if (sarek_cm_misaligned(((const __half *)(a)"; "sarek_cm_tiles[1024]"] ;
+  check_lacks "unchecked, PTX" (ptx ~block k) ["sarek_cm_tiles"; "bra L"] ;
+  Alcotest.(check (list string))
+    "arrays accessed"
+    ["a"; "b"; "c"; "d"]
+    (List.sort compare (Align.arrays_accessed k))
+
 (** {1 Kernels without cooperative matrices are unchanged} *)
 
 (* MD5 of the PTX of the f16 regression kernels, recorded from the generator
@@ -1047,6 +1076,7 @@ let () =
           Alcotest.test_case "GEMM footprint" `Quick test_gemm_footprint;
           Alcotest.test_case "derived predicate" `Quick test_derive;
           Alcotest.test_case "review findings" `Quick test_review_findings;
+          Alcotest.test_case "checked variant" `Quick test_checked_variant;
           Alcotest.test_case
             "aligned variant: no buffer"
             `Quick
