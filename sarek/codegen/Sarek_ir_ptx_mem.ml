@@ -55,14 +55,10 @@ let emit_elt_addr buf alloc r_base r_idx elt_type ~space =
          zero extension the former cvt/shl/add triple used, so the address is
          the same; an out-of-bounds access is undefined either way. The signed
          form is what lets [ptxas] emit one IMAD.WIDE. *)
+      let r_off = new_u64 alloc in
+      emit buf "mul.wide.s32 %s, %s, %d;" r_off r_idx (1 lsl elt_shift elt_type) ;
       let r_addr = new_u64 alloc in
-      emit
-        buf
-        "mad.wide.s32 %s, %s, %d, %s;"
-        r_addr
-        r_idx
-        (1 lsl elt_shift elt_type)
-        r_base ;
+      emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
       r_addr
 
 (** The memory operand of an element access, with a constant element offset
