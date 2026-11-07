@@ -208,7 +208,8 @@ let corpus () =
     through NVRTC's include path, the fragment types and [load_matrix_sync] /
     [mma_sync] / [store_matrix_sync] signatures agree, and the integer arm takes
     two operands of the same signedness. *)
-let coopmat_tile name (a : Sarek_coopmat.component_type) b acc =
+let coopmat_tile ?(index = 0) ?(stride = 16) name
+    (a : Sarek_coopmat.component_type) b acc =
   let module C = Sarek_coopmat in
   let cfg =
     {
@@ -228,7 +229,8 @@ let coopmat_tile name (a : Sarek_coopmat.component_type) b acc =
     | C.Uint8 | C.Sint8 -> TUint8
     | C.Uint32 | C.Sint32 -> TInt32
   in
-  let i = EConst (CInt32 0l) and s = EConst (CInt32 16l) in
+  let i = EConst (CInt32 (Int32.of_int index))
+  and s = EConst (CInt32 (Int32.of_int stride)) in
   let load dst frag src =
     SCoopmat
       (CM_load
@@ -273,6 +275,29 @@ let coopmat_corpus () =
     coopmat_tile "coopmat_u8_s32" C.Uint8 C.Uint8 C.Sint32;
     coopmat_tile "coopmat_s8_s32" C.Sint8 C.Sint8 C.Sint32;
     coopmat_tile "coopmat_u8_u32" C.Uint8 C.Uint8 C.Uint32;
+    (* not provably aligned (index 1, stride 17): with a known block they are
+       staged through the per-warp shared buffer ("_staged": see [block_of]) *)
+    coopmat_tile
+      ~index:1
+      ~stride:17
+      "coopmat_f16_f32_staged"
+      C.Float16
+      C.Float16
+      C.Float32;
+    coopmat_tile
+      ~index:1
+      ~stride:17
+      "coopmat_u8_s32_staged"
+      C.Uint8
+      C.Uint8
+      C.Sint32;
+    coopmat_tile
+      ~index:3
+      ~stride:19
+      "coopmat_s8_u32_staged"
+      C.Sint8
+      C.Sint8
+      C.Uint32;
   ]
 
 (** {1 Gate} *)
@@ -312,11 +337,22 @@ let compile_ok ~kernel_name name cuda =
       Ok ()
   | exception e -> Error (Printexc.to_string e)
 
+(* The launch block the staged kernels are generated for. *)
+let block_of name =
+  let suffix = "_staged" in
+  let n = String.length name and m = String.length suffix in
+  if n >= m && String.sub name (n - m) m = suffix then Some (64, 1, 1) else None
+
 let gate_tests () =
   List.map
     (fun (name, k) ->
       Alcotest.test_case (Printf.sprintf "nvrtc/%s" name) `Quick (fun () ->
-          let cuda = Sarek_ir_cuda.generate_with_types ~types:k.kern_types k in
+          let cuda =
+            Sarek_ir_cuda.generate_with_types
+              ?block:(block_of name)
+              ~types:k.kern_types
+              k
+          in
           (* Generation is unconditional: with no toolkit we still exercise the
              emitter and would catch a codegen exception. Only the compile step
              is conditional. *)

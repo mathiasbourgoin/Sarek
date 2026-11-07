@@ -47,6 +47,8 @@
 
 (copy_files "../Matrix_specialise.ml")
 
+(copy_files "../Coopmat_variant.ml")
+
 (executable
  (name smoke)
  (modes js)
@@ -67,6 +69,7 @@
   Launch_policy
   Matrix_admission
   Matrix_specialise
+  Coopmat_variant
   Epilogue_policy
   Launch_epilogue
   Execute

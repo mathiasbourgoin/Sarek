@@ -118,8 +118,33 @@ __device__ __forceinline__ void sarek_cm_store_acc_cm_i32(const sarek_cm_i8 &f, 
    launch that violates the precondition traps instead of computing on a
    misaligned fragment. */
 #include <mma.h>
+__device__ __forceinline__ bool sarek_cm_misaligned(const void *p, long long s, int bytes) {
+  return (((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0;
+}
 __device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int bytes) {
-  if ((((unsigned long long)p) & 31ull) != 0ull || ((s * bytes) & 15) != 0) __trap();
+  if (sarek_cm_misaligned(p, s, bytes)) __trap();
+}
+/* A misaligned access (not proven aligned at code generation, block known) copies
+   the 16x16 tile element by element through a 32-byte aligned per-warp buffer
+   in shared memory (sarek_cm_tiles, declared by the generator) and runs wmma on
+   the buffer with a leading dimension of 16: element t of the buffer is
+   index + (t / 16) * stride + (t % 16), in either layout. Lane l copies
+   t = l + 32 j, j < 8. */
+template <typename T>
+__device__ __forceinline__ void sarek_cm_stage_in(T *tile, const T *src, long long stride) {
+  unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  for (int j = 0; j < 8; ++j) {
+    unsigned t = lane + 32u * j;
+    tile[t] = src[(long long)(t >> 4) * stride + (t & 15u)];
+  }
+}
+template <typename T>
+__device__ __forceinline__ void sarek_cm_stage_out(T *dst, const T *tile, long long stride) {
+  unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  for (int j = 0; j < 8; ++j) {
+    unsigned t = lane + 32u * j;
+    dst[(long long)(t >> 4) * stride + (t & 15u)] = tile[t];
+  }
 }
 #endif
 |}
