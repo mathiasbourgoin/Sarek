@@ -7,9 +7,9 @@ of llama.cpp's MMQ kernels and for the per-row rescale of online softmax._
 **Status:** design only. Implementation is **deferred**: the measurement in §1
 shows that 8-bit WMMA is not measurably faster than f16 WMMA on gfx1100
 (ratio 1.02, inside an 8 % order effect), so the first
-consumer (a Katra int8 prompt path) would gain only the dequantisation work it
-removes, not matrix throughput. **Date:** 2026-10-12. **Requested by:** the Katra
-project (an int8 prompt path in the style of llama.cpp's MMQ).
+consumer (a downstream LLM inference engine's int8 prompt path) would gain only the dequantisation work it
+removes, not matrix throughput. **Date:** 2026-10-12. **Requested by:** a downstream
+user (an int8 prompt path in the style of llama.cpp's MMQ).
 
 ## 1. Decisive measurement: iu8 vs f16 WMMA peak on gfx1100
 
@@ -53,7 +53,7 @@ Sarek's HIP lowering does not cover gfx12 (`specs/coopmat-hip-wmma.md`).
 **Consequence for the consumer.** An int8 prompt path on gfx1100 can save the
 dequantise-to-f16 pass, the f16 narrowing of activations and half of the
 activation bytes. It cannot save matrix-unit time. Whether that is worth the
-work is a Katra measurement (its trace splits dequantisation from GEMM time), not
+work is a downstream measurement (its trace splits dequantisation from GEMM time), not
 a SPOC one.
 
 ## 2. The operation

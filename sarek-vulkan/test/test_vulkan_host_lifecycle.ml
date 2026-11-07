@@ -94,7 +94,7 @@ let test_pinned_across_device_destroy device =
   | () -> Alcotest.fail "a second free of the dropped block was accepted"
   | exception Invalid_argument _ -> ()
 
-(* Katra reads model files into a pinned block with pread on an O_DIRECT
+(* A downstream LLM engine reads model files into a pinned block with pread on an O_DIRECT
    descriptor. The mapping of a driver allocation is not anonymous memory, so
    this is checked rather than assumed: get_user_pages must accept it. *)
 let o_direct = 0x4000 (* Linux x86_64 / aarch64 differ; x86_64 here *)

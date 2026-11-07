@@ -19,9 +19,9 @@ as "not lowered by any backend yet" (`sarek/ppx/Sarek_unlowered.ml:38-41`,
 its probe). `docs/optimization/opt-expressivity-gaps.md` gap 1 (P0) calls this the
 highest-leverage item and the prerequisite of gaps 5 and 13 (block reduce/scan, stdlib).
 
-Katra motivation: the reduction of `gdn_seq` (8 lanes per column) goes through shared
+Downstream motivation (a downstream LLM inference engine): the reduction of `gdn_seq` (8 lanes per column) goes through shared
 memory with 2 barriers per token. llama.cpp reduces by shuffles
-(`ggml-cuda/gated_delta_net.cu:5-100`). Without shuffles Katra cannot remove those
+(`ggml-cuda/gated_delta_net.cu:5-100`). Without shuffles the engine cannot remove those
 barriers (perf claim to be measured, not asserted: see section 10, AC-9).
 
 ## 2. Owner constraint (binding)
@@ -74,14 +74,14 @@ Notation: `W` = warp width of the device (32 or 64 for CUDA/HIP/AMD; 32 on Apple
 4. **Early exit.** A lane that already returned is an inactive source. The
    convergence rule's F-04 (varying early return makes the rest `Diverged`) already
    refuses the shuffle after it; the brief keeps that and adds a negative test.
-5. **Types.** The primitives are `int32 -> int32 -> int32` today. Katra needs
+5. **Types.** The primitives are `int32 -> int32 -> int32` today. The engine needs
    `float32`. Required: `int32`, `float32`; `float64` where the backend has it
    (64-bit shuffles as two 32-bit halves; Metal has no float64: refuse with the
    existing Metal float64 error). `bool`, vectors and records are out of scope.
    Typing mechanism: decision D1.
 6. **Sub-warp segments.** No `width` parameter in this task (decision D2). `xor` with
    masks below a power of two `P <= W` stays inside aligned `P`-lane groups on every
-   backend, which is what Katra's 8-lane reduction needs. `down`/`up` inside a segment
+   backend, which is what the engine's 8-lane reduction needs. `down`/`up` inside a segment
    needs an explicit `width`; out of scope, documented.
 7. **Purity and motion.** A shuffle is *convergent*: its result depends on other
    lanes, so it must not be hoisted, sunk, duplicated, or moved across control flow,
@@ -233,7 +233,7 @@ production and extracted model stays green).
   2-D block `(8, 4*W/8)`: GPU output equals Native output equals Interpreter output
   **bit for bit**. Run on every backend available in the CI-less local run, and the
   Native-vs-Interpreter part in `dune test` (no GPU).
-- **AC-3** Katra-shaped kernel: 8-lane xor-tree sum of `float32` per column (masks
+- **AC-3** Downstream-shaped kernel: 8-lane xor-tree sum of `float32` per column (masks
   4, 2, 1), result compared with a barrier-and-shared-memory reference on Native,
   Interpreter and HIP; identical (sums are done in the same order, so equality is
   exact; if the order differs the test uses the documented tolerance and says so).
@@ -252,7 +252,7 @@ production and extracted model stays green).
   `Invalid_launch`; a kernel without shuffles is unaffected (existing tests unchanged).
 - **AC-8** Pass-safety tests (R2): for each listed pass, a kernel with a shuffle is
   left unmoved/unfused/unsliced, shown by IR equality before/after the pass.
-- **AC-9** Perf evidence (not a gate on merge, but required before Katra claims
+- **AC-9** Perf evidence (not a gate on merge, but required before the downstream engine claims
   anything): micro-benchmark on gfx1100, shuffle 8-lane reduction vs shared+2 barriers,
   command, machine, date, raw output location recorded (project rule). No performance
   number appears in docs without it.
@@ -263,7 +263,7 @@ production and extracted model stays green).
 
 Machine for the device runs: tartarus (Ryzen 9 7950X, RX 7900 XTX gfx1100 only,
 `HIP_VISIBLE_DEVICES=0`, `ROCR_VISIBLE_DEVICES=0`, `RUSTICL_ENABLE=radeonsi:0`,
-`SPOC_DISABLE_VULKAN=1`, under `flock /tmp/katra-gpu.lock` and
+`SPOC_DISABLE_VULKAN=1`, under a GPU lock file (`flock`) and
 `scripts/gpu-kernel-log-gate.sh`; the kernel log stayed clean). Raw outputs are
 kept outside the repository, in `/tmp/ws-evidence/` on tartarus. The load
 average read 2 to 4 during the runs (other sessions), which does not matter for
@@ -284,8 +284,8 @@ the pass/fail parity runs and is why the timing is marked provisional.
 Provisional timing (AC-9, not a gate), `bench_warp_shuffle` on gfx1100 HIP,
 2026-10-17, 4096 dependent 8-lane float32 reductions per thread, 1,048,576
 threads, median of 7 alternating pairs, machine loaded: 3 shuffles 5.55 ms,
-shared memory with 2 barriers 11.65 ms (2.10x). No performance claim for Katra
-rests on this number; Katra must measure its own kernel in a quiet window.
+shared memory with 2 barriers 11.65 ms (2.10x). No performance claim for the downstream engine
+rests on this number; it must measure its own kernel in a quiet window.
 
 Deviations from the brief, all recorded in the PR:
 - the launch error is the existing `Execute_error.Invalid_dimensions` (there is
@@ -333,7 +333,7 @@ Options considered are in the earlier versions of this file (Git history). Bindi
 
 `warp_vote_all/any`, `warp_ballot`, `warp_active_mask`, `warp_vote_*` family, warp-scope supersteps (S1), `width`-segmented shuffles (D2: none in v1), shuffle
 of `bool`/vector/record values, subgroup reductions/scans/arithmetic
-(`subgroupAdd`...), cooperative groups, non-full masks, any Katra kernel change (Katra
+(`subgroupAdd`...), cooperative groups, non-full masks, any downstream kernel change (the engine
 adopts the primitives in its own branch after this merges, with its own perf-vs-llama
 report), CI workflow changes.
 

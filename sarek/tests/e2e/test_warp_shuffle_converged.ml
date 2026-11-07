@@ -74,8 +74,8 @@ let kernel_shadowed_helper =
 (* The strict analysis (thread-varying parameters, helper results, mutables
    assigned in divergence) must not refuse these legitimate kernels. *)
 
-(* OK: the Katra 8-lane reduction, a shuffle tree in converged flow *)
-let kernel_katra_reduce8 =
+(* OK: a downstream 8-lane reduction, a shuffle tree in converged flow *)
+let kernel_reduce8_xor =
   [%kernel
     fun (inp : float32 vector) (out : float32 vector) ->
       let g = (block_idx_x * 64l) + thread_idx_x in

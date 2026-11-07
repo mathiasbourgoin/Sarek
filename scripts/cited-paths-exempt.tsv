@@ -88,9 +88,7 @@ formal/convergence-safety/report/WORKFLOW_FEEDBACK.md::0fdf1107	a coqchk .vo DIG
 formal/convergence-safety/report/WORKFLOW_FEEDBACK.md::41e0d70a	a coqchk .vo DIGEST, not a commit -- the canonical hash the one above failed to match
 kb/sarek/ppx/parser.md::lib/ppxlib/ast/ast.ml	the Parsetree definition the enumeration was walked from lives in the INSTALLED ppxlib (0.38.0 in this switch), not in this repository; the sentence names it so a reader can open the same file in their own switch. The reason line used to say "5.2.1", which is an OCaml version, not a ppxlib one
 kb/sarek/ppx/parser.md::lib/ppxlib/astlib/ast_502.ml	same installed ppxlib; named as the file to diff ast/ast.ml against to establish which OCaml AST shape it carries
-docs/measurements/codegen-lsr-unroll-2026-10-10/README.md::e1878fb	commit of the spoc_llm repository (benchmark source), not of this repository
 docs/optimization/l15b-mma-probe.md::af8a3b1	commit of the ZLUDA repository (github.com/vosen/ZLUDA, v7-preview.3 build under test), not of this repository
 specs/zluda-mma-nvrtc13.md::af8a3b1	commit of the ZLUDA repository (v7-preview.3 build under test), not of this repository
 gh-pages/docs/getting_started.md::../spoc_docs/index.html	odoc output built by docs.yml and copied into the published site; gh-pages/spoc_docs/ is deliberately not tracked
 gh-pages/examples/index.md::../spoc_docs/index.html	same: odoc output built by docs.yml, not tracked
-specs/optimisation-policy.md::bdbce6c	Katra commit (the Katra repository, not this one) that table 1.2 of the specification is taken at

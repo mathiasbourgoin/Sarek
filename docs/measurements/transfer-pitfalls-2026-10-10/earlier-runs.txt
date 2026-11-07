@@ -21,7 +21,7 @@ run7 untouched 26.54/26.74 populated 26.14/26.63  (touched line not kept)
 VmRSS growth when registering 8 GiB of untouched memory: +8.21 to +8.39 GB; VmPin: 0 kB throughout.
 copy spanning two registrations: hipErrorInvalidValue (synchronous: hipMemcpyHtoD (range); stream: hipMemcpyHtoDAsync)
 
-== spoc_llm bench/regbench.exe (spoc_llm commit de225a9), 8 GiB, 5.6 MiB records, 400 copies
+== downstream engine bench/regbench.exe, 8 GiB, 5.6 MiB records, 400 copies
 REGBENCH_WRITE=1:            registered copies: 26.52 GB/s
 REGBENCH_FILE=<GGUF shard>:  registered copies after O_DIRECT fill: 26.30 GB/s (1 region)
 REGBENCH_CHUNK_MIB=64 + FILE: registered copies after O_DIRECT fill: 25.94 GB/s (133 regions)

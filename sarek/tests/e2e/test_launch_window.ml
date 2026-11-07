@@ -45,7 +45,7 @@ let () =
   Backend_hip.init ()
 
 (* 8 rows per work-group of 256 threads, one 32-lane slice per row: the shape
-   of spoc_llm's wave matvecs. y[row] = sum_b x[row*nb + b] * w[b]. *)
+   of a downstream engine's wave matvecs. y[row] = sum_b x[row*nb + b] * w[b]. *)
 let mv_wave =
   [%kernel
     fun (x : float32 vector)

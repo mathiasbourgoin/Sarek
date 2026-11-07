@@ -2117,7 +2117,7 @@
  (action
   (run %{dep:test_warp_shuffle_parity.exe})))
 
-; The Katra-shaped use (AC-3): an 8-lane xor-tree float32 sum per column, masks
+; The downstream-shaped use (AC-3): an 8-lane xor-tree float32 sum per column, masks
 ; 4, 2, 1, equal bit for bit to the same tree through shared memory and barriers
 ; on every device. Built by the test_int32_bitcasts stanza above.
 

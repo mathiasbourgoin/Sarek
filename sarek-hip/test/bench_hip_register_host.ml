@@ -9,7 +9,7 @@
  *
  *   touched    written before registering
  *   untouched  never touched before registering
- *   reg+write  never touched, registered, then written (spoc_llm's RAM tier)
+ *   reg+write  never touched, registered, then written (a downstream RAM tier)
  *
  * For each: synchronous copies of random 5.5 MiB records into a device-only
  * vector, first pass and an identical repeat pass, in GB/s; plus VmRSS growth

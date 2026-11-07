@@ -6,7 +6,7 @@
 (******************************************************************************
  * Host cost of rewriting two small vectors (8 int32 + 8 float32) between
  * kernel launches that read them, the decode-loop pattern of a MoE router
- * (spoc_llm: selected expert ids and their weights, once per layer).
+ * (a downstream LLM engine: selected expert ids and their weights, once per layer).
  *
  * Modes, all producing the same kernel inputs:
  *   none         no rewrite (kernel time alone)
@@ -68,7 +68,7 @@ let host_us = env_int "SPOC_BENCH_HOST_US" 300
 
 let launches = env_int "SPOC_BENCH_LAUNCHES" 4
 
-(* Host work between a rewrite and the launches that read it (spoc_llm:
+(* Host work between a rewrite and the launches that read it (downstream:
    fetching the selected experts' weights): a busy wait. When the rewrite does
    not make the host wait for the GPU, this overlaps the previous launches. *)
 let host_work () =

@@ -6,7 +6,7 @@
 (******************************************************************************
  * Names the target language cannot take as written (Sarek_ir_names).
  *
- * Two defects of valid OCaml kernels, found by Katra and recorded in the
+ * Two defects of valid OCaml kernels, found by a downstream user and recorded in the
  * 2026-10-17 review of the SPOC updates:
  *
  * 1. Name shadowing. [let s = s +. 1.0 in ...] (a parameter rebound) and two

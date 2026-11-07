@@ -12,7 +12,7 @@ version: 1.0.0
 
 Follow-up to `specs/device-buffers-async-copy.md` (#423), which defined the
 API and implemented it on HIP, CUDA, Native and Interpreter while Metal
-refused. Driven by spoc_llm milestone M3 on an Apple M4 (32 GB unified
+refused. Driven by a downstream LLM inference engine on an Apple M4 (32 GB unified
 memory): a per-layer MoE expert cache of ~48 device-only vectors filled by
 ranged copies. Decisions not dictated by the brief were **decided autonomously
 by the agent** under the owner's delegation of 2026-10-10 and are marked
@@ -23,20 +23,20 @@ by the agent** under the owner's delegation of 2026-10-10 and are marked
 | Q | A |
 |---|---|
 | Storage mode of a device-only vector? | `MTLResourceStorageModeShared`, like every other Metal buffer in SPOC *(agent decision)*. On Apple silicon CPU and GPU share one physical memory: a shared buffer's `contents` is GPU memory, so a ranged copy is one `memcpy` at full memory bandwidth. Private storage would need a shared staging buffer plus a blit encoder, i.e. the same bytes moved twice, with no bandwidth gain for GPU reads on unified memory. "Device-only" is a SPOC property (no host Bigarray mirror), not a Metal storage mode. |
-| Maximum buffer size? | The device's `maxBufferLength` (queried per device). An allocation above it is refused before `newBufferWithLength:` with a memory-allocation error naming the requested size and the limit, instead of the opaque "returned null". Callers split larger caches (spoc_llm does: ~48 buffers). |
-| Real async (command buffers that complete after the call returns)? | **Launches: yes** (scope addition requested by the lead on 2026-10-10, after measuring 240 us per launch and 8.6 tok/s for spoc_llm 0.8B decode on ladon; first version of this spec said no). Dispatches are appended to one open command buffer per queue, committed when the queue's previous command buffer has completed or after `SPOC_METAL_BATCH` (default 32) dispatches *(agent decision: sweep 8–512 on the 0.8B decode, 32 within noise of the best)*. **Copies: no**: a copy is a CPU memcpy into shared storage and completes before returning (`async_copy = false`). |
+| Maximum buffer size? | The device's `maxBufferLength` (queried per device). An allocation above it is refused before `newBufferWithLength:` with a memory-allocation error naming the requested size and the limit, instead of the opaque "returned null". Callers split larger caches (the downstream engine does: ~48 buffers). |
+| Real async (command buffers that complete after the call returns)? | **Launches: yes** (scope addition requested by the lead on 2026-10-10, after measuring 240 us per launch and 8.6 tok/s for the downstream engine's 0.8B decode on ladon; first version of this spec said no). Dispatches are appended to one open command buffer per queue, committed when the queue's previous command buffer has completed or after `SPOC_METAL_BATCH` (default 32) dispatches *(agent decision: sweep 8–512 on the 0.8B decode, 32 within noise of the best)*. **Copies: no**: a copy is a CPU memcpy into shared storage and completes before returning (`async_copy = false`). |
 | Stream launches? | Implemented: `run_source_on_stream` appends to the stream's own `MTLCommandQueue`; `support.stream_launch = true`. |
 | Ordering of a copy against a kernel? | A per-queue table of pending command buffers records the MTLBuffers each binds (`Metal_api.Pending`). Every host access to a buffer waits for the pending command buffers that bind it (committing an open one first); a launch waits for pending work on OTHER queues binding its buffers; within one queue Metal's default tracked-hazard mode orders command buffers and serial dispatches. A copy issued before a launch is visible to it (CPU writes to shared storage before `commit`). Freeing needs no wait: a command buffer retains the buffers it binds. |
 | Pinned host memory? | Page-aligned host memory from `posix_memalign` with the OS page size (16 KiB on Apple silicon) *(agent decision)*. Unified memory has no DMA engine to page-lock for: a copy from it is the same `memcpy` as from pageable memory. Page alignment keeps a future `newBufferWithBytesNoCopy:` wrap possible. Documented in the backend and README. |
-| `register_host`? | Accepted as a no-op on the memory, tracked by core as pinned (same as Native) *(agent decision)*: there is nothing to page-lock for the GPU on unified memory, and refusing would make portable spoc_llm code diverge for no benefit. |
+| `register_host`? | Accepted as a no-op on the memory, tracked by core as pinned (same as Native) *(agent decision)*: there is nothing to page-lock for the GPU on unified memory, and refusing would make portable downstream code diverge for no benefit. |
 | Events? | `record` captures the newest command buffer of the stream (committing the open one); `synchronize` waits on it through `Pending` (a failure is reported once); `event_query` reads its status and reports a failure; `elapsed` uses max(record time, GPUEndTime); `stream_wait_event` adds nothing (dependencies are through buffers, already ordered). |
 | What still refuses on Metal? | Nothing new from `Framework_sig.ASYNC`. Raw-pointer kernel arguments, PTX, and the other existing refusals stay. OpenCL, Vulkan, WebGPU keep `Async_refused`. |
 
 ## User Stories
 
 ### US-1: Device-only vectors on Metal (Priority: P0)
-As spoc_llm's tier manager on an M4, I want `Transfer.create_device_only` to allocate an MTLBuffer with no host mirror so that a 14 GiB expert cache does not cost another 14 GiB of RAM.
-**Why this priority**: M3 on ladon cannot start without it.
+As the downstream engine's tier manager on an M4, I want `Transfer.create_device_only` to allocate an MTLBuffer with no host mirror so that a 14 GiB expert cache does not cost another 14 GiB of RAM.
+**Why this priority**: the downstream expert cache on ladon cannot start without it.
 **Scope**: does NOT cover private storage or wrapping existing host memory.
 **Independent Test**: create a device-only int32 vector on Metal, fill it by ranged copy, use it as kernel input and output, read back.
 **Acceptance Scenarios**:
@@ -57,8 +57,8 @@ As the I/O engine, I want host→device and device→host copies at element/byte
 4. **Given** a 256 MiB device-only char vector, **When** a 256 MiB ranged copy runs, **Then** it completes and its bandwidth is reported (information only).
 
 ### US-3: Streams, events and stream launches (Priority: P1)
-As spoc_llm's runtime, I want the HIP/CUDA stream code path (copy on stream a, event, b waits, kernel on b) to run unchanged on Metal so that one code path serves both machines.
-**Why this priority**: avoids a Metal-specific branch in spoc_llm.
+As the downstream engine's runtime, I want the HIP/CUDA stream code path (copy on stream a, event, b waits, kernel on b) to run unchanged on Metal so that one code path serves both machines.
+**Why this priority**: avoids a Metal-specific branch in the downstream engine.
 **Scope**: does NOT provide overlap inside one domain.
 **Independent Test**: the suite's `test_streams_pinned` on Metal.
 **Acceptance Scenarios**:
@@ -67,7 +67,7 @@ As spoc_llm's runtime, I want the HIP/CUDA stream code path (copy on stream a, e
 3. **Given** a destroyed stream or event, **When** used, **Then** `Invalid_argument` (core check, unchanged).
 
 ### US-6: Asynchronous launches (Priority: P0, scope addition 2026-10-10)
-As spoc_llm's decoder (~495 launches per token), I want a Metal launch to cost microseconds of host time, not a GPU round trip, so that decode on ladon is not bound by launch latency.
+As the downstream engine's decoder (~495 launches per token), I want a Metal launch to cost microseconds of host time, not a GPU round trip, so that decode on ladon is not bound by launch latency.
 **Why this priority**: 240 us/launch capped Qwen3.5-0.8B decode at 8.6 tok/s.
 **Scope**: does NOT make copies asynchronous.
 **Independent Test**: many dependent launches with no synchronisation, then one host read; launch-overhead bench before/after.
@@ -79,7 +79,7 @@ As spoc_llm's decoder (~495 launches per token), I want a Metal launch to cost m
 
 ### US-4: Pinned and registered host memory (Priority: P1)
 As the I/O engine, I want `alloc_pinned`/`register_host` to work on Metal so that the same buffers serve `pread` and copies on both machines.
-**Why this priority**: portability of spoc_llm's I/O engine.
+**Why this priority**: portability of the downstream engine's I/O layer.
 **Scope**: no page-locking semantics on unified memory.
 **Independent Test**: alloc, check page alignment, copy from it, free; register/unregister a Bigarray.
 **Acceptance Scenarios**:
@@ -168,7 +168,7 @@ As a SPOC user on OpenCL/Vulkan/WebGPU, I want the existing capability refusals 
 - AC-6 [US-2]: 256 MiB host→device and device→host bandwidth printed (information).
 - AC-8 [A-2]: `total_global_mem` printed on ladon equals `recommendedMaxWorkingSetSize` (> 4 GiB on a 32 GB M4).
 - AC-9 [US-6]: `test_async_launches` → all ok; removing the buffer wait or the cross-queue wait makes it FAIL (prove-red).
-- AC-10 [US-6]: launch overhead and spoc_llm 0.8B decode tok/s measured before/after on ladon, decode tokens identical.
+- AC-10 [US-6]: launch overhead and the downstream engine's 0.8B decode tok/s measured before/after on ladon, decode tokens identical.
 - AC-7 [US-5]: `dune runtest` on tartarus exit 0; `test_device_buffers.exe` OpenCL/Vulkan refusal checks pass.
 
 ## Edge Cases
@@ -183,7 +183,7 @@ As a SPOC user on OpenCL/Vulkan/WebGPU, I want the existing capability refusals 
 - CHECK-2 [AC-2]: on ladon, the same executable's oversize-allocation check → ok.
 - CHECK-3 [AC-6]: on ladon, `dune build @sarek-metal/test/e2e-metal-bench` → prints GB/s lines (information, not a gate).
 - CHECK-5 [AC-9]: on ladon, `test_metal_device_buffers.exe` async checks ok; mutation runs FAIL.
-- CHECK-6 [AC-10]: manual — `bench_metal_launch_overhead.exe` and spoc_llm `decode --greedy 64` on ladon, numbers in the PR.
+- CHECK-6 [AC-10]: manual — `bench_metal_launch_overhead.exe` and the downstream engine's `decode --greedy 64` on ladon, numbers in the PR.
 - CHECK-4 [AC-7]: on tartarus, `dune runtest` exit 0 and `sarek/tests/e2e/test_device_buffers.exe` exit 0.
 
 ## Claims Metadata

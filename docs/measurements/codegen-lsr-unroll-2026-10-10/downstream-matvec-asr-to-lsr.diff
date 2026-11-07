@@ -1,5 +1,5 @@
---- ws-main/spoc_llm/src/kernels/matvec.ml	2026-10-10 21:49:47.778939841 +0200
-+++ ws-main-lsr/spoc_llm/src/kernels/matvec.ml	2026-10-10 21:51:31.351201384 +0200
+--- ws-main/downstream/src/kernels/matvec.ml	2026-10-10 21:49:47.778939841 +0200
++++ ws-main-lsr/downstream/src/kernels/matvec.ml	2026-10-10 21:51:31.351201384 +0200
 @@ -200,11 +200,11 @@
              let sh_j = (j - (j / 4l * 4l)) * 8l in
              let sh_ja = (ja - (ja / 4l * 4l)) * 8l in

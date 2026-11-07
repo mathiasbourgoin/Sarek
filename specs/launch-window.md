@@ -10,7 +10,7 @@ version: 1.0.0
 
 # Spec — Launch window and horizontal fusion
 
-Driver: spoc_llm decodes one token of Qwen3.5-0.8B with 497
+Driver: a downstream LLM inference engine decodes one token of Qwen3.5-0.8B with 497
 `Execute.run_vectors` launches and one of the 35B with 1 145. Each launch costs
 4.5-6 µs of host time after #424, and the host is a bound on the 0.8B.
 Many consecutive launches are independent. For example, the gate and up

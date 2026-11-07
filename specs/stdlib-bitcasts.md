@@ -10,7 +10,7 @@ version: 1.0.0
 
 # Spec — Int32.float_of_bits / Int32.bits_of_float
 
-Driver: spoc_llm stores f32 scales inside int32 expert records copied to the
+Driver: a downstream LLM inference engine stores f32 scales inside int32 expert records copied to the
 device as one block, and decodes them with a downstream intrinsic
 `float_of_bits` that only the C-family backends (which read `Sarek_registry`)
 can serve. This moves the operation, and its inverse, into the stdlib.
@@ -30,7 +30,7 @@ can serve. This moves the operation, and its inverse, into the stdlib.
 
 ### US-1: Decode an f32 stored as int32 (Priority: P0)
 As a kernel author, I want `Int32.float_of_bits a.(i)` so that f32 values packed in int32 records decode on any backend.
-**Why this priority**: the spoc_llm use case.
+**Why this priority**: the downstream use case.
 **Scope**: does not cover f64/int64.
 **Independent Test**: e2e `decode` and `record` kernels on every enumerated device.
 **Acceptance Scenarios**:

@@ -7,7 +7,7 @@
  * End-to-end launch cost gate (specs/cheap-repeated-launches.md).
  *
  * #522 added a whole-IR fold to every launch ([Execute.check_launch_warp]) and
- * took 42 to 53 percent off a Katra decode (359 to 168 tok/s, 281 to 497
+ * took 42 to 53 percent off a downstream LLM decode (359 to 168 tok/s, 281 to 497
  * launches per token). The roster gate, review and CI all passed; only the
  * consumer noticed. test_launch_check_cost.ml pins the two checks that regressed
  * then; this test pins the launch path of Execute.run_vectors on the two probe
@@ -388,7 +388,7 @@ let allowed_size_factor = 25.
 
 (* A launch may cost this many reference units. Calibrated in
    docs/launch-cost-gate.md: 0.7 to 1.3 idle and at most 1.4 with 24 busy loops
-   on 10 cores. The Katra loss of #522 (359 to 168 tok/s at 497 launches per
+   on 10 cores. The downstream decode loss of #522 (359 to 168 tok/s at 497 launches per
    token, about 6.4 us per launch) is about 12 units, over this limit (a
    margin of 1.5); a limit of 30 let that fixed cost through. *)
 let allowed_reference_units = 8.

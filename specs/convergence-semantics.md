@@ -143,7 +143,7 @@ mutables assigned a varying value or under varying control (C-1; flow-insensitiv
 per variable). Barriers and supersteps use it since the barrier-convergence
 change (a barrier reached through a varying helper parameter, a thread-dependent
 helper result, a mutable assigned in divergence or the value of a varying `if`
-is refused like a warp collective); the repository's kernels and Katra's
+is refused like a warp collective); the repository's kernels and a downstream engine's
 compile unchanged under it. Private-array reads (C-5) and loop-carried fixpoints through
 several mutables are not tracked by either analysis.
 

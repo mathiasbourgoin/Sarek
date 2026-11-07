@@ -12,7 +12,7 @@
  *   - encode:    float32 vector -> int32 vector     (bits_of_float)
  *   - roundtrip: int32 -> float32 -> int32 inside one kernel
  *   - record:    an f32 scale stored as int32 inside an int32 record vector,
- *                decoded and used in arithmetic (the spoc_llm use case)
+ *                decoded and used in arithmetic (the downstream use case)
  *
  * The bit patterns cover +-0, +-1, +-inf, the smallest and largest denormals,
  * the largest finite value, a quiet NaN with a payload, a signalling NaN, and

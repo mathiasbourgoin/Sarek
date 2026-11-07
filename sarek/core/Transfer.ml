@@ -638,9 +638,9 @@ type keep = Keep : 'a -> keep
     - an event recorded after the work was synchronised, or queried complete;
     - transitively: when a stream [b] that waited on an event of stream [a]
       completes past that wait, [a]'s work up to the event has completed too.
-      This is what releases a copy stream that is never synchronised itself —
-      the spoc_llm M3 pattern (copy on [a], record [e], [b] waits on [e], sync
-      [b]).
+      This is what releases a copy stream that is never synchronised itself — a
+      downstream consumer's pattern (copy on [a], record [e], [b] waits on [e],
+      sync [b]).
 
     Entries are ordered by a per-stream sequence number. The ledger is protected
     by a mutex and is never touched from a GC finaliser (which could run inside
@@ -1717,19 +1717,19 @@ let free_pinned (ba : (_, _, Bigarray.c_layout) Bigarray.Array1.t) : unit =
       0.95-6.17 GB/s (about 26 GB/s otherwise; one repeat pass at 1.66),
       whatever the preparation: memory written before registering, never
       touched, written after registering, or faulted in with
-      madvise(MADV_POPULATE_WRITE) first. spoc_llm saw 0.45 GB/s for memory
-      registered before it was touched, and attributed it to that; repeated runs
-      here do not support a dependence on touching, only an intermittent,
-      state-dependent effect. [hipHostRegister] faults every page in itself
-      (VmRSS grew by the full 8 GiB for untouched memory).
+      madvise(MADV_POPULATE_WRITE) first. A downstream user saw 0.45 GB/s for
+      memory registered before it was touched, and attributed it to that;
+      repeated runs here do not support a dependence on touching, only an
+      intermittent, state-dependent effect. [hipHostRegister] faults every page
+      in itself (VmRSS grew by the full 8 GiB for untouched memory).
     - A copy whose host range spans two registrations fails with
       [hipErrorInvalidValue], synchronous or on a stream. Registering a large
       buffer in regions means slicing every copy inside one region.
-    - spoc_llm observed copies from ONE 8 GiB registration fall to 2.3 GB/s
-      after CPU writes into it, against 26.3 GB/s with 64 MiB registrations.
-      That did not reproduce later the same day (26.3 GB/s after an O_DIRECT
-      fill of a single 8 GiB registration): treat region size as something to
-      measure on the target machine, not a rule.
+    - A downstream user observed copies from ONE 8 GiB registration fall to 2.3
+      GB/s after CPU writes into it, against 26.3 GB/s with 64 MiB
+      registrations. That did not reproduce later the same day (26.3 GB/s after
+      an O_DIRECT fill of a single 8 GiB registration): treat region size as
+      something to measure on the target machine, not a rule.
     - ROCm does not count registered pages as pinned ([VmPin: 0 kB] in
       [/proc/self/status] with 8 GiB registered), so the kernel may still
       migrate or compact them. Whether that is what makes copies slow under

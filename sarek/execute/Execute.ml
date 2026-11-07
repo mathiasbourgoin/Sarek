@@ -670,7 +670,7 @@ let warp_width_of_device (device : Device.t) : int =
   | _ -> device.Device.capabilities.Framework_sig.warp_size
 
 (* [Sarek_ir_analysis.kernel_uses_shuffle] folds the whole IR, helpers included:
-   cost proportional to the kernel, paid on every launch (a Katra decode token
+   cost proportional to the kernel, paid on every launch (a downstream LLM decode token
    launches 281 to 497 kernels). The verdict is a pure function of the IR, and
    an IR is immutable, so it is recorded once in the IR's {!Ir_memo} record
    (physical identity: a different IR value, even a structurally derived one,

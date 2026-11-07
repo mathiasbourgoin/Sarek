@@ -321,7 +321,7 @@
  (libraries sarek_hip spoc.ir alcotest astring))
 
 ; f16 GEMM on the RDNA3 matrix units (SCoopmat, Sarek_gemm.Coopmat) vs the
-; scalar f32 Sarek_gemm at spoc_llm prefill shapes; GPU events, median and
+; scalar f32 Sarek_gemm at downstream LLM prefill shapes; GPU events, median and
 ; min-max over rounds. Information only (specs/coopmat-hip-wmma.md).
 
 (executable
