@@ -239,6 +239,19 @@ let offset_plus =
     fun (a : float32 vector) (b : float32 vector) (n : int32) ->
       b.(n + 2l) <- a.(n + 1l) +. a.(n - 2l) +. a.(n)]
 
+(* Division and remainder by powers of two, on a value of unknown sign and on
+   bounded non-negative ones. *)
+let pow2_kernel =
+  [%kernel
+    fun (x : int32) (o : int32 vector) ->
+      o.(0l) <- x / 8l ;
+      o.(1l) <- x mod 8l ;
+      o.(2l) <- x land 1023l / 32l ;
+      o.(3l) <- x land 1023l mod 16l ;
+      o.(4l) <- x / 2l ;
+      o.(5l) <- x mod 1024l ;
+      o.(6l) <- (thread_idx_x + 5l) / 4l]
+
 (******************************************************************************
  * ld.global.nc and mad.wide
  ******************************************************************************)
@@ -451,6 +464,110 @@ let test_helper_does_not_see_caller_literals () =
     "the helper indexes with its own c, not the caller's literal 5"
     false
     (contains ptx "+20]")
+
+(* A straight-line evaluator for the few integer instructions the division by a
+   power of two lowers to: runs the kernel's PTX on one input and returns the
+   values it stores, in order. *)
+let run_int_ptx ptx ~x ~tid =
+  let regs = Hashtbl.create 32 in
+  let get r = match Hashtbl.find_opt regs r with Some v -> v | None -> 0 in
+  let wrap v = v land 0xffffffff in
+  let signed v = if v >= 0x80000000 then v - 0x100000000 else v in
+  let value tok =
+    let tok = String.trim tok in
+    if tok <> "" && tok.[0] = '%' then get tok else wrap (int_of_string tok)
+  in
+  let stores = ref [] in
+  List.iter
+    (fun line ->
+      let line = String.trim line in
+      let line =
+        if line <> "" && line.[String.length line - 1] = ';' then
+          String.sub line 0 (String.length line - 1)
+        else line
+      in
+      match String.index_opt line ' ' with
+      | None -> ()
+      | Some i -> (
+          let op = String.sub line 0 i in
+          let args =
+            List.map
+              String.trim
+              (String.split_on_char
+                 ','
+                 (String.sub line i (String.length line - i)))
+          in
+          match (op, args) with
+          | "ld.param.u32", [d; p] when contains p "param_x" ->
+              Hashtbl.replace regs d (wrap x)
+          | "mov.u32", [d; "%tid.x"] -> Hashtbl.replace regs d tid
+          | "mov.u32", [d; s] when s <> "" && s.[0] <> '%' ->
+              Hashtbl.replace regs d (value s)
+          | "mov.u32", [d; s] -> Hashtbl.replace regs d (get s)
+          | "shr.s32", [d; a; n] ->
+              Hashtbl.replace regs d (wrap (signed (value a) asr value n))
+          | "shr.u32", [d; a; n] -> Hashtbl.replace regs d (value a lsr value n)
+          | "add.u32", [d; a; b] ->
+              Hashtbl.replace regs d (wrap (value a + value b))
+          | "sub.u32", [d; a; b] ->
+              Hashtbl.replace regs d (wrap (value a - value b))
+          | "and.b32", [d; a; b] -> Hashtbl.replace regs d (value a land value b)
+          | "st.global.s32", [_; v] -> stores := signed (value v) :: !stores
+          | ("div.s32" | "rem.s32"), _ -> Alcotest.fail "a division was left"
+          | _ -> ()))
+    (String.split_on_char '\n' ptx) ;
+  List.rev !stores
+
+let test_pow2_division_exact () =
+  let ptx = ptx_of (ir_of pow2_kernel) in
+  Alcotest.(check bool) "no div.s32" false (contains ptx "div.s32") ;
+  Alcotest.(check bool) "no rem.s32" false (contains ptx "rem.s32") ;
+  let m = Int32.to_int Int32.min_int and mx = Int32.to_int Int32.max_int in
+  List.iter
+    (fun x ->
+      List.iter
+        (fun tid ->
+          let r32 f = Int32.to_int (f (Int32.of_int x)) in
+          let expect =
+            [
+              r32 (fun v -> Int32.div v 8l);
+              r32 (fun v -> Int32.rem v 8l);
+              r32 (fun v -> Int32.div (Int32.logand v 1023l) 32l);
+              r32 (fun v -> Int32.rem (Int32.logand v 1023l) 16l);
+              r32 (fun v -> Int32.div v 2l);
+              r32 (fun v -> Int32.rem v 1024l);
+              (tid + 5) / 4;
+            ]
+          in
+          Alcotest.(check (list int))
+            (Printf.sprintf "x=%d tid=%d" x tid)
+            expect
+            (run_int_ptx ptx ~x ~tid))
+        [0; 1; 3; 1023])
+    [
+      m;
+      m + 1;
+      -1025;
+      -1024;
+      -1000;
+      -9;
+      -8;
+      -7;
+      -2;
+      -1;
+      0;
+      1;
+      2;
+      7;
+      8;
+      9;
+      1023;
+      1024;
+      1000;
+      99999;
+      mx - 1;
+      mx;
+    ]
 
 (******************************************************************************
  * Which loops are unrolled
@@ -753,6 +870,10 @@ let () =
           Alcotest.test_case "mad.wide addresses" `Quick test_mad_wide_addresses;
           Alcotest.test_case "read-only analysis" `Quick test_readonly_analysis;
           Alcotest.test_case "literal offsets fold" `Quick test_offsets_fold;
+          Alcotest.test_case
+            "division by a power of two is exact"
+            `Quick
+            test_pow2_division_exact;
           Alcotest.test_case
             "constant index needs no address"
             `Quick

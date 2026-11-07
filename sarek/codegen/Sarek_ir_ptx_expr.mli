@@ -49,6 +49,11 @@ val emit_match_arms :
     inferred from the register-name prefix of the first operand. *)
 val emit_binop : Buffer.t -> reg_alloc -> env -> binop -> expr -> expr -> string
 
+(** [range_of alloc e] is inclusive bounds of the int32 value of [e] when it is
+    bounded by construction (literals, thread indices, masks, and bounded
+    arithmetic whose exact result fits int32), [None] otherwise. *)
+val range_of : reg_alloc -> expr -> (int * int) option
+
 (** [split_offset alloc idx] is [(rest, off)] with [idx = rest + off]: the
     literals that the [+]/[-] spine of [idx] adds (a product of literals counts
     as one), variables bound to a literal, and the literal of a variable defined

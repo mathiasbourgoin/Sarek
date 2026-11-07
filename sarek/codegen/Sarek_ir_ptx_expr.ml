@@ -483,6 +483,105 @@ let intrinsic_entries_memo :
     (string * intrinsic_category * intrinsic_handler) list option ref =
   ref None
 
+(** {1 Value ranges and division by a power of two}
+
+    [range_of alloc e] bounds the int32 value of [e] when it is bounded by
+    construction: literals, thread and block indices (CUDA limits), a mask
+    [x land m] with [m >= 0], and sums, differences and products of bounded
+    values whose exact result still fits int32 (so no wrap-around is assumed: an
+    unbounded operand, a parameter for instance, gives [None]). A [let] of such
+    a value is recorded in [alloc.range_vars]. *)
+let int32_min = Int32.to_int Int32.min_int
+
+let int32_max = Int32.to_int Int32.max_int
+
+let fits (lo, hi) = lo >= int32_min && hi <= int32_max
+
+let rec range_of alloc (e : expr) : (int * int) option =
+  let both a b f =
+    match (range_of alloc a, range_of alloc b) with
+    | Some ra, Some rb ->
+        let r = f ra rb in
+        if fits r then Some r else None
+    | _ -> None
+  in
+  match e with
+  | EConst (CInt32 n) -> Some (Int32.to_int n, Int32.to_int n)
+  | EVar v -> (
+      match Hashtbl.find_opt alloc.const_vars v.var_name with
+      | Some n -> Some (n, n)
+      | None -> Hashtbl.find_opt alloc.range_vars v.var_name)
+  | EIntrinsic (_, ("thread_idx_x" | "thread_idx_y"), []) -> Some (0, 1023)
+  | EIntrinsic (_, "thread_idx_z", []) -> Some (0, 63)
+  | EIntrinsic (_, ("block_dim_x" | "block_dim_y"), []) -> Some (1, 1024)
+  | EIntrinsic (_, "block_dim_z", []) -> Some (1, 64)
+  | EBinop (BitAnd, a, b) -> (
+      match (range_of alloc a, range_of alloc b) with
+      | _, Some (m, m') when m = m' && m >= 0 -> Some (0, m)
+      | Some (m, m'), _ when m = m' && m >= 0 -> Some (0, m)
+      | Some (lo, hi), Some (lo', hi') when lo >= 0 && lo' >= 0 ->
+          Some (0, min hi hi')
+      | _ -> None)
+  | EBinop (Add, a, b) -> both a b (fun (l, h) (l', h') -> (l + l', h + h'))
+  | EBinop (Sub, a, b) -> both a b (fun (l, h) (l', h') -> (l - h', h - l'))
+  | EBinop (Mul, a, b) ->
+      both a b (fun (l, h) (l', h') ->
+          let c = [l * l'; l * h'; h * l'; h * h'] in
+          (List.fold_left min max_int c, List.fold_left max min_int c))
+  | _ -> None
+
+let range_nonneg alloc e =
+  match range_of alloc e with Some (lo, _) -> lo >= 0 | None -> false
+
+(** The [k] of a divisor that is the literal [2^k], [1 <= k <= 30]. *)
+let pow2_divisor alloc (e : expr) : int option =
+  let n =
+    match e with
+    | EConst (CInt32 n) -> Some (Int32.to_int n)
+    | EVar v -> Hashtbl.find_opt alloc.const_vars v.var_name
+    | _ -> None
+  in
+  match n with
+  | Some n when n >= 2 && n land (n - 1) = 0 && n <= 1 lsl 30 ->
+      let rec log2 k = if 1 lsl k = n then k else log2 (k + 1) in
+      Some (log2 1)
+  | _ -> None
+
+(** [a / 2^k] and [a mod 2^k] with C's truncation toward zero. For [a >= 0] a
+    shift and a mask; otherwise the sign is folded in first: adding [2^k - 1] to
+    a negative [a] before the arithmetic shift rounds toward zero, and the
+    remainder is [a - (q << k)]. Exact for every int32 [a], [min_int] included.
+*)
+let emit_pow2_div buf alloc ~nonneg r_a k =
+  let r = new_u32 alloc in
+  if nonneg then emit buf "shr.s32 %s, %s, %d;" r r_a k
+  else begin
+    let sign = new_u32 alloc in
+    emit buf "shr.s32 %s, %s, 31;" sign r_a ;
+    let bias = new_u32 alloc in
+    emit buf "shr.u32 %s, %s, %d;" bias sign (32 - k) ;
+    let biased = new_u32 alloc in
+    emit buf "add.u32 %s, %s, %s;" biased r_a bias ;
+    emit buf "shr.s32 %s, %s, %d;" r biased k
+  end ;
+  r
+
+let emit_pow2_mod buf alloc ~nonneg r_a k =
+  let r = new_u32 alloc in
+  if nonneg then emit buf "and.b32 %s, %s, %d;" r r_a ((1 lsl k) - 1)
+  else begin
+    let sign = new_u32 alloc in
+    emit buf "shr.s32 %s, %s, 31;" sign r_a ;
+    let bias = new_u32 alloc in
+    emit buf "shr.u32 %s, %s, %d;" bias sign (32 - k) ;
+    let biased = new_u32 alloc in
+    emit buf "add.u32 %s, %s, %s;" biased r_a bias ;
+    let floor_multiple = new_u32 alloc in
+    emit buf "and.b32 %s, %s, %d;" floor_multiple biased (-(1 lsl k)) ;
+    emit buf "sub.u32 %s, %s, %s;" r r_a floor_multiple
+  end ;
+  r
+
 (** {1 Constant part of an array index}
 
     [split_offset alloc idx] is [(rest, off)] with [idx = rest + off]: the
@@ -889,6 +988,8 @@ and emit_app_inline buf alloc env hf args : binding =
      the same name must not fold into its indices. *)
   let caller_consts = Hashtbl.copy alloc.const_vars in
   let caller_stable = Hashtbl.copy alloc.stable_vars in
+  let caller_ranges = Hashtbl.copy alloc.range_vars in
+  Hashtbl.reset alloc.range_vars ;
   let caller_affine = Hashtbl.copy alloc.affine_vars in
   Hashtbl.reset alloc.const_vars ;
   Hashtbl.reset alloc.stable_vars ;
@@ -903,6 +1004,8 @@ and emit_app_inline buf alloc env hf args : binding =
   Hashtbl.iter (Hashtbl.replace alloc.const_vars) caller_consts ;
   Hashtbl.reset alloc.stable_vars ;
   Hashtbl.iter (Hashtbl.replace alloc.stable_vars) caller_stable ;
+  Hashtbl.reset alloc.range_vars ;
+  Hashtbl.iter (Hashtbl.replace alloc.range_vars) caller_ranges ;
   Hashtbl.reset alloc.affine_vars ;
   Hashtbl.iter (Hashtbl.replace alloc.affine_vars) caller_affine ;
   restore_helper_array_meta alloc saved ;
@@ -1180,7 +1283,7 @@ and emit_binop buf alloc env op e1 e2 : string =
         let r = new_u32 alloc in
         emit buf "mul.lo.u32 %s, %s, %s;" r r1 r2 ;
         r
-  | Div ->
+  | Div -> (
       if is_f64_reg r1 then (
         let r = new_f64 alloc in
         emit buf "div.rn.f64 %s, %s, %s;" r r1 r2 ;
@@ -1202,14 +1305,19 @@ and emit_binop buf alloc env op e1 e2 : string =
         emit buf "div.s64 %s, %s, %s;" r r1 r2 ;
         r)
       else
-        let r = new_u32 alloc in
-        emit buf "div.s32 %s, %s, %s;" r r1 r2 ;
-        r
-  | Mod ->
-      (* Float Mod is C fmod (exact for all finite inputs, result sign
+        match pow2_divisor alloc e2 with
+        | Some k -> emit_pow2_div buf alloc ~nonneg:(range_nonneg alloc e1) r1 k
+        | None ->
+            let r = new_u32 alloc in
+            emit buf "div.s32 %s, %s, %s;" r r1 r2 ;
+            r)
+  | Mod -> (
+      if
+        (* Float Mod is C fmod (exact for all finite inputs, result sign
          follows the dividend). Lowered by emit_float_fmod's iterative
          reduction - see its doc comment (audit finding M1). *)
-      if is_f64_reg r1 then emit_float_fmod buf alloc ~is64:true r1 r2
+        is_f64_reg r1
+      then emit_float_fmod buf alloc ~is64:true r1 r2
       else if is_f32_reg r1 then emit_float_fmod buf alloc ~is64:false r1 r2
       else if is_u64_reg r1 then (
         (* Signed rem, matching C's % (result sign follows the dividend),
@@ -1218,9 +1326,12 @@ and emit_binop buf alloc env op e1 e2 : string =
         emit buf "rem.s64 %s, %s, %s;" r r1 r2 ;
         r)
       else
-        let r = new_u32 alloc in
-        emit buf "rem.s32 %s, %s, %s;" r r1 r2 ;
-        r
+        match pow2_divisor alloc e2 with
+        | Some k -> emit_pow2_mod buf alloc ~nonneg:(range_nonneg alloc e1) r1 k
+        | None ->
+            let r = new_u32 alloc in
+            emit buf "rem.s32 %s, %s, %s;" r r1 r2 ;
+            r)
   | Eq | Ne | Lt | Le | Gt | Ge ->
       (* Comparison family, class-aware (audit finding H2): the old code
          fell through to setp.*.u32/s32 even on %rd (64-bit) operands,

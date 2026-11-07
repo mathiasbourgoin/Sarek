@@ -61,7 +61,11 @@ let record_let_facts alloc ~(mutable_ : bool) (v : var) (e : expr) : unit =
   Hashtbl.remove alloc.const_vars name ;
   Hashtbl.remove alloc.affine_vars name ;
   Hashtbl.remove alloc.stable_vars name ;
+  Hashtbl.remove alloc.range_vars name ;
   if not mutable_ then begin
+    (match range_of alloc e with
+    | Some r -> Hashtbl.replace alloc.range_vars name r
+    | None -> ()) ;
     (match e with
     | EConst (CInt32 n) ->
         Hashtbl.replace alloc.const_vars name (Int32.to_int n)
@@ -289,6 +293,7 @@ and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
       Hashtbl.remove alloc.const_vars v.var_name ;
       Hashtbl.remove alloc.affine_vars v.var_name ;
       Hashtbl.remove alloc.stable_vars v.var_name ;
+      Hashtbl.remove alloc.range_vars v.var_name ;
       match env_lookup_binding env v.var_name with
       | Scalar r_dst ->
           let r_val = emit_expr buf alloc env e in

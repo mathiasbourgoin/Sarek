@@ -80,6 +80,8 @@ type reg_alloc = {
   const_vars : (string, int) Hashtbl.t;
       (** [let v = <int32 literal>] bindings in scope, by name, so an index
           [v + e] folds the literal into an immediate offset. *)
+  range_vars : (string, int * int) Hashtbl.t;
+      (** Bounds of an immutable [let] int32, when known. *)
   stable_vars : (string, unit) Hashtbl.t;
       (** Scalars that hold a register of their own that nothing writes: scalar
           parameters and [let]s of a computed value. *)
@@ -148,6 +150,7 @@ let make_alloc () =
     arr_elt_types = Hashtbl.create 8;
     arr_memspaces = Hashtbl.create 8;
     const_vars = Hashtbl.create 8;
+    range_vars = Hashtbl.create 8;
     stable_vars = Hashtbl.create 8;
     affine_vars = Hashtbl.create 8;
     read_only = Hashtbl.create 8;

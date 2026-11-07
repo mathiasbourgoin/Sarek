@@ -87,6 +87,10 @@ type reg_alloc = {
       (** Variables bound to an int32 literal by an immutable [let], by name.
           Lets an array index [v + e] fold the literal into the access's
           immediate offset; reset while a helper body is inlined. *)
+  range_vars : (string, int * int) Hashtbl.t;
+      (** Inclusive bounds of an immutable int32 [let] whose value is bounded by
+          construction (thread indices, masks, small arithmetic of those): lets
+          a division by a power of two be one shift. *)
   stable_vars : (string, unit) Hashtbl.t;
       (** Scalars with a register of their own that nothing writes: scalar
           parameters and immutable [let]s of a computed value (an operation, an
