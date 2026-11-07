@@ -64,4 +64,19 @@ val lower_scalars : kernel -> kernel
     targets that have no implicit 8/32-bit conversion (GLSL, PTX) and for the
     interpreter. *)
 
+(** For the C-family emitters (CUDA/HIP, OpenCL, Metal): make every conversion
+    of an int32 to the signed 8-bit type an explicit [ECast (TInt8, _)] (the
+    value stored into an [int8] array element, and the [int8] local scalars,
+    which {!lower_scalars} turns into int32 binders). Converting an out-of-range
+    [int] to [signed char] is implementation-defined in C, C++ before C++20,
+    OpenCL C and MSL; the emitters spell the cast with {!c_signed_narrowing},
+    which is defined everywhere. Unsigned conversions are defined (modulo 2^8)
+    and are left alone, so kernels without [int8] are unchanged. *)
+val define_signed_narrowing : kernel -> kernel
+
+(** [c_signed_narrowing e] is the C expression [((((e) & 0xFF) ^ 0x80) - 0x80)]:
+    the low byte of [e] sign-extended, as an [int], with no
+    implementation-defined conversion. *)
+val c_signed_narrowing : string -> string
+
 val normalise : kernel -> kernel

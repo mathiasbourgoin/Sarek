@@ -159,44 +159,67 @@ let all_kernels = [K.rw_kernel (); K.shared_kernel (); K.scalar_kernel ()]
 
 let gen_all f = String.concat "\n" (List.map f all_kernels)
 
-let test_cuda_spelling () =
-  let src = gen_all Sarek_ir_cuda.generate in
+(** Every conversion of an int to a signed 8-bit type is the explicit
+    sign-extension of the low byte, never a C conversion: converting an
+    out-of-range [int] to [signed char] is implementation-defined in C, C++
+    before C++20, OpenCL C and MSL. Checked for the cast, the global store, the
+    shared store, and an int8 local's initialiser and reassignment; and no
+    signed-char cast remains. *)
+let signed_narrowing_sites =
+  [
+    "out[((i * 6) + 3)] = ((((vals[i]) & 0xFF) ^ 0x80) - 0x80);";
+    "dst_s8[i] = (((((vals[i] ^ 90)) & 0xFF) ^ 0x80) - 0x80);";
+    "ss[t] = (((((vals[g] ^ 51)) & 0xFF) ^ 0x80) - 0x80);";
+    "int y = (((((vals[i] ^ 17)) & 0xFF) ^ 0x80) - 0x80);";
+    "y = (((((y + 200)) & 0xFF) ^ 0x80) - 0x80);";
+  ]
+
+let check_c_family what src ~u8 ~s8 ~global ~restrict ~shared =
   List.iter
-    (check_has "CUDA/HIP" src)
-    [
-      "unsigned char* __restrict__ src_u8";
-      "signed char* __restrict__ src_s8";
-      "(unsigned char)";
-      "(signed char)";
-      "__shared__ unsigned char su[64]";
-      "__shared__ signed char ss[64]";
-    ]
+    (check_has what src)
+    ([
+       Printf.sprintf "%s%s* %ssrc_u8" global u8 restrict;
+       Printf.sprintf "%s%s* %ssrc_s8" global s8 restrict;
+       Printf.sprintf "(%s)vals[i]" u8;
+       Printf.sprintf "%s%s su[64]" shared u8;
+       Printf.sprintf "%s%s ss[64]" shared s8;
+     ]
+    @ signed_narrowing_sites) ;
+  check_absent what src (Printf.sprintf "(%s)" s8)
+
+let test_cuda_spelling () =
+  (* CUDA C and HIP share this emitter. *)
+  let src = gen_all Sarek_ir_cuda.generate in
+  check_c_family
+    "CUDA/HIP"
+    src
+    ~u8:"unsigned char"
+    ~s8:"signed char"
+    ~global:""
+    ~restrict:"__restrict__ "
+    ~shared:"__shared__ "
 
 let test_opencl_spelling () =
   let src = gen_all Sarek_ir_opencl.generate in
-  List.iter
-    (check_has "OpenCL" src)
-    [
-      "__global uchar* restrict src_u8";
-      "__global char* restrict src_s8";
-      "(uchar)";
-      "(char)";
-      "__local uchar su[64]";
-      "__local char ss[64]";
-    ]
+  check_c_family
+    "OpenCL"
+    src
+    ~u8:"uchar"
+    ~s8:"char"
+    ~global:"__global "
+    ~restrict:"restrict "
+    ~shared:"__local "
 
 let test_metal_spelling () =
   let src = gen_all Sarek_ir_metal.generate in
-  List.iter
-    (check_has "Metal" src)
-    [
-      "device uchar* src_u8";
-      "device char* src_s8";
-      "(uchar)";
-      "(char)";
-      "threadgroup uchar su[64]";
-      "threadgroup char ss[64]";
-    ]
+  check_c_family
+    "Metal"
+    src
+    ~u8:"uchar"
+    ~s8:"char"
+    ~global:"device "
+    ~restrict:""
+    ~shared:"threadgroup "
 
 let test_glsl_spelling () =
   let rw = Sarek_ir_glsl.generate ~block:(K.block, 1, 1) (K.rw_kernel ()) in
@@ -361,6 +384,47 @@ let test_coopmat_kernel_needs_both () =
        Sarek_ir_analysis.feature_name
        (Sarek_ir_analysis.kernel_requirements k))
 
+(** {1 s8 cooperative-matrix fragments from an int8 buffer} *)
+
+let run_coopmat_interp ~buf_elt =
+  let operand a =
+    match buf_elt with
+    | TInt8 -> Execute.Vec (vec_s8 a)
+    | _ -> Execute.Vec (vec_u8 (Array.map K.u8 a))
+  in
+  let d = vec_i32 (Array.make (K.mnk * K.mnk) 0l) in
+  Execute.run_interpreter_vectors
+    ~ir:(K.coopmat_s8_kernel ~buf_elt)
+    ~args:
+      [
+        operand K.coop_a;
+        operand K.coop_b;
+        Execute.Vec (vec_i32 K.coop_c);
+        Execute.Vec d;
+      ]
+    ~block:(Execute.dims1d 64)
+    ~grid:(Execute.dims1d 1)
+    ~parallel:false ;
+  Vector.to_array d
+
+let test_coopmat_int8_buffer_interp () =
+  let model = K.coopmat_s8_model () in
+  check_i32_array "int8 buffers" model (run_coopmat_interp ~buf_elt:TInt8) ;
+  check_i32_array "uint8 buffers" model (run_coopmat_interp ~buf_elt:TUint8)
+
+let test_coopmat_int8_buffer_codegen () =
+  let k8 = K.coopmat_s8_kernel ~buf_elt:TInt8
+  and ku = K.coopmat_s8_kernel ~buf_elt:TUint8 in
+  let c8 = Sarek_ir_cuda.generate k8 and cu = Sarek_ir_cuda.generate ku in
+  (* HIP's load helper takes const unsigned char *: the int8 buffer is cast,
+     the uint8 one passed as before. *)
+  check_has "CUDA/HIP int8" c8 "(const unsigned char *)(a)" ;
+  check_absent "CUDA/HIP uint8" cu "(const unsigned char *)(a)" ;
+  ignore (Sarek_ir_ptx.generate ~sm_target:"sm_86" k8 : string) ;
+  let g8 = Sarek_ir_glsl.generate ~block:(64, 1, 1) k8 in
+  check_has "GLSL int8" g8 "int8_t a[]" ;
+  check_has "GLSL int8" g8 "coopmat<int8_t"
+
 (** Kernel fusion substitutes a producer's stored expression for the consumer's
     read, which would drop the narrowing of an 8-bit store. *)
 let test_fusion_declines () =
@@ -429,6 +493,14 @@ let () =
         [
           Alcotest.test_case "Int8 gate" `Quick test_capability;
           Alcotest.test_case "fusion declines" `Quick test_fusion_declines;
+          Alcotest.test_case
+            "s8 coopmat from an int8 buffer (interpreter)"
+            `Quick
+            test_coopmat_int8_buffer_interp;
+          Alcotest.test_case
+            "s8 coopmat from an int8 buffer (codegen)"
+            `Quick
+            test_coopmat_int8_buffer_codegen;
           Alcotest.test_case
             "a u8 coopmat kernel needs Int8 and Coopmat"
             `Quick

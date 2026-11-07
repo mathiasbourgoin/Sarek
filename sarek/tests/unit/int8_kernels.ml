@@ -296,3 +296,95 @@ let src_u8 = Array.init n (fun i -> i land 0xff)
 (** Every s8 value, in a different order from {!src_u8} so the product in
     {!rw_kernel} pairs different bytes. *)
 let src_s8 = Array.init n (fun i -> s8 ((i * 37) + 11))
+
+(** {1 Cooperative matrices over int8 buffers} *)
+
+let mnk = 16
+
+(** s8 x s8 + s32 -> s32, non-saturating, 16x16x16, subgroup scope. *)
+let s8_config =
+  {
+    Sarek_coopmat_types.cfg_shape =
+      {Sarek_coopmat_types.m = mnk; n = mnk; k = mnk};
+    cfg_a = Sarek_coopmat_types.Sint8;
+    cfg_b = Sarek_coopmat_types.Sint8;
+    cfg_c = Sarek_coopmat_types.Sint32;
+    cfg_result = Sarek_coopmat_types.Sint32;
+    cfg_saturating = false;
+    cfg_scope = Sarek_coopmat_types.Subgroup;
+  }
+
+(** [d = a * b + c] by one subgroup, with the s8 operands [a] and [b] held in
+    buffers of element type [buf_elt]: [TInt8] (accepted since 8-bit storage
+    types exist) or [TUint8] (the original convention, kept). *)
+let coopmat_s8_kernel ~buf_elt : kernel =
+  let fa, fb, fc, fd = Sarek_coopmat_types.fragments_of_config s8_config in
+  let a = var 0 "a" (TVec buf_elt)
+  and b = var 1 "b" (TVec buf_elt)
+  and c = var 2 "c" (TVec TInt32)
+  and d = var 3 "d" (TVec TInt32) in
+  let load name frag src =
+    SCoopmat
+      (CM_load
+         {
+           dst = name;
+           frag;
+           src;
+           index = i32 0;
+           stride = i32 mnk;
+           layout = Sarek_coopmat_types.Row_major;
+         })
+  in
+  {
+    default_kernel with
+    kern_name = "coopmat_s8_from_" ^ Sarek_ir_pp.string_of_elttype buf_elt;
+    kern_params =
+      [
+        vec_param a buf_elt;
+        vec_param b buf_elt;
+        vec_param c TInt32;
+        vec_param d TInt32;
+      ];
+    kern_body =
+      SSeq
+        [
+          SCoopmat (CM_decl {name = "fa"; frag = fa});
+          SCoopmat (CM_decl {name = "fb"; frag = fb});
+          SCoopmat (CM_decl {name = "fc"; frag = fc});
+          SCoopmat (CM_decl {name = "fd"; frag = fd});
+          load "fa" fa "a";
+          load "fb" fb "b";
+          load "fc" fc "c";
+          SCoopmat
+            (CM_muladd
+               {dst = "fd"; a = "fa"; b = "fb"; c = "fc"; cfg = s8_config});
+          SCoopmat
+            (CM_store
+               {
+                 src = "fd";
+                 frag = fd;
+                 dst = "d";
+                 index = i32 0;
+                 stride = i32 mnk;
+                 layout = Sarek_coopmat_types.Row_major;
+               });
+        ];
+  }
+
+(** Operands covering -128..127 (A) and a different order of them (B). *)
+let coop_a = Array.init (mnk * mnk) (fun p -> s8 p)
+
+let coop_b = Array.init (mnk * mnk) (fun p -> s8 ((p * 71) + 5))
+
+let coop_c =
+  Array.init (mnk * mnk) (fun p -> Int32.of_int ((p * 37 mod 1009) - 500))
+
+(** Row-major [a * b + c] on the host. *)
+let coopmat_s8_model () =
+  Array.init (mnk * mnk) (fun p ->
+      let r = p / mnk and col = p mod mnk in
+      let acc = ref (Int32.to_int coop_c.(p)) in
+      for k = 0 to mnk - 1 do
+        acc := !acc + (coop_a.((r * mnk) + k) * coop_b.((k * mnk) + col))
+      done ;
+      Int32.of_int !acc)
