@@ -82,6 +82,26 @@ let rec expr_needs_branch_guard (e : expr) : bool =
     (statement position): tag-compare branch chain, arm-scoped payload bindings,
     exhaustiveness checking (FR-022, C-9). *)
 
+(** Forget everything known about the variable [name]: its own entries in the
+    fact tables, and the [let v = name + c] entries that name it as their atom
+    (they read whatever [name] means when they are used). Called whenever a name
+    is rebound or assigned. *)
+let forget_name alloc name =
+  Hashtbl.remove alloc.const_vars name ;
+  Hashtbl.remove alloc.range_vars name ;
+  Hashtbl.remove alloc.stable_vars name ;
+  Hashtbl.remove alloc.affine_vars name ;
+  let dependents =
+    Hashtbl.fold
+      (fun v ((atom : var), _) acc ->
+        if String.equal atom.var_name name then v :: acc else acc)
+      alloc.affine_vars
+      []
+  in
+  List.iter (Hashtbl.remove alloc.affine_vars) dependents
+
+let pattern_names = function PWild -> [] | PConstr (_, vars) -> vars
+
 (** A pattern that matches unconditionally: wildcard, or the variable pattern
     the lowering encodes as [PConstr ("", [x])]. *)
 let pattern_is_catch_all = function
@@ -212,9 +232,11 @@ let emit_match_arms buf alloc (env : env) (scrut : binding)
     (arms : (pattern * 'a) list) ~(emit_arm : 'a -> unit) : unit =
   if arms = [] then fail "PTX codegen: match with no arms" ;
   let emit_one_arm (pat, arm) =
+    List.iter (forget_name alloc) (pattern_names pat) ;
     let saved = bind_pattern_vars env scrut pat in
     emit_arm arm ;
-    restore_bindings env saved
+    restore_bindings env saved ;
+    List.iter (forget_name alloc) (pattern_names pat)
   in
   match scrut with
   | Agg (AVariant {vname; tag_reg; ctors}) ->
@@ -1452,6 +1474,10 @@ and emit_bitwise buf alloc op r1 r2 : string =
     constant part ({!split_offset}). *)
 and emit_split_index buf alloc env idx_expr : string option * int =
   match split_offset alloc idx_expr with
+  | _, off when abs off > 1 lsl 26 ->
+      (* the byte offset (8 bytes per element at most) must stay far inside
+         the 32-bit immediate: compute the whole index instead *)
+      (Some (emit_expr buf alloc env idx_expr), 0)
   | None, off -> (None, off)
   | Some rest, off -> (Some (emit_expr buf alloc env rest), off)
 

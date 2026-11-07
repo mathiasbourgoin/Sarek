@@ -49,6 +49,11 @@ val emit_match_arms :
     inferred from the register-name prefix of the first operand. *)
 val emit_binop : Buffer.t -> reg_alloc -> env -> binop -> expr -> expr -> string
 
+(** [forget_name alloc name] drops what the emitter knows about the variable
+    [name] (literal, range, stability, [a + c] form, and the [a + c] forms that
+    name it): to call when [name] is rebound or assigned. *)
+val forget_name : reg_alloc -> string -> unit
+
 (** [range_of alloc e] is inclusive bounds of the int32 value of [e] when it is
     bounded by construction (literals, thread indices, masks, and bounded
     arithmetic whose exact result fits int32), [None] otherwise. *)

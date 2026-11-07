@@ -252,6 +252,15 @@ let pow2_kernel =
       o.(5l) <- x mod 1024l ;
       o.(6l) <- (thread_idx_x + 5l) / 4l]
 
+(* [j] is [i + 1] for the first [i]; the second [i] must not redirect it. *)
+let shadowed_atom =
+  [%kernel
+    fun (o : float32 vector) ->
+      let i = thread_idx_x * 2l in
+      let j = i + 1l in
+      let i = i * 4l in
+      o.(j + i - i) <- 1.0]
+
 (******************************************************************************
  * ld.global.nc and mul.wide
  ******************************************************************************)
@@ -569,6 +578,13 @@ let test_pow2_division_exact () =
       mx;
     ]
 
+let test_rebound_atom_is_not_folded () =
+  let ptx = ptx_of (ir_of shadowed_atom) in
+  Alcotest.(check bool)
+    "j keeps its own register: no +1 element offset on the old i"
+    false
+    (contains ptx "+4]")
+
 (******************************************************************************
  * Which loops are unrolled
  ******************************************************************************)
@@ -870,6 +886,10 @@ let () =
           Alcotest.test_case "mul.wide addresses" `Quick test_mad_wide_addresses;
           Alcotest.test_case "read-only analysis" `Quick test_readonly_analysis;
           Alcotest.test_case "literal offsets fold" `Quick test_offsets_fold;
+          Alcotest.test_case
+            "a rebound atom is not folded"
+            `Quick
+            test_rebound_atom_is_not_folded;
           Alcotest.test_case
             "division by a power of two is exact"
             `Quick

@@ -58,10 +58,7 @@ let refuse_aggregate_state_space_array ~what ~(name : string) (elt : elttype) :
     emitted. *)
 let record_let_facts alloc ~(mutable_ : bool) (v : var) (e : expr) : unit =
   let name = v.var_name in
-  Hashtbl.remove alloc.const_vars name ;
-  Hashtbl.remove alloc.affine_vars name ;
-  Hashtbl.remove alloc.stable_vars name ;
-  Hashtbl.remove alloc.range_vars name ;
+  forget_name alloc name ;
   if not mutable_ then begin
     (match range_of alloc e with
     | Some r -> Hashtbl.replace alloc.range_vars name r
@@ -78,7 +75,16 @@ let record_let_facts alloc ~(mutable_ : bool) (v : var) (e : expr) : unit =
     (* A [let] of a bare variable (or a no-op cast of one) shares that
        variable's register, so only a computed value has one of its own. *)
     match e with
-    | EBinop _ | EUnop _ | EIntrinsic _ | EArrayRead _ | EArrayReadExpr _ ->
+    | EBinop _ | EUnop _ | EArrayRead _ | EArrayReadExpr _ ->
+        Hashtbl.replace alloc.stable_vars name ()
+    | EIntrinsic
+        ( _,
+          ( "thread_idx_x" | "thread_idx_y" | "thread_idx_z" | "block_idx_x"
+          | "block_idx_y" | "block_idx_z" | "block_dim_x" | "block_dim_y"
+          | "block_dim_z" | "grid_dim_x" | "grid_dim_y" | "grid_dim_z" ),
+          [] ) ->
+        (* special-register reads: always a register of their own; other
+           intrinsics (a cast to int32, say) may return their operand's *)
         Hashtbl.replace alloc.stable_vars name ()
     | _ -> ()
   end
@@ -290,10 +296,7 @@ let rec emit_stmt buf alloc (env : env) (stmt : stmt) : unit =
 and emit_assign buf alloc (env : env) (lv : lvalue) (e : expr) : unit =
   match lv with
   | LVar v -> (
-      Hashtbl.remove alloc.const_vars v.var_name ;
-      Hashtbl.remove alloc.affine_vars v.var_name ;
-      Hashtbl.remove alloc.stable_vars v.var_name ;
-      Hashtbl.remove alloc.range_vars v.var_name ;
+      forget_name alloc v.var_name ;
       match env_lookup_binding env v.var_name with
       | Scalar r_dst ->
           let r_val = emit_expr buf alloc env e in

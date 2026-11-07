@@ -58,7 +58,7 @@ let barrier_intrinsics = ["block_barrier"; "warp_barrier"; "memory_fence"]
    loop, a match), or that is opaque (native code). *)
 let blocks_unrolling_leaf = function
   | EIntrinsic (_, name, _) -> List.mem name barrier_intrinsics
-  | EApp _ | EArrayCreate _ -> true
+  | EApp _ | EArrayCreate _ | EMatch _ -> true
   | _ -> false
 
 let blocks_unrolling_stmt = function
