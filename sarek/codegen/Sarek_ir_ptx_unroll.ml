@@ -262,6 +262,8 @@ let unroll_for ctx (v : var) start stop dir body =
     v.var_type <> TInt32
     || (is_constant start && is_constant stop)
     || List.exists (same_var v) assigned
+    || (not (invariant ~assigned:(v :: assigned) start))
+    || not (invariant ~assigned:(v :: assigned) stop)
   then None
   else
     match qualifying_body ctx body with

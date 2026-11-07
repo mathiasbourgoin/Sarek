@@ -7,8 +7,7 @@ open Sarek_ir_types
 module A = Sarek_ir_analysis
 module Names = Set.Make (String)
 
-let is_vector (v : var) =
-  match v.var_type with TVec _ | TArray _ -> true | _ -> false
+let is_vector (v : var) = match v.var_type with TVec _ -> true | _ -> false
 
 let folder ~fe ~fs : Names.t A.folder =
   {

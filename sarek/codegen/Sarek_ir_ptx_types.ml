@@ -373,12 +373,13 @@ let emit_f16_narrow buf alloc r_f =
   r
 
 (** Every element-address computation in this backend treats the index register
-    as 32-bit: [shl.b32] on the shared path, [cvt.u64.u32] on the global one
-    (see [Sarek_ir_ptx_mem.emit_elt_addr] and [intr_atomic_addr]). That is the
-    backend-wide invariant — Sarek types array indices as [TInt32] — but it was
-    only ever assumed. An index expression evaluating to a [%rd] or [%f]/[%fd]
-    register produced text like [cvt.u64.u32 %rd4, %rd3;], which is invalid PTX
-    and surfaced only at ptxas/module-load time with no Sarek-level message.
+    as 32-bit: [shl.b32] on the shared path, [cvt.u64.u32] on the atomic global
+    one (see [Sarek_ir_ptx_mem.emit_elt_addr] and [intr_atomic_addr]). That is
+    the backend-wide invariant — Sarek types array indices as [TInt32] — but it
+    was only ever assumed. An index expression evaluating to a [%rd] or
+    [%f]/[%fd] register produced text like [cvt.u64.u32 %rd4, %rd3;], which is
+    invalid PTX and surfaced only at ptxas/module-load time with no Sarek-level
+    message.
 
     Reject rather than coerce. Narrowing a u64 index with [cvt.u32.u64] would
     silently truncate, which is the failure mode this backend already refuses
