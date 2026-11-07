@@ -1623,11 +1623,14 @@ let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
       (* Cooperative matrices on CUDA: the variant the actual arguments allow
          (Coopmat_variant). Only the generated source depends on it. *)
       let gen_ir, variant =
-        Coopmat_variant.choose_lazy
-          ~framework:device.framework
-          ir
-          ~scalars:(fun () -> scalar_arguments ir args)
-          ~bases:(fun () -> Some (base_alignments ~device ir args))
+        if not (Coopmat_variant.relevant ~framework:device.framework ir) then
+          (ir, Coopmat_variant.Not_applicable)
+        else
+          Coopmat_variant.choose_lazy
+            ~framework:device.framework
+            ir
+            ~scalars:(fun () -> scalar_arguments ir args)
+            ~bases:(fun () -> Some (base_alignments ~device ir args))
       in
       if variant <> Coopmat_variant.Not_applicable then
         Spoc_core.Log.debugf
