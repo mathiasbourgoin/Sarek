@@ -67,6 +67,41 @@ let test_gfx1100 () =
     true
     s.C.ds_scale_add
 
+(* CM_scale_add is offered on gfx1100 only (executed there); other gfx11
+   parts keep their configurations but are refused the statement by name. *)
+let test_scale_add_gfx1100_only () =
+  List.iter
+    (fun (what, cc) ->
+      let s = P.support ~compute_capability:cc ~warp_size:32 in
+      Alcotest.(check int)
+        (what ^ ": configurations kept")
+        10
+        (List.length s.C.ds_configs) ;
+      Alcotest.(check bool) (what ^ ": no CM_scale_add") false s.C.ds_scale_add ;
+      let f32 =
+        {
+          C.frag_use = C.Accumulator;
+          frag_shape = {C.m = 16; n = 16; k = 16};
+          frag_component = C.Float32;
+          frag_scope = C.Subgroup;
+        }
+      in
+      match
+        C.scale_add_verdict
+          ~support:(Some s)
+          ~dst_frag:f32
+          ~src_frag:{f32 with C.frag_component = C.Sint32}
+      with
+      | Sarek_capability.Unavailable cap ->
+          Alcotest.(check bool)
+            (what ^ ": the refusal names gfx1100")
+            true
+            (Astring.String.is_infix
+               ~affix:"executed only on gfx1100"
+               cap.Sarek_capability.cap_why)
+      | _ -> Alcotest.failf "%s: CM_scale_add not refused" what)
+    [("compute capability 11.5", (11, 5)); ("compute capability 11.1", (11, 1))]
+
 let test_refused () =
   List.iter
     (fun (what, cc, warp) ->
@@ -99,5 +134,9 @@ let () =
         [
           Alcotest.test_case "gfx1100 wave32" `Quick test_gfx1100;
           Alcotest.test_case "everything else" `Quick test_refused;
+          Alcotest.test_case
+            "CM_scale_add on gfx1100 only"
+            `Quick
+            test_scale_add_gfx1100_only;
         ] );
     ]
