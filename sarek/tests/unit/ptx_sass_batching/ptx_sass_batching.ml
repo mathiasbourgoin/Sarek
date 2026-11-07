@@ -273,8 +273,7 @@ let print_histogram label sass =
   print_newline ()
 
 (* The full SASS is printed for the one kernel under study. *)
-let dump_sass name =
-  contains name "fused"
+let dump_sass name = contains name "fused"
 
 let print_row label m =
   Printf.printf
