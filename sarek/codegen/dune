@@ -26,6 +26,8 @@
   Sarek_ir_wgsl
   Sarek_wgsl_abi
   Sarek_ir_ptx
+  Sarek_ir_ptx_readonly
+  Sarek_ir_ptx_unroll
   Sarek_ir_ptx_types
   Sarek_ir_ptx_mem
   Sarek_ir_softmath

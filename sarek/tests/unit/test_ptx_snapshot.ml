@@ -1174,8 +1174,8 @@ let test_int32_index_still_generates () =
       []
     |> Sarek_ir_ptx.generate
   in
-  assert_contains ptx "cvt.u64.u32" ;
-  assert_contains ptx "ld.global.f32"
+  assert_contains ptx "mad.wide.u32" ;
+  assert_contains ptx "ld.global.nc.f32"
 
 (** Check that [ptx] does NOT contain [marker]. *)
 let assert_absent ptx marker ~why =

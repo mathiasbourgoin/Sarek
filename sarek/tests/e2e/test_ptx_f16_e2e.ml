@@ -209,7 +209,7 @@ let shapes =
     {
       name = "roundtrip out = inp";
       ir = ir_of k_roundtrip;
-      ptx_marker = "ld.global.b16";
+      ptx_marker = "ld.global.nc.b16";
       model = (fun _ x -> x);
       controls = [("flushed", fun _ x -> flush_subnormal x)];
       fused = None;

@@ -39,10 +39,15 @@ val emit_elt_addr :
     pointer-arithmetic sequence followed by a typed load and returns the
     destination register name. [Some SpaceShared] uses 32-bit pointer arithmetic
     and [ld.shared.*]; [Some SpaceLocal] uses 64-bit and [ld.local.*]; [None]
-    (global) uses 64-bit and [ld.global.*].
+    (global) uses 64-bit and [ld.global.*]. A 64-bit address is one
+    [mad.wide.u32] ([zero_extend idx * size + base]). [~nc:true] (default
+    [false]) turns a global load into [ld.global.nc], the read-only data path:
+    the caller sets it only for a vector parameter the kernel never writes
+    ({!Sarek_ir_ptx_readonly}); it is ignored for shared and local arrays.
 
     Ownership: [buf] is mutated; [alloc] counters are incremented. *)
 val emit_array_read :
+  ?nc:bool ->
   Buffer.t ->
   reg_alloc ->
   string ->

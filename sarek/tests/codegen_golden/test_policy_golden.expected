@@ -81,7 +81,7 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
 )
 {
     .reg .u32 %r<10>;
-    .reg .u64 %rd<14>;
+    .reg .u64 %rd<8>;
     .reg .f32 %f<3>;
     .reg .b16 %h<3>;
 
@@ -100,22 +100,16 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mov.u32 %r7, %ntid.x;
     mul.lo.u32 %r8, %r6, %r7;
     add.u32 %r9, %r5, %r8;
-    cvt.u64.u32 %rd5, %r9;
-    shl.b64 %rd6, %rd5, 1;
-    add.u64 %rd7, %rd1, %rd6;
-    ld.global.b16 %h0, [%rd7];
+    mad.wide.u32 %rd5, %r9, 2, %rd1;
+    ld.global.nc.b16 %h0, [%rd5];
     cvt.f32.f16 %f0, %h0;
-    cvt.u64.u32 %rd8, %r9;
-    shl.b64 %rd9, %rd8, 1;
-    add.u64 %rd10, %rd2, %rd9;
-    ld.global.b16 %h1, [%rd10];
+    mad.wide.u32 %rd6, %r9, 2, %rd2;
+    ld.global.nc.b16 %h1, [%rd6];
     cvt.f32.f16 %f1, %h1;
     add.f32 %f2, %f0, %f1;
     cvt.rn.f16.f32 %h2, %f2;
-    cvt.u64.u32 %rd11, %r9;
-    shl.b64 %rd12, %rd11, 1;
-    add.u64 %rd13, %rd0, %rd12;
-    st.global.b16 [%rd13], %h2;
+    mad.wide.u32 %rd7, %r9, 2, %rd0;
+    st.global.b16 [%rd7], %h2;
     ret;
 }
 === S0 | q4k_like | cuda-c (HIP, CUDA/C) ===
@@ -193,7 +187,7 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
 )
 {
     .reg .u32 %r<18>;
-    .reg .u64 %rd<20>;
+    .reg .u64 %rd<10>;
     .reg .f32 %f<7>;
     .reg .b16 %h<3>;
 
@@ -212,28 +206,20 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mov.u32 %r7, %ntid.x;
     mul.lo.u32 %r8, %r6, %r7;
     add.u32 %r9, %r5, %r8;
-    cvt.u64.u32 %rd5, %r9;
-    shl.b64 %rd6, %rd5, 1;
-    add.u64 %rd7, %rd1, %rd6;
-    ld.global.b16 %h0, [%rd7];
+    mad.wide.u32 %rd5, %r9, 2, %rd1;
+    ld.global.nc.b16 %h0, [%rd5];
     cvt.f32.f16 %f0, %h0;
-    cvt.u64.u32 %rd8, %r9;
-    shl.b64 %rd9, %rd8, 2;
-    add.u64 %rd10, %rd3, %rd9;
-    ld.global.s32 %r10, [%rd10];
+    mad.wide.u32 %rd6, %r9, 4, %rd3;
+    ld.global.nc.s32 %r10, [%rd6];
     mov.u32 %r11, 15;
     and.b32 %r12, %r10, %r11;
     cvt.rn.f32.s32 %f1, %r12;
     mul.f32 %f2, %f0, %f1;
-    cvt.u64.u32 %rd11, %r9;
-    shl.b64 %rd12, %rd11, 1;
-    add.u64 %rd13, %rd2, %rd12;
-    ld.global.b16 %h1, [%rd13];
+    mad.wide.u32 %rd7, %r9, 2, %rd2;
+    ld.global.nc.b16 %h1, [%rd7];
     cvt.f32.f16 %f3, %h1;
-    cvt.u64.u32 %rd14, %r9;
-    shl.b64 %rd15, %rd14, 2;
-    add.u64 %rd16, %rd3, %rd15;
-    ld.global.s32 %r13, [%rd16];
+    mad.wide.u32 %rd8, %r9, 4, %rd3;
+    ld.global.nc.s32 %r13, [%rd8];
     mov.u32 %r14, 4;
     shr.s32 %r15, %r13, %r14;
     mov.u32 %r16, 63;
@@ -242,10 +228,8 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mul.f32 %f5, %f3, %f4;
     sub.f32 %f6, %f2, %f5;
     cvt.rn.f16.f32 %h2, %f6;
-    cvt.u64.u32 %rd17, %r9;
-    shl.b64 %rd18, %rd17, 1;
-    add.u64 %rd19, %rd0, %rd18;
-    st.global.b16 [%rd19], %h2;
+    mad.wide.u32 %rd9, %r9, 2, %rd0;
+    st.global.b16 [%rd9], %h2;
     ret;
 }
 === S0 | inexact_const | cuda-c (HIP, CUDA/C) ===
@@ -323,7 +307,7 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
 )
 {
     .reg .u32 %r<10>;
-    .reg .u64 %rd<11>;
+    .reg .u64 %rd<7>;
     .reg .f32 %f<3>;
     .reg .b16 %h<2>;
 
@@ -342,18 +326,14 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mov.u32 %r7, %ntid.x;
     mul.lo.u32 %r8, %r6, %r7;
     add.u32 %r9, %r5, %r8;
-    cvt.u64.u32 %rd5, %r9;
-    shl.b64 %rd6, %rd5, 1;
-    add.u64 %rd7, %rd1, %rd6;
-    ld.global.b16 %h0, [%rd7];
+    mad.wide.u32 %rd5, %r9, 2, %rd1;
+    ld.global.nc.b16 %h0, [%rd5];
     cvt.f32.f16 %f0, %h0;
     mov.f32 %f1, 0F3F8CCCCD;
     mul.f32 %f2, %f0, %f1;
     cvt.rn.f16.f32 %h1, %f2;
-    cvt.u64.u32 %rd8, %r9;
-    shl.b64 %rd9, %rd8, 1;
-    add.u64 %rd10, %rd0, %rd9;
-    st.global.b16 [%rd10], %h1;
+    mad.wide.u32 %rd6, %r9, 2, %rd0;
+    st.global.b16 [%rd6], %h1;
     ret;
 }
 === S0 | unroll_loop | cuda-c (HIP, CUDA/C) ===
@@ -456,7 +436,7 @@ fn main(
 )
 {
     .reg .u32 %r<10>;
-    .reg .u64 %rd<11>;
+    .reg .u64 %rd<5>;
     .reg .f32 %f<3>;
     .reg .pred %p<1>;
 
@@ -475,19 +455,13 @@ fn main(
 L0:
     setp.gt.s32 %p0, %r9, %r8;
     @%p0 bra L1;
-    cvt.u64.u32 %rd2, %r6;
-    shl.b64 %rd3, %rd2, 2;
-    add.u64 %rd4, %rd0, %rd3;
-    ld.global.f32 %f0, [%rd4];
-    cvt.u64.u32 %rd5, %r6;
-    shl.b64 %rd6, %rd5, 2;
-    add.u64 %rd7, %rd1, %rd6;
-    ld.global.f32 %f1, [%rd7];
+    mad.wide.u32 %rd2, %r6, 4, %rd0;
+    ld.global.f32 %f0, [%rd2];
+    mad.wide.u32 %rd3, %r6, 4, %rd1;
+    ld.global.nc.f32 %f1, [%rd3];
     add.f32 %f2, %f0, %f1;
-    cvt.u64.u32 %rd8, %r6;
-    shl.b64 %rd9, %rd8, 2;
-    add.u64 %rd10, %rd0, %rd9;
-    st.global.f32 [%rd10], %f2;
+    mad.wide.u32 %rd4, %r6, 4, %rd0;
+    st.global.f32 [%rd4], %f2;
     add.u32 %r9, %r9, 1;
     bra L0;
 L1:
@@ -578,7 +552,7 @@ fn main(
 )
 {
     .reg .u32 %r<7>;
-    .reg .u64 %rd<8>;
+    .reg .u64 %rd<4>;
     .reg .f32 %f<3>;
 
     ld.param.u64 %rd0, [param_out];
@@ -590,16 +564,12 @@ fn main(
     mov.u32 %r4, %ntid.x;
     mul.lo.u32 %r5, %r3, %r4;
     add.u32 %r6, %r2, %r5;
-    cvt.u64.u32 %rd2, %r6;
-    shl.b64 %rd3, %rd2, 2;
-    add.u64 %rd4, %rd1, %rd3;
-    ld.global.f32 %f0, [%rd4];
+    mad.wide.u32 %rd2, %r6, 4, %rd1;
+    ld.global.nc.f32 %f0, [%rd2];
     mov.f32 %f1, 0F40000000;
     mul.f32 %f2, %f0, %f1;
-    cvt.u64.u32 %rd5, %r6;
-    shl.b64 %rd6, %rd5, 2;
-    add.u64 %rd7, %rd0, %rd6;
-    st.global.f32 [%rd7], %f2;
+    mad.wide.u32 %rd3, %r6, 4, %rd0;
+    st.global.f32 [%rd3], %f2;
     ret;
 }
 === S0 | cm_f16 | cuda-c (HIP, CUDA/C) ===
@@ -801,7 +771,7 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
 )
 {
     .reg .u32 %r<20>;
-    .reg .u64 %rd<20>;
+    .reg .u64 %rd<12>;
     .reg .f32 %f<8>;
     .reg .b32 %fr<16>;
     .reg .pred %p<8>;
@@ -840,57 +810,49 @@ EXN [WebGPU Codegen] Unsupported construct 'f16': WGSL: float16 not yet supporte
     mov.f32 %f7, 0F00000000;
     mov.u32 %r4, 0;
     mov.u32 %r5, 16;
-    cvt.u64.u32 %rd4, %r4;
-    shl.b64 %rd5, %rd4, 1;
-    add.u64 %rd6, %rd0, %rd5;
-    and.b64 %rd7, %rd6, 31;
-    setp.ne.u64 %p0, %rd7, 0;
+    mad.wide.u32 %rd4, %r4, 2, %rd0;
+    and.b64 %rd5, %rd4, 31;
+    setp.ne.u64 %p0, %rd5, 0;
     mul.lo.u32 %r6, %r5, 2;
     and.b32 %r7, %r6, 15;
     setp.ne.u32 %p1, %r7, 0;
     or.pred %p0, %p0, %p1;
     @%p0 trap;
-    wmma.load.a.sync.aligned.row.m16n16k16.global.f16 {%fr0, %fr1, %fr2, %fr3, %fr4, %fr5, %fr6, %fr7}, [%rd6], %r5;
+    wmma.load.a.sync.aligned.row.m16n16k16.global.f16 {%fr0, %fr1, %fr2, %fr3, %fr4, %fr5, %fr6, %fr7}, [%rd4], %r5;
     mov.u32 %r8, 0;
     mov.u32 %r9, 16;
-    cvt.u64.u32 %rd8, %r8;
-    shl.b64 %rd9, %rd8, 1;
-    add.u64 %rd10, %rd1, %rd9;
-    and.b64 %rd11, %rd10, 31;
-    setp.ne.u64 %p2, %rd11, 0;
+    mad.wide.u32 %rd6, %r8, 2, %rd1;
+    and.b64 %rd7, %rd6, 31;
+    setp.ne.u64 %p2, %rd7, 0;
     mul.lo.u32 %r10, %r9, 2;
     and.b32 %r11, %r10, 15;
     setp.ne.u32 %p3, %r11, 0;
     or.pred %p2, %p2, %p3;
     @%p2 trap;
-    wmma.load.b.sync.aligned.row.m16n16k16.global.f16 {%fr8, %fr9, %fr10, %fr11, %fr12, %fr13, %fr14, %fr15}, [%rd10], %r9;
+    wmma.load.b.sync.aligned.row.m16n16k16.global.f16 {%fr8, %fr9, %fr10, %fr11, %fr12, %fr13, %fr14, %fr15}, [%rd6], %r9;
     mov.u32 %r12, 0;
     mov.u32 %r13, 16;
-    cvt.u64.u32 %rd12, %r12;
-    shl.b64 %rd13, %rd12, 2;
-    add.u64 %rd14, %rd2, %rd13;
-    and.b64 %rd15, %rd14, 31;
-    setp.ne.u64 %p4, %rd15, 0;
+    mad.wide.u32 %rd8, %r12, 4, %rd2;
+    and.b64 %rd9, %rd8, 31;
+    setp.ne.u64 %p4, %rd9, 0;
     mul.lo.u32 %r14, %r13, 4;
     and.b32 %r15, %r14, 15;
     setp.ne.u32 %p5, %r15, 0;
     or.pred %p4, %p4, %p5;
     @%p4 trap;
-    wmma.load.c.sync.aligned.row.m16n16k16.global.f32 {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, [%rd14], %r13;
+    wmma.load.c.sync.aligned.row.m16n16k16.global.f32 {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, [%rd8], %r13;
     wmma.mma.sync.aligned.row.row.m16n16k16.f32.f32 {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, {%fr0, %fr1, %fr2, %fr3, %fr4, %fr5, %fr6, %fr7}, {%fr8, %fr9, %fr10, %fr11, %fr12, %fr13, %fr14, %fr15}, {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7};
     mov.u32 %r16, 0;
     mov.u32 %r17, 16;
-    cvt.u64.u32 %rd16, %r16;
-    shl.b64 %rd17, %rd16, 2;
-    add.u64 %rd18, %rd3, %rd17;
-    and.b64 %rd19, %rd18, 31;
-    setp.ne.u64 %p6, %rd19, 0;
+    mad.wide.u32 %rd10, %r16, 4, %rd3;
+    and.b64 %rd11, %rd10, 31;
+    setp.ne.u64 %p6, %rd11, 0;
     mul.lo.u32 %r18, %r17, 4;
     and.b32 %r19, %r18, 15;
     setp.ne.u32 %p7, %r19, 0;
     or.pred %p6, %p6, %p7;
     @%p6 trap;
-    wmma.store.d.sync.aligned.row.m16n16k16.global.f32 [%rd18], {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, %r17;
+    wmma.store.d.sync.aligned.row.m16n16k16.global.f32 [%rd10], {%f0, %f1, %f2, %f3, %f4, %f5, %f6, %f7}, %r17;
     ret;
 }
 === S0 | cm_i32 | cuda-c (HIP, CUDA/C) ===
@@ -1106,7 +1068,7 @@ EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL 
 )
 {
     .reg .u32 %r<20>;
-    .reg .u64 %rd<20>;
+    .reg .u64 %rd<12>;
     .reg .b32 %fr<12>;
     .reg .pred %p<8>;
 
@@ -1132,57 +1094,49 @@ EXN [WebGPU Codegen] Unsupported construct 'cooperative matrix': WGSL: the WGSL 
     mov.b32 %fr11, 0;
     mov.u32 %r4, 0;
     mov.u32 %r5, 16;
-    cvt.u64.u32 %rd4, %r4;
-    shl.b64 %rd5, %rd4, 0;
-    add.u64 %rd6, %rd0, %rd5;
-    and.b64 %rd7, %rd6, 31;
-    setp.ne.u64 %p0, %rd7, 0;
+    mad.wide.u32 %rd4, %r4, 1, %rd0;
+    and.b64 %rd5, %rd4, 31;
+    setp.ne.u64 %p0, %rd5, 0;
     mul.lo.u32 %r6, %r5, 1;
     and.b32 %r7, %r6, 15;
     setp.ne.u32 %p1, %r7, 0;
     or.pred %p0, %p0, %p1;
     @%p0 trap;
-    wmma.load.a.sync.aligned.row.m16n16k16.global.u8 {%fr0, %fr1}, [%rd6], %r5;
+    wmma.load.a.sync.aligned.row.m16n16k16.global.u8 {%fr0, %fr1}, [%rd4], %r5;
     mov.u32 %r8, 0;
     mov.u32 %r9, 16;
-    cvt.u64.u32 %rd8, %r8;
-    shl.b64 %rd9, %rd8, 0;
-    add.u64 %rd10, %rd1, %rd9;
-    and.b64 %rd11, %rd10, 31;
-    setp.ne.u64 %p2, %rd11, 0;
+    mad.wide.u32 %rd6, %r8, 1, %rd1;
+    and.b64 %rd7, %rd6, 31;
+    setp.ne.u64 %p2, %rd7, 0;
     mul.lo.u32 %r10, %r9, 1;
     and.b32 %r11, %r10, 15;
     setp.ne.u32 %p3, %r11, 0;
     or.pred %p2, %p2, %p3;
     @%p2 trap;
-    wmma.load.b.sync.aligned.row.m16n16k16.global.u8 {%fr2, %fr3}, [%rd10], %r9;
+    wmma.load.b.sync.aligned.row.m16n16k16.global.u8 {%fr2, %fr3}, [%rd6], %r9;
     mov.u32 %r12, 0;
     mov.u32 %r13, 16;
-    cvt.u64.u32 %rd12, %r12;
-    shl.b64 %rd13, %rd12, 2;
-    add.u64 %rd14, %rd2, %rd13;
-    and.b64 %rd15, %rd14, 31;
-    setp.ne.u64 %p4, %rd15, 0;
+    mad.wide.u32 %rd8, %r12, 4, %rd2;
+    and.b64 %rd9, %rd8, 31;
+    setp.ne.u64 %p4, %rd9, 0;
     mul.lo.u32 %r14, %r13, 4;
     and.b32 %r15, %r14, 15;
     setp.ne.u32 %p5, %r15, 0;
     or.pred %p4, %p4, %p5;
     @%p4 trap;
-    wmma.load.c.sync.aligned.row.m16n16k16.global.s32 {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, [%rd14], %r13;
+    wmma.load.c.sync.aligned.row.m16n16k16.global.s32 {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, [%rd8], %r13;
     wmma.mma.sync.aligned.row.row.m16n16k16.s32.u8.u8.s32 {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, {%fr0, %fr1}, {%fr2, %fr3}, {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11};
     mov.u32 %r16, 0;
     mov.u32 %r17, 16;
-    cvt.u64.u32 %rd16, %r16;
-    shl.b64 %rd17, %rd16, 2;
-    add.u64 %rd18, %rd3, %rd17;
-    and.b64 %rd19, %rd18, 31;
-    setp.ne.u64 %p6, %rd19, 0;
+    mad.wide.u32 %rd10, %r16, 4, %rd3;
+    and.b64 %rd11, %rd10, 31;
+    setp.ne.u64 %p6, %rd11, 0;
     mul.lo.u32 %r18, %r17, 4;
     and.b32 %r19, %r18, 15;
     setp.ne.u32 %p7, %r19, 0;
     or.pred %p6, %p6, %p7;
     @%p6 trap;
-    wmma.store.d.sync.aligned.row.m16n16k16.global.s32 [%rd18], {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, %r17;
+    wmma.store.d.sync.aligned.row.m16n16k16.global.s32 [%rd10], {%fr4, %fr5, %fr6, %fr7, %fr8, %fr9, %fr10, %fr11}, %r17;
     ret;
 }
 === S0 | cm_f32_8x8 | cuda-c (HIP, CUDA/C) ===

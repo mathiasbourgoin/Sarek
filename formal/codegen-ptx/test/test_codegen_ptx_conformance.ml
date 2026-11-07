@@ -1039,8 +1039,10 @@ let test_dshared_mixed_global_shared () =
            ])
   in
   let ptx = Sarek_codegen.Sarek_ir_ptx_kernel.generate k in
-  if not (contains_sub ptx "ld.global.f32") then
-    Alcotest.failf "expected 'ld.global.f32' for DParam array in:\n%s" ptx ;
+  if not (contains_sub ptx "ld.global.nc.f32") then
+    Alcotest.failf
+      "expected 'ld.global.nc.f32' (read-only DParam array) in:\n%s"
+      ptx ;
   if not (contains_sub ptx "st.shared.f32") then
     Alcotest.failf "expected 'st.shared.f32' for DShared array in:\n%s" ptx ;
   if contains_sub ptx "ld.shared.f32" then

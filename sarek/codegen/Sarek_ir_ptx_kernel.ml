@@ -405,7 +405,11 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
 let generate ?(sm_target = "sm_86") ?(soa_params = []) ?block (k : kernel) :
     string =
   Sarek_ir_ptx_coopmat.check_kernel ~sm_target ?block k ;
+  let k = Sarek_ir_ptx_unroll.rewrite k in
   let alloc = make_alloc () in
+  List.iter
+    (fun name -> Hashtbl.replace alloc.read_only name ())
+    (Sarek_ir_ptx_readonly.params k) ;
   if Sarek_ir_analysis.kernel_has_coopmat_op k then begin
     alloc.coop_layouts <- Sarek_ir_ptx_coopmat.operand_layouts k ;
     alloc.coop_buffers <- Sarek_ir_ptx_coopmat.accessed_buffers k

@@ -1,0 +1,11 @@
+; Loads in flight, measured on the machine code (ptxas, nvdisasm, NVRTC): the PTX
+; SPOC emits against the PTX NVRTC emits for the CUDA-C of the same IR. Skips
+; cleanly when ptxas or nvdisasm is missing. No NVIDIA device is needed.
+
+(test
+ (name ptx_sass_batching)
+ (libraries sarek sarek.stdlib sarek.codegen sarek_ir sarek_cuda unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))

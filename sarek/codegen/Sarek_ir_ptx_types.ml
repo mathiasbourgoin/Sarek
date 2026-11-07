@@ -77,6 +77,9 @@ type reg_alloc = {
   mutable label : int;
   arr_elt_types : (string, elttype) Hashtbl.t;
   arr_memspaces : (string, arr_space) Hashtbl.t;
+  read_only : (string, unit) Hashtbl.t;
+      (** Global vector parameters the kernel never writes (see
+          {!Sarek_ir_ptx_readonly}): their loads are [ld.global.nc]. *)
   arr_soa : (string, soa_leaf list) Hashtbl.t;
       (** Custom-vector parameters lowered as Structure-of-Arrays: name -> its
           scalar leaves (in record declaration order), each carrying its own
@@ -135,6 +138,7 @@ let make_alloc () =
     label = 0;
     arr_elt_types = Hashtbl.create 8;
     arr_memspaces = Hashtbl.create 8;
+    read_only = Hashtbl.create 8;
     arr_soa = Hashtbl.create 4;
     shared_decls = Buffer.create 128;
     local_decls = Buffer.create 128;

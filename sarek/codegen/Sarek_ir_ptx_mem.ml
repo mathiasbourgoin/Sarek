@@ -49,16 +49,26 @@ let emit_elt_addr buf alloc r_base r_idx elt_type ~space =
       emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
       r_addr
   | Some SpaceLocal | None ->
-      let r_idx64 = new_u64 alloc in
-      emit buf "cvt.u64.u32 %s, %s;" r_idx64 r_idx ;
-      let r_off = new_u64 alloc in
-      emit buf "shl.b64 %s, %s, %d;" r_off r_idx64 (elt_shift elt_type) ;
+      (* One [mad.wide.u32] for [zero_extend idx * size + base]: the product of
+         a 32-bit index and a power-of-two size is exact in 64 bits, so this
+         is bit-for-bit the address the former cvt/shl/add triple computed. *)
       let r_addr = new_u64 alloc in
-      emit buf "add.u64 %s, %s, %s;" r_addr r_base r_off ;
+      emit
+        buf
+        "mad.wide.u32 %s, %s, %d, %s;"
+        r_addr
+        r_idx
+        (1 lsl elt_shift elt_type)
+        r_base ;
       r_addr
 
-let emit_array_read buf alloc r_base r_idx elt_type ~space =
-  let sp = space_qualifier space in
+(** [~nc:true] emits the read-only data-path load [ld.global.nc]. It is honoured
+    for global loads only: the caller decides it from {!Sarek_ir_ptx_readonly}.
+*)
+let emit_array_read ?(nc = false) buf alloc r_base r_idx elt_type ~space =
+  let sp =
+    match space with None when nc -> "global.nc" | _ -> space_qualifier space
+  in
   let r_addr = emit_elt_addr buf alloc r_base r_idx elt_type ~space in
   match elt_type with
   | TFloat16 ->

@@ -64,13 +64,13 @@ let assert_no_native_f16 name ptx =
 let test_scale_markers () =
   let ptx = gen (K.scale ()) in
   check_has ptx ".reg .b16 %h<" ;
-  check_has ptx "ld.global.b16 %h0" ;
+  check_has ptx "ld.global.nc.b16 %h0" ;
   check_has ptx "cvt.f32.f16 %f0, %h0;" ;
   check_has ptx "cvt.rn.f16.f32" ;
   check_has ptx "st.global.b16" ;
-  check_has ptx "shl.b64" ;
-  (* 2-byte stride: shift by 1 *)
-  check_has ptx ", 1;" ;
+  check_has ptx "mad.wide.u32" ;
+  (* 2-byte stride: the element size operand of the address *)
+  check_has ptx ", 2, %rd" ;
   check_absent ptx "ld.global.f16" ;
   check_absent ptx "mul.f16" ;
   (* The product stays an f32 op, unchanged from any other f32 kernel: the
@@ -95,7 +95,7 @@ let test_chain_two_narrowings () =
 
 let test_roundtrip_has_no_conversion () =
   let ptx = gen (K.roundtrip ()) in
-  check_has ptx "ld.global.b16" ;
+  check_has ptx "ld.global.nc.b16" ;
   check_has ptx "st.global.b16" ;
   check_absent ptx "cvt.f32.f16" ;
   check_absent ptx "cvt.rn.f16.f32"
