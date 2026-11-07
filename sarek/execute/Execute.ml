@@ -1603,16 +1603,41 @@ let scalar_arguments (ir : Sarek_ir_types.kernel) (args : vector_arg list) :
          ir.Sarek_ir_types.kern_params
          args)
 
+(* The alignment, in bytes, of each array argument's device pointer, by
+   parameter name ({!Coopmat_variant.alignment_of_pointer}). A vector with no
+   device buffer yet gets its first one from the backend's allocator, which for
+   the CUDA frameworks returns at least 256-byte aligned pointers. *)
+let base_alignments ~(device : Device.t) (ir : Sarek_ir_types.kernel)
+    (args : vector_arg list) : (string * int) list =
+  if List.length ir.Sarek_ir_types.kern_params <> List.length args then []
+  else
+    List.concat
+      (List.map2
+         (fun decl arg ->
+           match (decl, arg) with
+           | Sarek_ir_types.DParam (v, _), Vec vec -> (
+               match Vector.get_buffer vec device with
+               | Some (module B : Vector.DEVICE_BUFFER) ->
+                   [
+                     ( v.Sarek_ir_types.var_name,
+                       Coopmat_variant.alignment_of_pointer B.device_ptr );
+                   ]
+               | None -> [(v.Sarek_ir_types.var_name, 4096)])
+           | _ -> [])
+         ir.Sarek_ir_types.kern_params
+         args)
+
 (** Which variant of a cooperative-matrix kernel a launch on [device] with
     [args] runs ({!Coopmat_variant}); pure, counts nothing. *)
 let coopmat_variant ~(device : Device.t) (ir : Sarek_ir_types.kernel)
     (args : vector_arg list) : Coopmat_variant.outcome =
   snd
-    (Coopmat_variant.choose
+    (Coopmat_variant.choose_lazy
        ~count:false
        ~framework:device.framework
        ir
-       (scalar_arguments ir args))
+       ~scalars:(fun () -> scalar_arguments ir args)
+       ~bases:(fun () -> Some (base_alignments ~device ir args)))
 
 (* The JIT arm of {!run}. *)
 let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
@@ -1659,10 +1684,11 @@ let run_jit (module B : Framework_sig.BACKEND) ?stream ~(device : Device.t)
       (* Cooperative matrices on CUDA: the variant the actual arguments allow
          (Coopmat_variant). Only the generated source depends on it. *)
       let gen_ir, variant =
-        Coopmat_variant.choose
+        Coopmat_variant.choose_lazy
           ~framework:device.framework
           ir
-          (scalar_arguments ir args)
+          ~scalars:(fun () -> scalar_arguments ir args)
+          ~bases:(fun () -> Some (base_alignments ~device ir args))
       in
       if variant <> Coopmat_variant.Not_applicable then
         Spoc_core.Log.debugf

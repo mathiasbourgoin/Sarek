@@ -413,8 +413,8 @@ let host_variants () =
     at 0
   in
   let block = (64, 1, 1) in
-  let check what ~framework ir scalars want =
-    let k, got = V.choose ~count:false ~framework ir scalars in
+  let check ?bases what ~framework ir scalars want =
+    let k, got = V.choose ~count:false ?bases ~framework ir scalars in
     if got <> want then
       fail
         "%s on %s: %s, expected %s"
@@ -435,6 +435,10 @@ let host_variants () =
     | V.Staged ->
         if not (buffer && cuda_buffer) then
           fail "%s: the staged variant has no staging buffer" what
+    | V.Checked ->
+        (* no static proof: even the constant accesses are tested *)
+        if not (buffer && cuda_buffer) then
+          fail "%s: the checked variant has no staging buffer" what
     | V.Not_applicable -> ()) ;
     ok
       "%s on %s: %s variant%s"
@@ -502,6 +506,72 @@ let host_variants () =
         u8
         [("off", 16); ("ld", 16)]
         V.Staged)
+    V.frameworks ;
+  (* the base pointers: a launch argument that is not 32-byte aligned (a view
+     into the middle of an allocation) selects the checked variant, whatever
+     the scalar arguments say; an aligned one does not *)
+  let by_pointer p = V.alignment_of_pointer (Nativeint.of_int p) in
+  let check_int what want got =
+    if want <> got then fail "%s: %d, expected %d" what got want
+    else ok "%s: %d" what got
+  in
+  check_int "pointer 0x1000" 4096 (by_pointer 0x1000) ;
+  check_int "pointer 0x10000" 4096 (by_pointer 0x10000) ;
+  check_int "pointer 0x1100" 256 (by_pointer 0x1100) ;
+  check_int "pointer 0x1010" 16 (by_pointer 0x1010) ;
+  check_int "pointer 0x1002" 2 (by_pointer 0x1002) ;
+  check_int "pointer 0" 4096 (by_pointer 0) ;
+  let tile = param_tile (config C.Float16 C.Float16 C.Float32) in
+  let scalars = [("off", 32); ("ld", 24)] in
+  let bases a b c d = [("a", a); ("b", b); ("c", c); ("d", d)] in
+  List.iter
+    (fun framework ->
+      let run what bases want =
+        let _, got = V.choose ~count:false ~bases ~framework tile scalars in
+        if got <> want then
+          fail
+            "%s on %s: %s, expected %s"
+            what
+            framework
+            (V.outcome_name got)
+            (V.outcome_name want)
+        else ok "%s on %s: %s variant" what framework (V.outcome_name got)
+      in
+      run "bases 256/256/256/256" (bases 256 256 256 256) V.Aligned ;
+      run "bases 32/32/32/32" (bases 32 32 32 32) V.Aligned ;
+      run "A at +16 bytes" (bases 16 256 256 256) V.Checked ;
+      run "D at +4 bytes" (bases 256 256 256 4) V.Checked ;
+      run "an argument without a pointer" [("a", 256)] V.Checked ;
+      (* misaligned scalars and aligned bases: staged, as before *)
+      let _, got =
+        V.choose
+          ~count:false
+          ~bases:(bases 256 256 256 256)
+          ~framework
+          tile
+          [("off", 1); ("ld", 24)]
+      in
+      if got <> V.Staged then fail "off=1 with aligned bases must be staged")
+    V.frameworks ;
+  (* the checked variant: constants that are proven everywhere else are tested
+     here, and a buffer is declared *)
+  let proven_tile = tile_ir (config C.Float16 C.Float16 C.Float32) in
+  List.iter
+    (fun framework ->
+      check
+        "constant tile, A misaligned"
+        ~framework
+        ~bases:(bases 16 256 256 256)
+        proven_tile
+        []
+        V.Checked ;
+      check
+        "constant tile, aligned bases"
+        ~framework
+        ~bases:(bases 256 256 256 256)
+        proven_tile
+        []
+        V.Aligned)
     V.frameworks ;
   (* any other framework: the kernel as given *)
   let k, got = V.choose ~count:false ~framework:"HIP" gemm [("n", 64)] in
