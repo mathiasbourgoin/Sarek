@@ -89,10 +89,15 @@ let amd_call ~buffers ~expr_str ~dst ~dst_frag ~src ~src_frag ~row ~col ~offset
   in
   let flag b = if b then "true" else "false" in
   Printf.sprintf
-    "sarek_cm_scale_add<%s, %s, %s>(%s, %s, %s, %s, %s, %s);"
+    "sarek_cm_scale_add<%s, %s, %s, %s>(%s, %s, %s, %s, %s, %s);"
     (flag (Option.is_some col))
     (flag (Option.is_some offset))
     (flag accumulate)
+    (* The source type is spelled out from [src_frag], never deduced: a
+       fragment declared as another type is then a compile error, as with the
+       other helpers, instead of a silent reinterpretation of its lanes. *)
+    (if src_frag.C.frag_component = C.Float32 then "sarek_cm_f8"
+     else "sarek_cm_i8")
     dst
     src
     (arg (Some row))
