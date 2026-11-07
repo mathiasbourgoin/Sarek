@@ -2,6 +2,23 @@
 
 ### Changed
 
+- CUDA/PTX integer address arithmetic is closer to what NVVM emits for the CUDA/C of the same
+  kernel. On a horizontally fused, shared-memory-staged quantised matvec (sm_75, `ptxas`, same IR)
+  the SASS goes from 1162 to 740 lines against NVRTC's 661, registers 51 to 48 against 61 (the loads,
+  shared accesses and barriers already matched). (1) The literal part of an array index
+  (`a.(base + 3)`, `xs.(xi + k)`, a variable bound to a literal, `let v = a + c`) is the immediate
+  offset of the load/store instead of a recomputed address, and a constant index needs no address;
+  an unrolled loop reads its counter as `k + j*c` per copy and advances it once, so the copies share
+  one address register. (2) Constant-trip loops (up to 16 iterations, bodies up to 2048 nodes of
+  expansion) are expanded in the IR so the iteration number reaches the index as a literal.
+  (3) A global address is `mul.wide.s32` + `add.u64` (IMAD.WIDE). (4) Division and remainder by a
+  literal power of two are shifts: `ptxas` expanded `div.s32` by a constant held in a register into
+  the generic integer division (about a tenth of that kernel's instructions); the lowering is
+  exact for every int32, and one shift or mask when a range analysis proves the dividend
+  non-negative. Results are bit-identical. Addresses assume that every access is in bounds (an
+  out-of-bounds access is undefined) and that the partial sum of an index does not wrap around
+  int32, the assumption CUDA/C's signed arithmetic gives NVVM; shared-memory addresses are exact
+  for any index. Not measured on an NVIDIA GPU.
 - CUDA/PTX keeps more global loads in flight, the property in which `ptxas` fell four times short
   of NVVM on the CUDA/C of the same kernel for an accumulation loop with a runtime trip count and
   several independent global loads per iteration. Three changes in the PTX generator:

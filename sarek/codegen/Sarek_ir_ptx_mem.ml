@@ -49,12 +49,13 @@ let emit_elt_addr buf alloc r_base r_idx elt_type ~space =
       emit buf "add.u32 %s, %s, %s;" r_addr r_base r_off ;
       r_addr
   | Some SpaceLocal | None ->
-      (* One [mad.wide.s32] for [sign_extend idx * size + base]: the product of
+      (* [mul.wide.s32] and [add.u64] for [sign_extend idx * size + base]: the product of
          a 32-bit index and a power-of-two size is exact in 64 bits. For an
          index in bounds (non-negative, below 2^31) the sign extension is the
          zero extension the former cvt/shl/add triple used, so the address is
          the same; an out-of-bounds access is undefined either way. The signed
-         form is what lets [ptxas] emit one IMAD.WIDE. *)
+         form is what lets [ptxas] emit one IMAD.WIDE (measured: as a [mad.wide]
+         it chose two LEAs instead). *)
       let r_off = new_u64 alloc in
       emit buf "mul.wide.s32 %s, %s, %d;" r_off r_idx (1 lsl elt_shift elt_type) ;
       let r_addr = new_u64 alloc in
@@ -73,12 +74,12 @@ let emit_elt_addr buf alloc r_base r_idx elt_type ~space =
       offset is added by the instruction. 32-bit address arithmetic is modular,
       so this is the address [base + ((idx + off) << shift)] always;
     - global and local arrays: the 64-bit address is [base + sext(idx) * size]
-      ([mad.wide.s32]) plus the immediate. It equals the address of the 32-bit
-      index [idx + off] provided that index is in bounds, which every access
-      must be (an out-of-bounds access is undefined) and provided the partial
-      sum [idx] does not wrap around the 32-bit range, the same assumption
-      CUDA-C's signed integer arithmetic gives NVVM. The sign extension is what
-      makes a negative [idx] with a positive [off] right. *)
+      ([mul.wide.s32], [add.u64]) plus the immediate. It equals the address of
+      the 32-bit index [idx + off] provided that index is in bounds, which every
+      access must be (an out-of-bounds access is undefined) and provided the
+      partial sum [idx] does not wrap around the 32-bit range, the same
+      assumption CUDA-C's signed integer arithmetic gives NVVM. The sign
+      extension is what makes a negative [idx] with a positive [off] right. *)
 let emit_elt_ref buf alloc r_base ~(idx : string option) ~(off : int) elt_type
     ~space : string =
   let imm = off * (1 lsl elt_shift elt_type) in

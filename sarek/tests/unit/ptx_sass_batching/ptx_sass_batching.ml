@@ -13,7 +13,7 @@
  * the CUDA-C by 16. The PTX generator now unrolls such loops itself
  * (Sarek_ir_ptx_unroll), marks the loads of never-written vector parameters
  * [ld.global.nc] (Sarek_ir_ptx_readonly) and forms an address with one
- * [mad.wide.s32]. This test measures it on the machine code, with host tools
+ * [mul.wide.s32]. This test measures it on the machine code, with host tools
  * only (no NVIDIA device): [ptxas -v] for registers, [nvdisasm -c] for the
  * SASS, then
  *   - LDG:      load instructions in the SASS;
@@ -167,6 +167,7 @@ let starts_with s prefix =
 
 type metrics = {
   registers : string;
+  reg_count : int;
   ldg : int;
   constant : int;
   in_flight : int;
@@ -206,6 +207,19 @@ let analyse_sass sass registers =
   cut () ;
   {
     registers;
+    reg_count =
+      (try
+         Scanf.sscanf
+           (let i =
+              Str.search_forward
+                (Str.regexp "Used \\([0-9]+\\) registers")
+                registers
+                0
+            in
+            String.sub registers i (String.length registers - i))
+           "Used %d registers"
+           Fun.id
+       with _ -> max_int);
     ldg = !ldg;
     constant = !constant;
     in_flight = !best;
@@ -272,9 +286,6 @@ let print_histogram label sass =
   List.iter (fun (op, n) -> if n >= 4 then Printf.printf " %s=%d" op n) rows ;
   print_newline ()
 
-(* The full SASS is printed for the one kernel under study. *)
-let dump_sass name = contains name "fused"
-
 let print_row label m =
   Printf.printf
     "  %-34s LDG %3d  CONSTANT %3d  in flight %3d  IMAD %4d (WIDE %3d)  LEA \
@@ -327,23 +338,26 @@ let () =
           in
           let m_nvrtc, sass_nvrtc = compile (name ^ " NVRTC PTX") ptx in
           print_row "NVRTC PTX of the CUDA-C" m_nvrtc ;
-          if dump_sass name then begin
-            print_histogram "SPOC" sass_spoc ;
-            print_histogram "NVRTC" sass_nvrtc ;
-            let compact sass =
-              String.concat
-                "\n"
-                (List.filter_map
-                   (fun l ->
-                     match String.rindex_opt l '/' with
-                     | Some i when contains l "/*" ->
-                         Some
-                           (String.trim
-                              (String.sub l (i + 1) (String.length l - i - 1)))
-                     | _ -> None)
-                   (lines sass))
-            in
-            Printf.printf "==== SPOC SASS\n%s\n==== END\n" (compact sass_spoc)
+          print_histogram "SPOC" sass_spoc ;
+          print_histogram "NVRTC" sass_nvrtc ;
+          (* The fused staged matvec: SASS size and registers stay close to what
+             NVRTC gets for the CUDA-C of the same IR (generous margins: this is
+             a regression gate, the table is the measurement). *)
+          if contains name "fused" then begin
+            expect
+              (m_spoc.sass_lines * 10 <= m_nvrtc.sass_lines * 13)
+              (Printf.sprintf
+                 "%s: %d SASS lines against NVRTC's %d"
+                 name
+                 m_spoc.sass_lines
+                 m_nvrtc.sass_lines) ;
+            expect
+              (m_spoc.reg_count <= m_nvrtc.reg_count)
+              (Printf.sprintf
+                 "%s: %d registers against NVRTC's %d"
+                 name
+                 m_spoc.reg_count
+                 m_nvrtc.reg_count)
           end
         end ;
         if streaming then

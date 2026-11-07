@@ -11,6 +11,7 @@
   sarek.execute
   sarek_ir
   sarek_cuda
+  str
   unix)
  (preprocess
   (pps sarek_ppx))

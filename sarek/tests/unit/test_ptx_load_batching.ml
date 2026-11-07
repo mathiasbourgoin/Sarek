@@ -6,7 +6,7 @@
 (** The PTX generator's memory-level parallelism: unrolling of innermost
     runtime-trip loops ([Sarek_ir_ptx_unroll]), [ld.global.nc] for the vector
     parameters a kernel never writes ([Sarek_ir_ptx_readonly]) and one
-    [mad.wide.s32] per global address. Device-free: text checks on the PTX, and
+    [mul.wide.s32] per global address. Device-free: text checks on the PTX, and
     the Interpreter as the oracle that the unrolled IR computes the very same
     values as the loop it replaces. *)
 
@@ -253,7 +253,7 @@ let pow2_kernel =
       o.(6l) <- (thread_idx_x + 5l) / 4l]
 
 (******************************************************************************
- * ld.global.nc and mad.wide
+ * ld.global.nc and mul.wide
  ******************************************************************************)
 
 let test_nc_on_read_only_params () =
@@ -291,7 +291,7 @@ let test_shared_reads_are_not_nc () =
 
 let test_mad_wide_addresses () =
   let ptx = ptx_of (ir_of dot_while) in
-  Alcotest.(check bool) "mad.wide.s32" true (contains ptx "mad.wide.s32") ;
+  Alcotest.(check bool) "mul.wide.s32" true (contains ptx "mul.wide.s32") ;
   Alcotest.(check bool)
     "no cvt.u64.u32/shl.b64 address recomputation"
     false
@@ -410,7 +410,7 @@ let test_offsets_fold () =
   Alcotest.(check bool)
     "a signed multiply-add for the address"
     true
-    (contains ptx "mad.wide.s32")
+    (contains ptx "mul.wide.s32")
 
 let test_constant_index_needs_no_address () =
   let ptx = ptx_of (ir_of const_up) in
@@ -867,7 +867,7 @@ let () =
             "shared reads are not nc"
             `Quick
             test_shared_reads_are_not_nc;
-          Alcotest.test_case "mad.wide addresses" `Quick test_mad_wide_addresses;
+          Alcotest.test_case "mul.wide addresses" `Quick test_mad_wide_addresses;
           Alcotest.test_case "read-only analysis" `Quick test_readonly_analysis;
           Alcotest.test_case "literal offsets fold" `Quick test_offsets_fold;
           Alcotest.test_case
