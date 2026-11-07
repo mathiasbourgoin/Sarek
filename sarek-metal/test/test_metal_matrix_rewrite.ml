@@ -180,6 +180,7 @@ let eight_only framework ~subgroup : Device.t =
               ds_robust_buffer_access = false;
               ds_subgroup_size = subgroup;
               ds_advertised_count = 2;
+              ds_scale_add = false;
               ds_evidence = "test: 8x8x8 only";
             };
       };

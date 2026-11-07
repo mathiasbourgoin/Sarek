@@ -157,7 +157,8 @@ let rec ustmt (env : env) (s : stmt) : stmt =
             CM_load {req with index = e req.index; stride = e req.stride}
         | CM_store req ->
             CM_store {req with index = e req.index; stride = e req.stride}
-        | CM_muladd _ -> op)
+        | CM_muladd _ -> op
+        | CM_scale_add _ -> Sarek_coopmat_scale.map_exprs e op)
 
 and ucase_stmt env p b =
   match p with

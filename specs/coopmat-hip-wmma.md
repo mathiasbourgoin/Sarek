@@ -155,6 +155,20 @@ set, not "the" answer; its role is a deterministic reference that itself satisfi
 the bound. Loading an f16 fragment rounds to binary16 (identity on a `float16`
 buffer). Without the opt-in the interpreter refuses as before.
 
+## Scaled accumulation (`CM_scale_add`)
+
+Added 2026-11-07, design and evidence in
+`docs/design/coopmat-scaled-accumulate.md` (§2.3 semantics, §6 implementation).
+Per element, `dst = (dst + (f32(src) * r[i]) * c[j]) - p[i] * q[j]`, each step
+one binary32 operation rounded to nearest even, in that order, never contracted;
+`src` is an s32 or f32 accumulator, `dst` an f32 accumulator, the scales float32
+buffers (global or shared). Lowered here in registers with the accumulator
+layout above (element `e` of lane `l`: row `2e + l/16`, column `l mod 16`) by the
+preamble's `sarek_cm_scale_add` template; non-contraction rests on hiprtc's
+`-ffp-contract=off`. Strict: bit-identical to the interpreter on gfx1100
+(`sarek/tests/e2e/test_coopmat_scale_add_e2e.ml`). The CUDA arm of the shared
+source is a named `#error`; the HIP probe sets `ds_scale_add` on gfx11 only.
+
 ## Exactness contract (tests)
 
 - Integer configurations: bit-identical to the interpreter (Strict).

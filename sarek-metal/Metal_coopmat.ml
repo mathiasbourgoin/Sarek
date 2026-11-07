@@ -87,5 +87,6 @@ let support ~simd_width ~(probe : (unit, string) result) : C.device_support =
     ds_robust_buffer_access = false;
     ds_subgroup_size = simd_width;
     ds_advertised_count = List.length configs;
+    ds_scale_add = false;
     ds_evidence = evidence;
   }

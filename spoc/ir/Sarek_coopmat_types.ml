@@ -115,6 +115,7 @@ type device_support = {
   ds_subgroup_size : int;
   ds_advertised_count : int;
   ds_evidence : string;
+  ds_scale_add : bool;
 }
 
 let config_matches ~shape ~a ~b ~c ~result cfg =

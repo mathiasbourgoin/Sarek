@@ -21,7 +21,7 @@
     stride passes [2^31 / 15] elements, although every element the fragment
     touches is addressable. *)
 
-let text =
+let amd =
   {|#if defined(__HIP_PLATFORM_AMD__)
 /* Sarek cooperative matrix, HIP: RDNA3 (gfx11) WMMA, wave32
    (specs/coopmat-hip-wmma.md). For lane l, with l16 = l % 16 and h = l / 16:
@@ -110,7 +110,44 @@ __device__ __forceinline__ void sarek_cm_store_acc_cm_i32(const sarek_cm_i8 &f, 
   int *q = p + i + sarek_cm_l16() * s + sarek_cm_h();
   for (int j = 0; j < 8; ++j) q[2 * j] = f[j];
 }
-#else
+|}
+
+(** The [CM_scale_add] helper (docs/design/coopmat-scaled-accumulate.md),
+    emitted only in a kernel that has the statement, so every other
+    cooperative-matrix kernel keeps its source byte for byte. *)
+let scale_add =
+  {|/* CM_scale_add (docs/design/coopmat-scaled-accumulate.md): for accumulator
+   element e of this lane (row i = 2*e + h, column l16),
+   d = ((d + ((float)s * r[i]) * c[l16]) - p[i] * q[l16]), each operation
+   rounded on its own in exactly this order. Unfused because hiprtc is passed
+   -ffp-contract=off (Hip_rtc.base_options); a pragma could not do it, since
+   -ffp-contract=fast disregards #pragma clang fp contract. S is sarek_cm_i8
+   (s32) or sarek_cm_f8 (f32); d and s may be the same fragment. */
+template <bool COL, bool OFF, bool ACC, typename S>
+__device__ __forceinline__ void sarek_cm_scale_add(sarek_cm_f8 &d, const S &s,
+    const float *r, long long ri, const float *c, long long ci,
+    const float *p, long long pi, const float *q, long long qi) {
+  const int l16 = sarek_cm_l16(), h = sarek_cm_h();
+  const float cj = COL ? c[ci + l16] : 1.0f;
+  const float qj = OFF ? q[qi + l16] : 0.0f;
+  for (int e = 0; e < 8; ++e) {
+    const int i = 2 * e + h;
+    const float t1 = (float)s[e];
+    const float t2 = t1 * r[ri + i];
+    const float t3 = COL ? t2 * cj : t2;
+    const float t4 = ACC ? d[e] + t3 : t3;
+    if (OFF) {
+      const float t5 = p[pi + i] * qj;
+      d[e] = t4 - t5;
+    } else {
+      d[e] = t4;
+    }
+  }
+}
+|}
+
+let cuda =
+  {|#else
 /* Sarek cooperative matrix, CUDA: nvcuda::wmma m16n16k16. COMPILE-CHECKED
    ONLY (no NVIDIA GPU was available; specs/coopmat-hip-wmma.md). wmma's
    load/store need a 32-byte aligned pointer and a row stride that is a
@@ -123,3 +160,8 @@ __device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int
 }
 #endif
 |}
+
+(** [text ~scale_add] is the whole preamble, with the [CM_scale_add] helper when
+    [scale_add]. *)
+let text ~scale_add:with_scale_add =
+  amd ^ (if with_scale_add then scale_add else "") ^ cuda

@@ -1047,22 +1047,43 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
          ~support:device.Device.capabilities.Framework_sig.coopmat)
       (List.sort_uniq
          compare
-         (List.map
+         (List.concat_map
             (function
               | Sarek_ir_types.CM_decl {frag; _}
               | Sarek_ir_types.CM_load {frag; _}
               | Sarek_ir_types.CM_store {frag; _} ->
-                  frag
+                  [frag]
               | Sarek_ir_types.CM_muladd {cfg; _} ->
                   let _, _, _, r = Sarek_coopmat.fragments_of_config cfg in
-                  r)
+                  [r]
+              | Sarek_ir_types.CM_scale_add {dst_frag; src_frag; _} ->
+                  [dst_frag; src_frag])
             (Sarek_ir_analysis.kernel_coopmat_ops ir)))
+  in
+  (* docs/design/coopmat-scaled-accumulate.md §3: CM_scale_add is checked on
+     its own, not through a producer (a CM_decl or CM_load can create its
+     source with no multiply-add in the kernel): its operands, then whether
+     the device's backend lowers it at all. This runs once per (IR, device)
+     through [check_device_capabilities_memo], not per launch. *)
+  let scale_add_verdicts =
+    List.filter_map
+      (function
+        | Sarek_ir_types.CM_scale_add {dst_frag; src_frag; _} ->
+            Some
+              (Sarek_coopmat.scale_add_verdict
+                 ~support:device.Device.capabilities.Framework_sig.coopmat
+                 ~dst_frag
+                 ~src_frag)
+        | Sarek_ir_types.CM_decl _ | Sarek_ir_types.CM_load _
+        | Sarek_ir_types.CM_store _ | Sarek_ir_types.CM_muladd _ ->
+            None)
+      (Sarek_ir_analysis.kernel_coopmat_ops ir)
   in
   Launch_policy.coopmat_gate ~device ir ;
   match
     Sarek_capability.first_refusal
       (List.map (Sarek_capability.device_verdict ~provided) required
-      @ coopmat_verdicts @ fragment_verdicts)
+      @ coopmat_verdicts @ scale_add_verdicts @ fragment_verdicts)
   with
   | None -> ()
   | Some verdict ->

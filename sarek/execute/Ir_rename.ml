@@ -130,6 +130,8 @@ let rec max_id_stmt m = function
   | SCoopmat (CM_load {index; stride; _})
   | SCoopmat (CM_store {index; stride; _}) ->
       max_id_expr (max_id_expr m index) stride
+  | SCoopmat (CM_scale_add _ as op) ->
+      Sarek_coopmat_scale.fold_exprs max_id_expr m op
   | SCoopmat _ | SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ -> m
 
 let max_var_id (k : kernel) : int =

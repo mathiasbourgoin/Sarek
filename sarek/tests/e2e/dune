@@ -2036,6 +2036,7 @@
   test_blocking_ffi_releases_lock
   test_lsr_unroll
   test_coopmat_hip_e2e
+  test_coopmat_scale_add_e2e
   test_ptx_coopmat_e2e
   test_ptx_coopmat_int8_e2e
   test_coopmat_layout_e2e
@@ -2065,6 +2066,7 @@
   test_blocking_ffi_releases_lock
   test_lsr_unroll
   test_coopmat_hip_e2e
+  test_coopmat_scale_add_e2e
   test_ptx_coopmat_e2e
   test_ptx_coopmat_int8_e2e
   test_coopmat_layout_e2e
@@ -2184,6 +2186,18 @@
  (alias runtest)
  (action
   (run %{dep:test_coopmat_hip_e2e.exe})))
+
+; CM_scale_add (docs/design/coopmat-scaled-accumulate.md): the launch gate on
+; every enumerated device (runs anywhere); on a gfx11 HIP device only, skipped
+; otherwise, bit identity with the interpreter over random fragments and scales
+; for every flag combination, and the gfx1100 ISA of the scale step (no fused
+; multiply-add; skipped without hipcc). Built by the test_int32_bitcasts
+; stanza above, which shares backend_hip.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_coopmat_scale_add_e2e.exe})))
 
 ; SCoopmat on CUDA/PTX (wmma.*): host checks everywhere; the device part runs on
 ; each CUDA/PTX device offering f16 coopmat (NVIDIA sm_70+) and skips otherwise,

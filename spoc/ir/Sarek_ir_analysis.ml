@@ -124,7 +124,8 @@ let rec stmt_fold f acc stmt =
       match op with
       | CM_decl _ | CM_muladd _ -> acc
       | CM_load {index; stride; _} | CM_store {index; stride; _} ->
-          expr_fold f (expr_fold f acc index) stride)
+          expr_fold f (expr_fold f acc index) stride
+      | CM_scale_add _ -> Sarek_coopmat_scale.fold_exprs (expr_fold f) acc op)
 
 let decl_fold f acc = function
   | DParam (v, arr_info) ->
@@ -641,5 +642,5 @@ let kernel_coopmat_configs k =
     (List.filter_map
        (function
          | CM_muladd {cfg; _} -> Some cfg
-         | CM_decl _ | CM_load _ | CM_store _ -> None)
+         | CM_decl _ | CM_load _ | CM_store _ | CM_scale_add _ -> None)
        (kernel_coopmat_ops k))

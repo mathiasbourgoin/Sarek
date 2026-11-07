@@ -193,6 +193,14 @@ type device_support = {
           refused launch says WHY this device, on this backend, offers no
           configuration — the backends decide by different rules and a single
           backend's wording would mislead on the others. *)
+  ds_scale_add : bool;
+      (** Whether this backend lowers {!Sarek_ir_types.CM_scale_add} on this
+          device (docs/design/coopmat-scaled-accumulate.md §3). False unless a
+          lowering exists AND was executed bit-identical to the interpreter on
+          such a device: only the HIP gfx11 probe sets it. It is a separate flag
+          rather than a consequence of [ds_configs] because the statement has no
+          producer to key on: a [CM_decl] or [CM_load] can create its source
+          fragment without any multiply-add in the kernel. *)
 }
 
 (** [config_matches ~shape ~a ~b ~c ~result cfg] compares the DIMENSIONS and the

@@ -85,6 +85,7 @@ let support_for ~lowering ~device_name ~compute_capability:(major, minor)
     ds_robust_buffer_access = false;
     ds_subgroup_size = warp_size;
     ds_advertised_count = List.length configs;
+    ds_scale_add = false;
     ds_evidence =
       (if configs <> [] then
          Printf.sprintf
