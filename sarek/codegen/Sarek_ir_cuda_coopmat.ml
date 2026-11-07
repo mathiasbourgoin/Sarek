@@ -101,9 +101,10 @@ let check_config (cfg : C.config) =
 
 (** The kernel buffer element type a fragment may be loaded from or stored to.
     Integer accumulators of either signedness live in an [int32] buffer, and
-    both 8-bit operand types in a [uint8] buffer: the signedness is the
-    fragment's, applied by the instruction, exactly as the interpreter narrows
-    the loaded byte. *)
+    both 8-bit operand types in a [uint8] buffer (an s8 fragment also accepts an
+    [int8] one, see {!accepts_buffer}): the signedness is the fragment's,
+    applied by the instruction, exactly as the interpreter narrows the loaded
+    byte. *)
 let buffer_elttype (f : C.fragment) =
   match f.C.frag_component with
   | C.Float16 -> TFloat16
@@ -115,13 +116,16 @@ let elttype_name = function
   | TFloat16 -> "float16"
   | TFloat32 -> "float32"
   | TUint8 -> "uint8"
-  (* s8 fragments read a uint8 buffer too: the bytes are the same. *)
-  | TInt8 ->
-      "int8 (an 8-bit fragment of either signedness loads a uint8 buffer)"
+  | TInt8 -> "int8"
   | TInt32 -> "int32"
   | TInt64 -> "int64"
   | TFloat64 -> "float64"
   | _ -> "a non-numeric type"
+
+(** An s8 fragment also loads from an [int8] buffer: the bytes are the same, and
+    it is the natural home of int8-quantised data. [uint8] stays accepted. *)
+let accepts_buffer (f : C.fragment) elt =
+  elt = buffer_elttype f || (f.C.frag_component = C.Sint8 && elt = TInt8)
 
 (** [buffers] maps a parameter or shared-array name to its element type, when
     the generator knows it. An unknown name is left to the C++ compiler, which
@@ -131,7 +135,7 @@ let check_buffer ~buffers ~buf (f : C.fragment) =
   | None -> ()
   | Some elt ->
       let want = buffer_elttype f in
-      if elt <> want then
+      if not (accepts_buffer f elt) then
         unsupported
           "cooperative-matrix buffer"
           (Printf.sprintf
@@ -359,7 +363,7 @@ let gen_decl ~indent ~ctx name (frag : C.fragment) =
     ~cuda:(cuda_arm frag cuda)
 
 (* The CUDA pointer for a fragment's buffer: [src + index], cast to the wmma
-   element type (an s8 fragment reads a uint8 buffer as signed char). *)
+   element type (an s8 fragment reads a uint8 or int8 buffer as signed char). *)
 let cuda_ptr ~const (frag : C.fragment) ~buf ~index =
   Printf.sprintf
     "((%s%s *)(%s) + (%s))"
@@ -384,6 +388,14 @@ let gen_load ~indent ~buffers ~expr_str ~dst ~(frag : C.fragment) ~src ~index
     | C.Accumulator -> ", " ^ cuda_mem_layout layout
     | C.Matrix_a | C.Matrix_b -> ""
   in
+  (* The AMD load helpers take [const unsigned char *] for both 8-bit
+     signednesses; an int8 buffer is [signed char *], which C++ does not
+     convert implicitly. A uint8 buffer is passed as before. *)
+  let amd_src =
+    match List.assoc_opt src buffers with
+    | Some TInt8 -> Printf.sprintf "(const unsigned char *)(%s)" src
+    | _ -> src
+  in
   both_arms
     ~indent
     ~amd:
@@ -391,7 +403,7 @@ let gen_load ~indent ~buffers ~expr_str ~dst ~(frag : C.fragment) ~src ~index
          "sarek_cm_load_%s(%s, %s, (%s), (%s));"
          (amd_helper_suffix frag layout)
          dst
-         src
+         amd_src
          index
          stride)
     ~cuda:

@@ -262,9 +262,7 @@ let elt_name = function
   | TFloat16 -> "float16"
   | TFloat32 -> "float32"
   | TUint8 -> "uint8"
-  (* s8 fragments read a uint8 buffer too: the bytes are the same. *)
-  | TInt8 ->
-      "int8 (an 8-bit fragment of either signedness loads a uint8 buffer)"
+  | TInt8 -> "int8"
   | TInt32 -> "int32"
   | _ -> "a non-numeric type"
 
@@ -320,7 +318,12 @@ let emit_access buf alloc env ~what ~(frag : C.fragment) ~buf_name ~index
     ~stride =
   let elt, elt_bytes = elt_of frag in
   let held = infer_elt_type alloc buf_name in
-  if held <> elt then
+  (* An s8 fragment also loads from an int8 buffer (same bytes); the wmma load
+     reads the address, whatever the declared element type. *)
+  let accepted =
+    held = elt || (frag.C.frag_component = C.Sint8 && held = TInt8)
+  in
+  if not accepted then
     refuse
       what
       (Printf.sprintf

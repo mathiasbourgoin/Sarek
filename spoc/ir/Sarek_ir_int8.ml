@@ -140,38 +140,40 @@ let rec retype_lvalue ids = function
       LArrayElemExpr (retype_expr ids b, retype_expr ids i)
   | LRecordField (b, f) -> LRecordField (retype_lvalue ids b, f)
 
-let local_scalar_elt (v : var) =
-  if is_8bit v.var_type then Some v.var_type else None
-
-(** The ids of the kernel's 8-bit local scalars, so that a use anywhere in their
-    scope is retyped with them. *)
-let rec scalar_ids acc = function
+(** The kernel's 8-bit local scalars whose type satisfies [keep], by id, so that
+    a use anywhere in their scope is retyped with them. *)
+let rec local_scalars keep acc = function
   | SLet (v, _, b) | SLetMut (v, _, b) ->
-      scalar_ids (if is_8bit v.var_type then v.var_id :: acc else acc) b
-  | SSeq ss -> List.fold_left scalar_ids acc ss
+      local_scalars
+        keep
+        (if keep v.var_type then (v.var_id, v.var_type) :: acc else acc)
+        b
+  | SSeq ss -> List.fold_left (local_scalars keep) acc ss
   | SIf (_, t, e) ->
-      let acc = scalar_ids acc t in
-      Option.fold ~none:acc ~some:(scalar_ids acc) e
+      let acc = local_scalars keep acc t in
+      Option.fold ~none:acc ~some:(local_scalars keep acc) e
   | SFor (_, _, _, _, b) | SWhile (_, b) | SPragma (_, b) | SBlock b ->
-      scalar_ids acc b
+      local_scalars keep acc b
   | SMatch (_, cases) ->
-      List.fold_left (fun a (_, s) -> scalar_ids a s) acc cases
+      List.fold_left (fun a (_, s) -> local_scalars keep a s) acc cases
   | SAssign _ | SReturn _ | SBarrier | SWarpBarrier | SExpr _ | SEmpty
   | SMemFence | SNative _ | SCoopmat _ ->
       acc
 
-(** [narrow_of] maps an id to its 8-bit type, for the stores into it. *)
-let rec lower_stmt ids narrow_of s =
-  let e = retype_expr ids and r = lower_stmt ids narrow_of in
+(** [types] maps a lowered binder's id to its 8-bit type. *)
+let rec lower_stmt types s =
+  let ids = List.map fst types in
+  let e = retype_expr ids and r = lower_stmt types in
+  let narrow_of (v : var) = List.assoc_opt v.var_id types in
   let bind v x =
-    match local_scalar_elt v with
+    match narrow_of v with
     | Some t -> (retype v, narrowed t (e x))
     | None -> (v, e x)
   in
   match s with
   | SBarrier | SWarpBarrier | SEmpty | SMemFence | SNative _ -> s
   | SAssign ((LVar v as lv), x) -> (
-      match narrow_of v.var_id with
+      match narrow_of v with
       | Some t -> SAssign (retype_lvalue ids lv, narrowed t (e x))
       | None -> SAssign (retype_lvalue ids lv, e x))
   | SAssign (lv, x) -> SAssign (retype_lvalue ids lv, e x)
@@ -197,55 +199,96 @@ let rec lower_stmt ids narrow_of s =
         | CM_load c -> CM_load {c with index = e c.index; stride = e c.stride}
         | CM_store c -> CM_store {c with index = e c.index; stride = e c.stride})
 
-let lower_body stmt locals =
-  let ids = scalar_ids [] stmt in
-  let local_ids =
+let lower_body keep stmt locals =
+  let decls =
     List.filter_map
       (function
-        | DLocal (v, _) when is_8bit v.var_type -> Some (v.var_id, v.var_type)
+        | DLocal (v, _) when keep v.var_type -> Some (v.var_id, v.var_type)
         | _ -> None)
       locals
   in
-  let rec typed acc = function
-    | SLet (v, _, b) | SLetMut (v, _, b) ->
-        typed
-          (if is_8bit v.var_type then (v.var_id, v.var_type) :: acc else acc)
-          b
-    | SSeq ss -> List.fold_left typed acc ss
-    | SIf (_, t, e) ->
-        let acc = typed acc t in
-        Option.fold ~none:acc ~some:(typed acc) e
-    | SFor (_, _, _, _, b) | SWhile (_, b) | SPragma (_, b) | SBlock b ->
-        typed acc b
-    | SMatch (_, cases) -> List.fold_left (fun a (_, s) -> typed a s) acc cases
-    | _ -> acc
-  in
-  let types = typed local_ids stmt in
-  let ids = ids @ List.map fst local_ids in
-  (ids, lower_stmt ids (fun id -> List.assoc_opt id types) stmt)
+  let types = local_scalars keep decls stmt in
+  (types, lower_stmt types stmt)
 
-let lower_scalars (k : kernel) : kernel =
-  let ids, body = lower_body k.kern_body k.kern_locals in
-  if ids = [] then k
+let lower_scalars_where keep (k : kernel) : kernel =
+  let types, body = lower_body keep k.kern_body k.kern_locals in
+  let ids = List.map fst types in
+  {
+    k with
+    kern_body = body;
+    kern_locals =
+      List.map
+        (function
+          | DLocal (v, init) when keep v.var_type ->
+              let t = v.var_type in
+              DLocal
+                ( retype v,
+                  Option.map (fun x -> narrowed t (retype_expr ids x)) init )
+          | d -> d)
+        k.kern_locals;
+    kern_funcs =
+      List.map
+        (fun hf -> {hf with hf_body = snd (lower_body keep hf.hf_body [])})
+        k.kern_funcs;
+  }
+
+let lower_scalars k =
+  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int8 k then
+    lower_scalars_where is_8bit k
+  else k
+
+(** {1 Signed narrowing on the C-family targets}
+
+    C (before C23 for this case), C++ before C++20, OpenCL C and MSL leave the
+    conversion of an out-of-range [int] to [signed char] implementation-defined.
+    The conversion to [unsigned char] is defined (modulo 2^8). So the C-family
+    emitters must never convert an int that may be out of range to a signed
+    8-bit type: {!define_signed_narrowing} makes every such conversion an
+    explicit [ECast (TInt8, _)], which they spell as the int expression
+    [((e & 0xFF) ^ 0x80) - 0x80]; its value is in [-128, 127], so the store that
+    follows converts an in-range value. *)
+
+let is_int8 = function TInt8 -> true | _ -> false
+
+let define_signed_narrowing (k : kernel) : kernel =
+  if not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int8 k) then k
   else
-    {
-      k with
-      kern_body = body;
-      kern_locals =
-        List.map
-          (function
-            | DLocal (v, init) when is_8bit v.var_type ->
-                let t = v.var_type in
-                DLocal
-                  ( retype v,
-                    Option.map (fun x -> narrowed t (retype_expr ids x)) init )
-            | d -> d)
-          k.kern_locals;
-      kern_funcs =
-        List.map
-          (fun hf -> {hf with hf_body = snd (lower_body hf.hf_body [])})
-          k.kern_funcs;
-    }
+    let k = lower_scalars_where is_int8 k in
+    let signed_arrays = List.filter (fun (_, t) -> is_int8 t) (byte_arrays k) in
+    if signed_arrays = [] then k
+    else
+      let rec wrap s =
+        match s with
+        | SAssign (lv, x) -> (
+            match store_elt signed_arrays lv with
+            | Some t -> SAssign (lv, narrowed t x)
+            | None -> s)
+        | SSeq ss -> SSeq (List.map wrap ss)
+        | SIf (c, t, el) -> SIf (c, wrap t, Option.map wrap el)
+        | SWhile (c, b) -> SWhile (c, wrap b)
+        | SFor (v, lo, hi, d, b) -> SFor (v, lo, hi, d, wrap b)
+        | SMatch (sc, cases) ->
+            SMatch (sc, List.map (fun (p, b) -> (p, wrap b)) cases)
+        | SLet (v, x, b) -> SLet (v, x, wrap b)
+        | SLetMut (v, x, b) -> SLetMut (v, x, wrap b)
+        | SPragma (h, b) -> SPragma (h, wrap b)
+        | SBlock b -> SBlock (wrap b)
+        | SReturn _ | SBarrier | SWarpBarrier | SExpr _ | SEmpty | SMemFence
+        | SNative _ | SCoopmat _ ->
+            s
+      in
+      {
+        k with
+        kern_body = wrap k.kern_body;
+        kern_funcs =
+          List.map (fun hf -> {hf with hf_body = wrap hf.hf_body}) k.kern_funcs;
+      }
+
+(** The C spelling of [ECast (TInt8, e)] given [e]'s spelling: standard-defined
+    on every C dialect, an [int] in [-128, 127]. Shared by the CUDA/HIP, OpenCL
+    and Metal emitters. *)
+let c_signed_narrowing operand =
+  Printf.sprintf "((((%s) & 0xFF) ^ 0x80) - 0x80)" operand
 
 let normalise (k : kernel) : kernel =
   let k = lower_scalars k in

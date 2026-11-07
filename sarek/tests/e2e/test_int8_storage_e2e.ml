@@ -164,6 +164,49 @@ let check_oracle () =
           fail "interpreter %s: element %d is %ld, model %ld" label i g e)
     kernels
 
+(** s8 cooperative-matrix fragments loaded from int8 buffers, on a device that
+    advertises s8 x s8 + s32 -> s32. One subgroup does the whole 16x16x16
+    product, so the block is the device's subgroup. *)
+let check_coopmat_int8 dev name =
+  if
+    Sarek_capability.permits
+      (Sarek_coopmat.verdict
+         ~support:dev.Device.capabilities.Spoc_framework.Framework_sig.coopmat
+         K.s8_config)
+  then begin
+    let d = vec_i32 (Array.make (K.mnk * K.mnk) 0l) in
+    let sg = dev.Device.capabilities.Spoc_framework.Framework_sig.warp_size in
+    match
+      Execute.run_vectors
+        ~device:dev
+        ~ir:(K.coopmat_s8_kernel ~buf_elt:Sarek_ir_types.TInt8)
+        ~args:
+          [
+            Execute.Vec (vec_s8 K.coop_a);
+            Execute.Vec (vec_s8 K.coop_b);
+            Execute.Vec (vec_i32 K.coop_c);
+            Execute.Vec d;
+          ]
+        ~block:(Execute.dims1d sg)
+        ~grid:(Execute.dims1d 1)
+        () ;
+      Transfer.flush dev
+    with
+    | exception e ->
+        fail
+          "%s s8 coopmat from int8 buffers: raised %s"
+          name
+          (Printexc.to_string e)
+    | () -> (
+        match first_divergence (Vector.to_array d) (K.coopmat_s8_model ()) with
+        | None ->
+            Printf.printf
+              "  OK  %s s8 coopmat from int8 buffers: equal to the model\n%!"
+              name
+        | Some (i, g, e) ->
+            fail "%s s8 coopmat: element %d is %ld, model %ld" name i g e)
+  end
+
 let check_device dev =
   let name = Printf.sprintf "%s [%s]" dev.Device.name dev.Device.framework in
   let provides =
@@ -186,6 +229,7 @@ let check_device dev =
   | true, Error why ->
       fail "%s reports 8-bit storage but was refused: %s" name why
   | true, Ok () ->
+      check_coopmat_int8 dev name ;
       List.iter
         (fun (label, run, model) ->
           match run (device_launch dev) with

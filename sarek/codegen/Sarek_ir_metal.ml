@@ -251,6 +251,15 @@ let rec gen_expr st buf = function
       Buffer.add_string buf field
   | EIntrinsic (path, name, args) ->
       Dispatch.gen_intrinsic (metal_backend st) buf path name args
+  | ECast (TInt8, e) ->
+      (* Sarek_ir_int8.c_signed_narrowing: the conversion of an out-of-range
+         int to a signed 8-bit type is implementation-defined in this dialect,
+         so the low byte is sign-extended with int arithmetic instead. *)
+      let operand = Buffer.create 32 in
+      gen_expr st operand e ;
+      Buffer.add_string
+        buf
+        (Sarek_ir_int8.c_signed_narrowing (Buffer.contents operand))
   | ECast (ty, e) ->
       Buffer.add_char buf '(' ;
       Buffer.add_string buf (metal_type_of_elttype ty) ;
@@ -1241,6 +1250,9 @@ let generate_with_types ?block
       ~rename_params:true
       k
   in
+  (* Signed 8-bit narrowing without an implementation-defined conversion
+     (Sarek_ir_int8.define_signed_narrowing); no-op for a kernel without int8. *)
+  let k = Sarek_ir_int8.define_signed_narrowing k in
   (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
      for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_for_bound.hoist k in
