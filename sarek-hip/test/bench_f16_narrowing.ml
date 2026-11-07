@@ -11,7 +11,7 @@
    synchronises, and every thread reads one value written by a neighbour (so the
    stores stay live). Three dequantisation kernels:
 
-     q4f  Q4_K as the Katra fused GEMM writes it: f32 scales read as bits,
+     q4f  Q4_K as a downstream fused GEMM writes it: f32 scales read as bits,
           d * q - dmin * m (inexact: the barrier stays without an opt-in)
      q8f  Q8_0 with an f32 scale read as bits, d * int8 (not provably exact)
      q8h  Q8_0 with a binary16 scale, d * int8 (exact in f32)

@@ -23,7 +23,7 @@ The barrier costs. On gfx1100 it keeps the multiply out of the narrowing and,
 because the asm is volatile, it also keeps the narrowed values from being
 packed and their stores merged, and the loads feeding them from being merged
 (`F3-isa-before.txt`: 32 `ds_store_b16` and 8 `global_load_b32` per unit
-instead of 4 `ds_store_b128` and 2 `global_load_b128`). Katra measured −20 %
+instead of 4 `ds_store_b128` and 2 `global_load_b128`). A downstream LLM inference engine measured −20 %
 on its fused Q4_K GEMM.
 
 This spec removes the barrier where it provably changes nothing (default on)
@@ -200,11 +200,11 @@ in `/mnt/ssd-external-2to/spoc-pipeline-logs/pkgF/` (`F3-*`).
 | hip:0 vs f32-then-f16 model, bit for bit, ~16M values each: binary16 sums, byte products/sums, differences of bytes times a byte, Q8_0 and Q6_K signed products; Q4_K and a bitcast round trip keep 4 barriers | `sarek-hip/test/test_hip_f16_narrowing_exact.ml` | 0 differ each; Q8_0 without the sign restoration: 31999 differ, all ±0; before the review fixes: differences 4194240 (±0), bitcast 132 |
 | Every emittable f16 shape, all 63488 binary16 inputs, shipping path | `sarek-hip/test/test_hip_f16_shapes.ml` | 0 mismatches as shipped (A1, A3, A4, A10 now without barrier) |
 | Opt-in within the bound | `sarek-hip/test/test_hip_f16_single_rounding.ml` | 0 outside the bound |
-| Time, dequantise-to-LDS microbenchmark | `sarek-hip/test/bench_f16_narrowing.ml`, `F3-bench-ab-raw.txt` | Q8_0 with binary16 scale: 932 → 182 µs (default); Q4_K as Katra writes it: unchanged by default, 870 → 170 µs with the opt-in |
+| Time, dequantise-to-LDS microbenchmark | `sarek-hip/test/bench_f16_narrowing.ml`, `F3-bench-ab-raw.txt` | Q8_0 with binary16 scale: 932 → 182 µs (default); Q4_K as the downstream engine writes it: unchanged by default, 870 → 170 µs with the opt-in |
 
 ## 6. Limits and findings
 
-- Katra's kernels read their scales as f32 bits (`Int32.float_of_bits`), an
+- The downstream engine's kernels read their scales as f32 bits (`Int32.float_of_bits`), an
   arbitrary binary32 value: `d · q` is not provably exact, so their barriers
   stay by default. Reading a binary16 scale as binary16 makes Q8_0 and Q6_K
   products exact (T1). Q4_K/Q5_K subtract a second product with an

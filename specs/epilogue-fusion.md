@@ -20,7 +20,7 @@ element-wise consumer C that reads P's output at its own index. Examples:
 
 C is merged into P: C's body runs right after each of P's stores, in the
 thread that made the store. This saves one launch and one pass over the
-intermediate. In spoc_llm decode it removes 54 launches per token on the 0.8B
+intermediate. In a downstream LLM inference engine's decode it removes 54 launches per token on the 0.8B
 model and 84 on the 35B.
 
 ## Clarifications
@@ -51,7 +51,7 @@ model and 84 on the 35B.
 - AC-2 [FR-103]: An uncovered consumer (domain larger than the producer's stores) is not merged, and its results stay correct ("uncovered consumer" on every device; the probe test "not merged when uncovered"). Mutation check: making the coverage check always pass turns both red.
 - AC-3 [FR-104, FR-107]: The decision is checked by a probe test (`test_epilogue_defaults`, through `Launch_epilogue.decide_pair`): HIP and Metal fuse without a grant; CUDA/PTX, CUDA/C, OpenCL and Vulkan do not, even switched on, until both kernels hold the grant; Native, Interpreter and WebGPU never fuse; a backend marked inexact never fuses. `test_launch_window` ("needs the grant") checks it end to end on a probe backend, and that a grant given after a first refused submit is honoured by the next one.
 - AC-5 [FR-107]: On OpenCL, Vulkan and CUDA/PTX (ZLUDA) with the grant, `test_epilogue_exact` asserts the fused path was taken (one launch instead of two), prints the number of differing elements and the largest difference, and asserts it within that bound (forwarding, residual, chain); on HIP and Metal it asserts bit equality.
-- AC-4: spoc_llm decode on the RX 7900 XTX: dispatch counts, and logits bit-identical with and without epilogue fusion.
+- AC-4: downstream engine decode on the RX 7900 XTX: dispatch counts, and logits bit-identical with and without epilogue fusion.
 
 Checks:
 - CHECK-1: `dune build @sarek/execute/test/runtest`.

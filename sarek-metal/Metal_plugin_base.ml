@@ -27,7 +27,7 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
 
   let device_states : (int, device_state) Hashtbl.t = Hashtbl.create 8
 
-  (* Several domains may launch or copy at once (spoc_llm issues expert copies
+  (* Several domains may launch or copy at once (a downstream consumer issues expert copies
      from an I/O domain): the lazily filled table is guarded. *)
   let device_states_lock = Mutex.create ()
 

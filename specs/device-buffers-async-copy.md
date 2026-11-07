@@ -10,7 +10,7 @@ version: 1.0.0
 
 # Spec — device-buffers-async-copy
 
-Driven by spoc_llm milestone M3 (stream MoE expert weights host→GPU into a
+Driven by a downstream LLM inference engine (stream MoE expert weights host→GPU into a
 device-resident cache while the GPU computes). Every design decision below that
 was not dictated by the brief was **decided autonomously by the agent** under
 the owner's delegation of 2026-10-10; each is marked *(agent decision)*.
@@ -32,9 +32,9 @@ the owner's delegation of 2026-10-10; each is marked *(agent decision)*.
 ## User Stories
 
 ### US-1: Device-only vectors (Priority: P0)
-As spoc_llm's tier manager, I want to allocate a 20 GB expert cache that lives
+As the downstream engine's tier manager, I want to allocate a 20 GB expert cache that lives
 only in VRAM so that host RAM is not spent mirroring it.
-**Why this priority**: without it M3 cannot fit the cache in a 125 GB host alongside the RAM tier.
+**Why this priority**: without it the downstream engine cannot fit the cache in a 125 GB host alongside the RAM tier.
 **Scope**: does NOT cover SoA (transparent) vectors or multi-device migration of device-only vectors.
 **Independent Test**: create a device-only vector on HIP, check no host storage exists, use it as a kernel argument, read a range back explicitly.
 **Acceptance Scenarios**:
@@ -68,7 +68,7 @@ As the I/O engine, I want page-locked host buffers exposed as Bigarrays so that 
 
 ### US-4: Stream launches and event ordering (Priority: P0)
 As the runtime layer loop, I want to launch kernels on a compute stream that waits on an event recorded after an async copy on a copy stream, so that copy and compute overlap and are correctly ordered.
-**Why this priority**: this is the overlap M3 exists for.
+**Why this priority**: this is the overlap the downstream expert streaming exists for.
 **Scope**: does NOT cover priorities, graph capture, or host callbacks.
 **Independent Test**: copy stream A copies x into a device-only vector, records event e; compute stream B waits on e and runs `y = x + 1`; result matches.
 **Acceptance Scenarios**:
@@ -87,7 +87,7 @@ As the runtime layer loop, I want to launch kernels on a compute stream that wai
 | C-4 | US-2 | Partial device writes break the whole-vector location model. | Ranged writes require the device copy to be current (`GPU`/`Both`/`Stale_CPU` on that device) and leave `Stale_CPU dev` (or `GPU dev`). Otherwise refused. |
 | C-5 | US-2 | The async source can be collected or reused while DMA reads it. | Core ledger roots Bigarray sources; raw-address variant documents the caller contract. Reuse (overwrite) while in flight is the caller's ordering problem — documented. |
 | C-6 | US-3 | A Bigarray over foreign memory has no finalizer; after `free_pinned` it dangles. | Explicit lifetime, like `munmap`: documented; `free_pinned` refuses while copies are pending and refuses double free. No finalizer (sub-arrays could outlive the parent). |
-| C-7 | US-4 | HIP null-stream semantics: blocking streams synchronise with the legacy default stream, so any sync transfer on the default stream serialises A and B. | Documented; M3's pattern (device-only vectors, no auto-transfers) issues no default-stream work. Not changed here. |
+| C-7 | US-4 | HIP null-stream semantics: blocking streams synchronise with the legacy default stream, so any sync transfer on the default stream serialises A and B. | Documented; the downstream pattern (device-only vectors, no auto-transfers) issues no default-stream work. Not changed here. |
 | C-8 | US-4 | Auto-transfers in `run_vectors ~stream` stay synchronous on the default stream. | Kept (existing semantics intact); vectors already resident cost nothing. Documented. |
 | C-9 | US-2/US-4 | Unbounded growth of the keep-alive ledger if the caller never synchronises. | Released per stream on stream sync and per event (sequence numbers) on event sync/completed query. Documented. |
 | C-10 | all | Every backend must now implement the new `BACKEND` members. | `Framework_sig.Async_refused` functor and `Framework_sig.Make_refs` keep refusing backends to a few lines; the refusal is a `Feature_not_supported` error, never a silent no-op. |
@@ -100,7 +100,7 @@ As the runtime layer loop, I want to launch kernels on a compute stream that wai
 | X-7 | US-1 | `free_buffer`/`free_all_buffers` could free under in-flight DMA, and leave `CPU` on a host-less vector. | Freeing a vector the ledger still holds is refused. A freed device-only vector keeps `Device_only_storage`; every later operation refuses with "device-only vector has no device buffer". |
 | X-8 | US-2 | No read-side precondition. | `copy_to_host` source must be device-current (`GPU`/`Both`/`Stale_CPU` on that device, or device-only). |
 | X-9 | US-2, US-4 | Auto-sync after an async ranged write depends on streams being *blocking* (synchronising with the legacy default stream). | Stated as a requirement (FR-019): `Transfer.create_stream` creates blocking streams; switching to non-blocking streams must first make auto-sync stream-aware. |
-| X-10 | US-4 | The M3 pattern never syncs the copy stream; ledger grows; flush/device sync do not release. | Release is transitive: `stream_wait_event b e` records the dependency, and completing b up to that point releases e's stream up to e. `Transfer.flush dev` releases every stream of `dev`. HIP's own kernarg list is unchanged (released by stream/device sync, as today) — documented. |
+| X-10 | US-4 | The downstream pattern never syncs the copy stream; ledger grows; flush/device sync do not release. | Release is transitive: `stream_wait_event b e` records the dependency, and completing b up to that point releases e's stream up to e. `Transfer.flush dev` releases every stream of `dev`. HIP's own kernarg list is unchanged (released by stream/device sync, as today) — documented. |
 | X-11 | US-2, US-4 | Ledger keyed by handle address collides after destroy/re-create. | Each core stream wrapper carries a unique id. `destroy_stream` synchronises and releases before destroying. A copy on `default_stream d` is ledgered like any stream. |
 | X-12 | US-3 | Registered Bigarrays could be collected while registered; pinned registry keyed by address only. | `register_host` roots the Bigarray until `unregister_host`. The registry key is (address, byte length), so a sub-array, even at offset 0, is refused by `free_pinned`. Use of a buffer after `free_pinned` is undefined, as after `munmap` — documented. |
 | X-13 | US-3 | Non-portable pinned memory silently degrades copies from another device/context. | Allocation and registration use the PORTABLE flags (`hipHostMallocPortable`, `CU_MEMHOSTALLOC_PORTABLE`, `*_REGISTER_PORTABLE`). |
@@ -177,7 +177,7 @@ As the runtime layer loop, I want to launch kernels on a compute stream that wai
 - CHECK-4 [AC-8]: `spoc/framework/test/test_framework_sig.exe` → `Async_refused: OK`, `Make_refs: OK`.
 - CHECK-5 [AC-9]: `dune runtest` → exit 0.
 
-(Commands run through `opam exec --switch=/mnt/ssd-external-2to/spoc_llm-env --`.)
+(Commands run through `opam exec` in the local opam switch.)
 
 ## Claims Metadata
 

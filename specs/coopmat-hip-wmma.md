@@ -3,7 +3,7 @@ name: roster-spec
 type: spec
 status: live
 feature: Cooperative matrix (SCoopmat) on HIP via RDNA3 WMMA; CUDA codegen via nvcuda::wmma (compile-only); explicit opt-in for float accumulation
-brief: spoc_llm prefill (matrix-matrix GEMMs on the RX 7900 XTX matrix units)
+brief: downstream LLM prefill (matrix-matrix GEMMs on the RX 7900 XTX matrix units)
 date: 2026-10-10
 version: 1.0.0
 ---
@@ -144,7 +144,7 @@ parameter or a shared array.
 - *(agent decision)* Why not treat "the kernel contains SCoopmat" as the opt-in:
   the recorded owner decision (§6.1) requires that the user be made to say yes to a
   bounded deviation, and a kernel can be written by someone other than the person
-  who launches it (a library such as spoc_llm). The call is one line.
+  who launches it (a downstream library). The call is one line.
 
 ## Interpreter
 
@@ -293,7 +293,7 @@ is 1.3–1.6× faster than the best SCoopmat tiling: the SCoopmat kernel loads
 fragments straight from global memory with no LDS staging or double buffering,
 which is the obvious next step and is not in this change.
 
-## What spoc_llm needs to adopt it
+## What a downstream consumer needs to adopt it
 
 - **Call** `Sarek_coopmat.accept_relaxed_accumulation ~reason:"..."` once at
   start-up (the result is bounded, not bit-identical: say so in its docs).
@@ -315,7 +315,7 @@ which is the obvious next step and is not in this change.
   dequantised, for quantised GGUF tensors) to f16 once at load. f16 range is
   ±65504: activations beyond it need scaling.
 - **Devices:** gfx11 HIP only. Everything else refuses with a capability error,
-  so spoc_llm keeps its existing path as the explicit alternative (no silent
+  so a consumer keeps its existing path as the explicit alternative (no silent
   fallback inside Sarek).
 
 ## Evidence

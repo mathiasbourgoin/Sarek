@@ -6,7 +6,7 @@
 (******************************************************************************
  * Cost of the per-launch checks.
  *
- * Katra decodes a token with 281 to 497 kernel launches, so anything a launch
+ * A downstream LLM inference engine decodes a token with 281 to 497 kernel launches, so anything a launch
  * computes from the whole IR is paid that many times per token. The warp
  * launch rule ([Execute.check_launch_warp]) and the matrix-rewrite decision
  * ([Matrix_specialise.choose]) both used to fold the entire IR at every launch;

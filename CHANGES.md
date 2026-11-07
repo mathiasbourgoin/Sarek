@@ -41,7 +41,7 @@
 
 ### Fixed
 
-- Code generation of valid OCaml kernels (found by Katra, review of 2026-10-17): a name rebound in the
+- Code generation of valid OCaml kernels (found by a downstream LLM inference engine, review of 2026-10-17): a name rebound in the
   same scope (`let s = s +. 1.0 in`, two `let t` in one block) was emitted as a C redeclaration on
   CUDA/HIP, OpenCL and Metal (and, for two `let t`, on GLSL and WGSL); a variable named like a keyword,
   type, qualifier or built-in of the target (`half`, `local`, `kernel`, `uint`, `float4`, `max`) or
@@ -59,7 +59,7 @@
   `clang -x cl` and the Metal runtime compiler when present, which reject the pre-fix spelling).
 - Launch cost regression since the warp-shuffle PR: `Execute.check_launch_warp` and
   `Matrix_specialise.decide` folded the whole IR (`kernel_uses_shuffle`, `kernel_uses_warp_ops`) at
-  every launch, which cut Katra's decode throughput by 42 to 53 %. Both verdicts are now recorded once
+  every launch, which cut a downstream engine's decode throughput by 42 to 53 %. Both verdicts are now recorded once
   per IR (a slot of its `Ir_memo` record, and a field of the matrix-specialise entry). Same refusals
   and messages. Test: `sarek/execute/test/test_launch_check_cost.ml` (1000 launches must cost under
   50 whole-IR folds; the old code cost 878). Rule: anything computed from the IR at launch is
@@ -120,7 +120,7 @@
   `test_barrier_diverged_param`, `_result`, `_mut`, and `test_convergence` "strict barrier"). Before
   this change these four kernels were accepted and would deadlock or give undefined results on a
   GPU. Kernels accepted before and refused now: none among the repository's kernels (tests,
-  examples, benchmarks) nor Katra's `src/kernels` (compiled with the new analysis); a kernel that
+  examples, benchmarks) nor a downstream engine's kernels (compiled with the new analysis); a kernel that
   relies on one of the four routes to hide a barrier under a varying test must make the test
   uniform (hoist the barrier out of the branch).
   Limits of the stricter analysis for barriers: the variance of a `mut` is flow-insensitive, so a
@@ -187,7 +187,7 @@
   a name in the same scope (including a kernel parameter's name) still emits a C redefinition on the
   CUDA, HIP and OpenCL source backends (pre-existing, not specific to warps); Vulkan claims the feature only with `SPOC_VULKAN_SUBGROUP_SHUFFLE=1` (no lane-mapping
   probe, full subgroups not required); the OpenCL probe runs at device enumeration and measures the
-  width of its own kernel. Consumers that read `Device.warp_size` (Katra's `Gdn.threads_for`) see the
+  width of its own kernel. Consumers that read `Device.warp_size` (for example a downstream engine sizing its reductions) see the
   new values above.
   Tests: also `test_sarek_warp`, `test_warp_capability`, `test_opencl_warp_capability`,
   `test_vulkan_warp_capability`, `test_warp_shuffle_golden` (six goldens), `test_warp_shuffle_converged`,
@@ -874,7 +874,7 @@
   interpreter rounds twice: at most one binary16 ulp plus `|a * b| * 2^-24` for
   a fused `a * b +/- c`, and a `-0` product may come out `+0`. Separate from
   `Sarek_coopmat.accept_relaxed_accumulation`. On a dequantise-to-LDS
-  microbenchmark shaped like Katra's fused Q4_K (hip:0), 870 -> 170 us.
+  microbenchmark shaped like a downstream engine's fused Q4_K (hip:0), 870 -> 170 us.
   Differential tests of a covered kernel must compare within that bound
   (`sarek-hip/test/test_hip_f16_single_rounding.ml`).
 
@@ -964,7 +964,7 @@
     `-ffp-contract=off`. Elsewhere a compiler could contract across the
     merged code, so it is opt-in with `Execute.Window.set_epilogue_backend`.
     `SAREK_LAUNCH_EPILOGUE=0` turns it off.
-  - spoc_llm decode, RX 7900 XTX: 335 → 281 launches/token on the 0.8B and
+  - Downstream LLM decode, RX 7900 XTX: 335 → 281 launches/token on the 0.8B and
     749 → 665 on the 35B, logits bit-identical.
 
 - Launch window with horizontal fusion (spec `specs/launch-window.md`).
@@ -1202,7 +1202,7 @@
   the sign. Results stay bit-identical to the interpreter (16M-value sweeps on
   hip:0, `sarek-hip/test/test_hip_f16_narrowing_exact.ml`); Q8_0 with a
   binary16 scale, dequantised to LDS: 932 -> 182 us. Kernels that read their
-  scales as f32 bits (Katra's) keep their barriers.
+  scales as f32 bits (as a downstream engine's do) keep their barriers.
 
 - A launch hashes its IR once instead of 4-5 times (R-41). The launch-path
   tables keyed by the IR's physical identity (capability verdicts and
@@ -1328,7 +1328,7 @@
   `Coverage_affine` proves coverage in a few microseconds (a 128x3584
   prefill pair: ~350 ms before, ~4 us after,
   `sarek/execute/test/bench_epilogue_coverage.ml`). This was the cold
-  first-prompt cost seen with the launch window on: a cold Katra 0.8B prompt
+  first-prompt cost seen with the launch window on: a cold downstream-engine 0.8B prompt
   (242 tokens, RX 7900 XTX; measured with this change on top of 79f92f63)
   runs at 662 tok/s with the window on instead of 147, against 644 with
   epilogue fusion off and 706 with the window off; decode is unchanged
@@ -1437,7 +1437,7 @@
   `bitcast<i32>(bitcast<u32>(a) >> u32(b))`, PTX `shr.b32`/`shr.b64`. Results
   are unchanged for shift amounts 0..width-1 (others stay unspecified, as in
   OCaml), and an `lsr` operand no longer has to be a variable or a constant.
-  spoc_llm's q5_K matvec written with `lsr`, on an RX 7900 XTX: 31.6 -> 23.9 us
+  A downstream engine's q5_K matvec written with `lsr`, on an RX 7900 XTX: 31.6 -> 23.9 us
   (hot, median of 3) and 36.3 -> 31.1 us (cold). On gfx1100 the old expansion
   kept clang from unrolling the inner loop (193 VALU, 2 `global_load_b128`);
   with the native shift clang unrolls it (274 VALU, 12 `b128`), the same code
@@ -1450,7 +1450,7 @@
   are unchanged. An explicit `pragma` on the loop takes precedence
   (`pragma ["unroll 1"]` opts out) and `SAREK_AUTO_UNROLL=0`, set before a
   kernel's first launch, disables the hint.
-  On spoc_llm's current matvec kernels the hint changes nothing on gfx1100:
+  On that engine's current matvec kernels the hint changes nothing on gfx1100:
   clang -O3 already unrolls those loops once `lsr` is a native shift.
 
 - Metal kernel launches are asynchronous. Dispatches are appended to one open
@@ -1467,7 +1467,7 @@
   a fresh start event gave about the epoch).
   Measured on an Apple M4: 195 us per launch before, 4.3 us (3 arguments) /
   8.0 us (10 arguments) after (`bench_metal_launch_overhead.exe`, 10000
-  launches); spoc_llm Qwen3.5-0.8B Q8_0 greedy decode 8.6 tok/s before, 67–70
+  launches); downstream-engine Qwen3.5-0.8B Q8_0 greedy decode 8.6 tok/s before, 67–70
   tok/s after, same tokens.
 
 - Intrinsic libraries outside sarek are a supported extension point

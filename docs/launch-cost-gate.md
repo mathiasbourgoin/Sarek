@@ -60,7 +60,7 @@ Apple M4 (10 cores), OCaml 5.4.0, dune build in the default (dev) profile, 2026-
 | `Execute` and `Matrix_specialise` reverted to the #522 code (`dc6f27d6`) | 2 | 830 to 1540 | 0.7 to 1.6 |
 | Raw `kernel_uses_shuffle` fold in each launch | 2 | 830 to 1510 | 0.8 to 1.4 |
 | Raw warp-op fold in `Matrix_specialise.decide` only | 2 | 550 to 590 on the `HIP` probe, 1.1 on the immediate probe (not detected) | 0.7 to 1.3 |
-| Fixed cost of 6.6 us added to every launch (the size of the #522 Katra loss, 6.4 us) | 1 | 1.0 | 12.0 to 12.9 |
+| Fixed cost of 6.6 us added to every launch (the size of the #522 downstream decode loss, 6.4 us) | 1 | 1.0 | 12.0 to 12.9 |
 
 The size limit (25) sits more than 20 times above the worst healthy ratio and over 20 times under
 the lowest regression. The fixed-cost limit (8) sits about 5 times above the worst healthy value

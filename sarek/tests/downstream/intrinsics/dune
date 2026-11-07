@@ -1,5 +1,5 @@
-; A device-intrinsic library standing in for a DOWNSTREAM project's (spoc_llm's
-; spoc_llm_intrinsics was the reported case). It is deliberately written the
+; A device-intrinsic library standing in for a DOWNSTREAM project's (a downstream
+; LLM engine's intrinsics library was the reported case). It is deliberately written the
 ; way sarek/ppx_intrinsic/README.md tells a downstream project to write one,
 ; with public library names only, and it lives in a directory whose name has
 ; NO underscore and differs from the library name: the registered module path

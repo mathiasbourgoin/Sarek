@@ -1,4 +1,4 @@
-# A typed optimisation policy for SPOC/Sarek and Katra
+# A typed optimisation policy for SPOC/Sarek and a downstream consumer
 
 **Status.** M1 and M2 implemented (`spoc/ir/Sarek_policy.ml`); M3 planned. Per
 milestone:
@@ -10,12 +10,13 @@ milestone:
 | M3 | planned | `SAREK_OPT_DISABLE`, `SAREK_EXPLAIN`; the replaced switches are removed outright; `gh-pages/docs/environment.md` completed |
 
 **Date:** 2026-10-11, revised 2026-10-12 for the owner decisions. **Sources:**
-SPOC `origin/main` `5bcb3a8e` (table 1.1), Katra `main` `bdbce6c` (table 1.2).
+SPOC `origin/main` `5bcb3a8e` (table 1.1), a downstream LLM inference engine's
+configuration at the same date (table 1.2).
 
-SPOC and Katra have about 50 optimisation, precision and resource switches,
+SPOC and the downstream engine have about 50 optimisation, precision and resource switches,
 each with its own scope, parser and reporting. This note describes one typed
 policy that SPOC's compiler and launch path query, one explain report saying
-what was applied and why, and one Katra precision setting. Owner rules kept:
+what was applied and why, and one downstream precision setting. Owner rules kept:
 exact optimisations on by default, deviations and resource contracts explicit,
 no `Obj`. A switch the policy replaces is removed, not aliased (Q6). Section 2
 lists six points where the evidence changes the discussed proposal, chiefly: the
@@ -28,7 +29,7 @@ Families: **S** semantics-preserving, **P** precision-changing, **C** consent
 to rewrite the program's own code, **R** resource contract, **T** tuning
 (results unchanged), **U** unsafe override. Out of scope: selection,
 diagnostic and test variables (`SPOC_DISABLE_*`, `SAREK_DEBUG`,
-`SPOC_GPU_STATS`, `SPOC_BENCH_*`, `KATRA_VERBOSE`, ...).
+`SPOC_GPU_STATS`, `SPOC_BENCH_*`, the engine's verbosity variable, ...).
 
 ### 1.1 SPOC/Sarek (`origin/main` 5bcb3a8e, 2026-10-12)
 
@@ -41,7 +42,7 @@ inventory records what existed at the audited revision.
 | # | Name | Kind | Fam. | Default | Set by | Scope | Ref |
 |---|---|---|---|---|---|---|---|
 | 1 (changed) | `SAREK_LAUNCH_WINDOW` (off: exactly `0/false/off/no`) | env | S | on; default backends HIP, OpenCL, Vulkan, CUDA/PTX, CUDA/C, Metal; never CPU devices | user | process, read at init | `sarek/execute/Launch_window.ml:159-172`; `sarek/execute/Execute.ml:1218-1220` |
-| 2 | `Execute.Window.set_enabled` | API | S | env value | program (Katra) | process | `sarek/execute/Execute.ml:1227`; `sarek/execute/Launch_window.ml:488-490` |
+| 2 | `Execute.Window.set_enabled` | API | S | env value | program (downstream) | process | `sarek/execute/Execute.ml:1227`; `sarek/execute/Launch_window.ml:488-490` |
 | 3 (changed) | `Execute.Window.set_backend_enabled` | API | S | 6 backends | program | per backend | `sarek/execute/Execute.ml:1231-1232`; `sarek/execute/Launch_window.ml (set_backend_enabled)` |
 | 4 | `Launch_window.max_groups` / `max_members` (8/8) | API | T | 8/8 | program | process | `sarek/execute/Launch_window.ml:153`, `sarek/execute/Launch_window.ml:155` |
 | 4b (new) | `Launch_limits.set_arg_slot_limit` / `set_push_constant_limit` | API | T | per backend | program/tests | per backend | `sarek/execute/Launch_limits.ml:25`, `sarek/execute/Launch_limits.ml:53` |
@@ -104,30 +105,31 @@ Decision points and caches (at 5bcb3a8e):
   (`sarek/codegen/Sarek_ir_cuda.ml:1049`, `sarek/codegen/Sarek_ir_metal.ml:1208`,
   `sarek/codegen/Sarek_ir_opencl.ml:1179`, `sarek/codegen/Sarek_ir_glsl.ml:2169`).
 
-### 1.2 Katra (`main` bdbce6c, Katra's configuration document)
+### 1.2 Downstream engine (its configuration document)
 
-This table is Katra's, at its revision `bdbce6c`; it is not maintained here.
+This table is the downstream engine's, at the date above; it is not maintained here.
+Variable names are the engine's and are given here by role.
 
 | # | Name | Kind | Fam. | Default | Scope |
 |---|---|---|---|---|---|
-| 26 | `KATRA_PREFILL_MMA=1` -> `Mma_gemm.enable` -> grant #10 | env | P (+ Katra's own f16 rounding of weights and activations) | off | process |
-| 27 | `Prefill.without_launch_window` (window off during prompt chunks unless `SAREK_LAUNCH_WINDOW` is set; that variable is removed in M3, so Katra moves to `SAREK_OPT_DISABLE=window` or its own check) | internal | T over S | on | per prompt chunk |
+| 26 | prefill-MMA switch -> `Mma_gemm.enable` -> grant #10 | env | P (+ the engine's own f16 rounding of weights and activations) | off | process |
+| 27 | `Prefill.without_launch_window` (window off during prompt chunks unless `SAREK_LAUNCH_WINDOW` is set; that variable is removed in M3, so the engine moves to `SAREK_OPT_DISABLE=window` or its own check) | internal | T over S | on | per prompt chunk |
 | 28 | `Staging` buffer via `Transfer.alloc_pinned` (64 MiB) | internal | R | **always on** | per device |
-| 29 | `KATRA_RAM_REGISTER=1` -> `Transfer.register_host` on the L2 pool | env | R | off | process |
-| 30 | `KATRA_LOAD=mmap` | env | R (host memory) | direct reads | process |
-| 31 | `KATRA_RAM_TIER=pagecache`, `KATRA_RAM_EXCLUSIVE=1`, `KATRA_PREFETCH=1` | env | T (tier strategy) | off | process |
-| 32 | `KATRA_EXPERT_CACHE_MIB`, `KATRA_NO_TUNED`, `KATRA_RAM_CACHE_MIB`, `KATRA_RAM_PRELOAD`, `KATRA_MIRRORS`, `KATRA_MIRROR_WEIGHTS`, `KATRA_MIRROR_STRIPE_KIB`, `KATRA_PREFILL_CHUNK` | env | T (sizes) | see doc | process |
-| 33 | `KATRA_DEVICE` (`opencl:*` opt-in loads the plugin) | env | selection | first GPU | process |
-| 34 | `KATRA_CPU_EXPERTS`, `KATRA_CPU_THREADS` (plan only, Katra's CPU expert executor plan of 2026-10-11) | env | R + T | none | process |
+| 29 | RAM-register switch -> `Transfer.register_host` on the L2 pool | env | R | off | process |
+| 30 | load mode `mmap` | env | R (host memory) | direct reads | process |
+| 31 | RAM tier `pagecache`, exclusive RAM tier, prefetch switches | env | T (tier strategy) | off | process |
+| 32 | expert-cache size, no-tuned switch, RAM-cache size, RAM preload, mirrors, mirror weights, mirror stripe size, prefill chunk size (8 variables) | env | T (sizes) | see doc | process |
+| 33 | device selection variable (`opencl:*` opt-in loads the plugin) | env | selection | first GPU | process |
+| 34 | CPU-experts and CPU-threads variables (plan only, the engine's CPU expert executor plan of 2026-10-11) | env | R + T | none | process |
 
-**Inventory size:** 34 rows (25 SPOC, 9 Katra), about 50 named variables and
+**Inventory size:** 34 rows (25 SPOC, 9 downstream), about 50 named variables and
 calls. Precision or consent decisions sit in ten rows (5-12, 14, 26) across
 five modules (`Launch_epilogue`, `Matrix_specialise`, `Sarek_coopmat`,
-`Sarek_f16_policy`, Katra's `Mma_gemm`), each with its own scope and reporting.
+`Sarek_f16_policy`, the engine's `Mma_gemm`), each with its own scope and reporting.
 After M1 the grants of rows 10-12 and 14 share one store.
 
-**Drift (flagged, not fixed):** Katra's `Bench_report.env` keeps only `KATRA_*`
-variables (Katra's bench report module), so a stored
+**Drift (flagged, not fixed):** the engine's `Bench_report.env` keeps only its
+own variables (the engine's bench report module), so a stored
 report cannot show `SAREK_OPT_DISABLE=window`.
 
 ## 2. Where the evidence contradicts the discussed proposal
@@ -139,8 +141,8 @@ producer with an add of the consumer [...], which changes the result by an ulp"
 backend).
 
 **E-b. Exact is not always faster.** The launch window gives 35B decode 112
-vs 101 tok/s (Katra BRIEF E51) but cuts a cold 0.8B first prompt from 703 to
-133 tok/s (E52), so Katra turns it off around prompt chunks (E53, row 27).
+vs 101 tok/s (downstream measurement) but cuts a cold 0.8B first prompt from 703 to
+133 tok/s, so the engine turns it off around prompt chunks (row 27).
 "Only a diagnostic off-switch" would remove that lever. Owner decision Q4: SPOC
 decides the prompt-phase case itself (fused-kernel disk cache, cost model);
 `Window.set_enabled` stays until then.
@@ -158,14 +160,14 @@ atoms and no grant implies another (checked over all 7 x 7 pairs by
 accuracy atoms (Q1), each atom reported.
 
 **E-e. Precision grants have no env variable on purpose** (#440: "a statement
-in the program's source"). So SPOC env vars may only restrict (Q3); Katra may
+in the program's source"). So SPOC env vars may only restrict (Q3); the engine may
 turn its own setting into grants, being then the one making the statement.
 
 **E-f. Resource contracts are ownership, not code generation.** `Pinned.t`,
 `Host_ptr_buffer` and streams carry lifetime and sync obligations
 (`publish_host_writes`, release refused while copies are in flight); SPOC
 cannot apply them on the caller's behalf. They stay typed handles and only
-join the report; a memory setting, if any, belongs to Katra.
+join the report; a memory setting, if any, belongs to the engine.
 
 ## 3. Design
 
@@ -397,27 +399,27 @@ next report for that kernel (also if its decisions settled before), so a user le
 effect. The codegen device column is the generator, not a device: code
 generation does not know it.
 
-### 3.6 Katra
+### 3.6 Downstream engine
 
-- **`KATRA_PRECISION=exact|fast`** (default `exact`). `fast` grants, at
-  `Kernel` scope for Katra's own kernels only: `Accumulation_order` (WMMA
+- **A precision setting `exact|fast`** (default `exact`). `fast` grants, at
+  `Kernel` scope for the engine's own kernels only: `Accumulation_order` (WMMA
   prompt matmuls, today's row 26) and `Single_rounding` for the named dequantise
   kernels (#480: Q4_K keeps its barriers by default; the grant is the lever,
   ~870 to ~170 µs microbenchmark). A profile may also grant
   `Automatic_float_rewrite` together with accuracy atoms (Q1). `fast` also
   selects `Prefill_mma`, whose own f16 rounding of weights and activations
-  Katra reports, since SPOC cannot see it.
-- **`KATRA_PREFILL_MMA=1`** is removed when `KATRA_PRECISION` lands, with no
+  the engine reports, since SPOC cannot see it.
+- **The prefill-MMA switch** is removed when the precision setting lands, with no
   deprecation period (Q6).
-- **Memory:** only `KATRA_RAM_REGISTER` (and the planned CPU executor) are
-  resource contracts; the rest is tier strategy with measured trade-offs (E24,
-  E26, E36). `KATRA_MEMORY` comes with the CPU expert executor, the second
-  resource contract (Q5). The always-pinned staging buffer (row 28) is Katra's
+- **Memory:** only the RAM-register switch (and the planned CPU executor) are
+  resource contracts; the rest is tier strategy with measured trade-offs
+  (downstream measurements). A memory setting comes with the CPU expert executor, the second
+  resource contract (Q5). The always-pinned staging buffer (row 28) is the engine's
   explicit choice and should appear in the report.
-- **`katra bench` report** gains a `policy` section: profile, grants with
+- **The engine's bench report** gains a `policy` section: profile, grants with
   scope and reason, applied/refused counts per optimisation, restrictions in
   force, resource contracts in force (pinned and registered bytes), and every
-  `SAREK_*`/`SPOC_*` variable set, not only `KATRA_*`.
+  `SAREK_*`/`SPOC_*` variable set, not only its own.
 
 ## 4. Migration
 
@@ -438,8 +440,8 @@ generation does not know it.
    `SAREK_MATRIX_REWRITE`, `SAREK_AUTO_UNROLL`, `SAREK_MATRIX_REPORT`) and the
    matrix mode and reporter APIs are removed outright;
    `gh-pages/docs/environment.md` completed.
-4. **Katra K1** (once M2 is the pinned SPOC revision): `KATRA_PRECISION`,
-   `KATRA_PREFILL_MMA` removed, report section.
+4. **Downstream adoption** (once M2 is the pinned SPOC revision): the precision
+   setting, the prefill-MMA switch removed, report section.
 5. The `accept_*` wrappers stay.
 
 ## 5. Test strategy
@@ -484,7 +486,7 @@ generation does not know it.
 - **Differential (existing, GPU):** `exact` stays bit-identical to the
   interpreter; each grant stays within its documented bound. Numeric checks stay
   differential on the application side (Q2).
-- **Katra:** profile parsing; `fast` yields exactly the documented grants
+- **Downstream engine:** profile parsing; `fast` yields exactly the documented grants
   (reporter capture); bench report has the policy section.
 
 ## 6. Open questions
@@ -495,16 +497,16 @@ they differ.
 
 **Limits.** Read from source at the cited revisions. Signatures of
 `Sarek_policy` are compiled (M1); `OPTIMISATION`, the explain report and the
-Katra settings are not. Figures are quoted from Katra BRIEF E51-E53 and #480,
+downstream settings are not. Figures are quoted from downstream measurements and #480,
 not measured here.
 
 ## Owner decisions (2026-10-12)
 
-- **Q1:** a profile (Katra `fast`, or a named SPOC profile) may grant `Automatic_float_rewrite` together with accuracy atoms; `SAREK_EXPLAIN` reports every rewrite.
-- **Q2:** no numeric bound per grant. Grants are named deviations, each with its documented bound where one exists; numeric checks stay differential on the application side (logits vs llama.cpp, as E48).
+- **Q1:** a profile (the downstream `fast`, or a named SPOC profile) may grant `Automatic_float_rewrite` together with accuracy atoms; `SAREK_EXPLAIN` reports every rewrite.
+- **Q2:** no numeric bound per grant. Grants are named deviations, each with its documented bound where one exists; numeric checks stay differential on the application side (logits vs llama.cpp).
 - **Q3:** SPOC/SAREK environment variables only restrict, never grant precision.
 - **Q4:** no public scoped-restriction API. SPOC decides (fused-kernel disk cache, cost model) and keeps a diagnostic switch; `Window.set_enabled` stays until SPOC handles the prompt-phase case itself.
-- **Q5:** `KATRA_MEMORY` comes with the CPU expert executor (second resource contract), not before.
-- **Q6:** no deprecation period: replaced switches (`KATRA_PREFILL_MMA`, `SAREK_MATRIX_REPORT`, …) are removed outright; nothing is published yet.
+- **Q5:** a downstream memory setting comes with the CPU expert executor (second resource contract), not before.
+- **Q6:** no deprecation period: replaced switches (the downstream prefill-MMA switch, `SAREK_MATRIX_REPORT`, …) are removed outright; nothing is published yet.
 - **Q7:** epilogue fusion on CUDA/OpenCL/Vulkan runs under the `Cross_kernel_contraction` grant, measured per backend before it becomes a default; HIP and Metal (#505 pragma) are exact.
 - **Q8:** moot — #480 is merged; M1 wraps the final `Sarek_f16_policy`.

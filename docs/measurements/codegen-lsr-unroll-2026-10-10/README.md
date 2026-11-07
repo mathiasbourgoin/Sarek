@@ -13,9 +13,9 @@ Spec: `specs/codegen-lsr-unroll.md`.
   30.1–38.9, branch 23.4–24.3 µs).
 - ladon (Apple M4, macOS) for the Metal and Apple OpenCL e2e only.
 
-## Benchmark: spoc_llm `bench/kbench.exe`
+## Benchmark: a downstream engine's `bench/kbench.exe`
 
-spoc_llm commit `e1878fb` (wave-per-row K-quant matvecs), built in a dune
+A downstream LLM inference engine (wave-per-row K-quant matvecs), built in a dune
 workspace together with a Sarek tree, so the same kbench source runs against
 three code generators:
 
@@ -25,15 +25,15 @@ three code generators:
 
 Two kernel sources:
 
-- shipped: spoc_llm's kernels as committed. They already avoid `lsr` (bytes
+- shipped: the engine's kernels as committed. They already avoid `lsr` (bytes
   extracted with `asr` and a mask) because of this very codegen problem.
 - `lsr-` prefix: the same kernels with that workaround reverted to `lsr`
-  (`spoc_llm-matvec-asr-to-lsr.diff`; every changed shift is masked or acts on
+  (`downstream-matvec-asr-to-lsr.diff`; every changed shift is masked or acts on
   a non-negative value, so results are identical). This is the form a kernel
   author writes.
 
 Command, three interleaved rounds of the three configurations:
-`SPOC_LLM_DEVICE=hip [SAREK_AUTO_UNROLL=0] kbench.exe 7 exp_`. The `gpu`
+`kbench.exe 7 exp_` on the HIP device (with or without `SAREK_AUTO_UNROLL=0`). The `gpu`
 column is GPU time between events around 200 launches behind a blocker kernel;
 the summary is the median of 7 repetitions. Raw summaries in `kbench/`.
 
@@ -81,7 +81,7 @@ runtime code object):
   274 VALU and 12 `b128`, the loop unrolled — identical to the shipped `asr`
   form.
 - `ws-main-lsr-pragma`: main's expansion plus `#pragma unroll` on that loop
-  (what spoc_llm measured as 40.7 → 35.9 µs): 320 VALU and 12 `b128`. The
+  (what the engine measured as 40.7 → 35.9 µs): 320 VALU and 12 `b128`. The
   pragma does make clang unroll a body it otherwise declines.
 - With the native shift, clang unrolls these loops by itself, so
   `branch-nounroll` and `branch` are identical.
@@ -94,6 +94,6 @@ runtime code object):
   pass.
 - A mutation (CUDA spelling with a signed cast) makes `lsr32`/`expr` fail on
   both HIP devices (427/768 and 396/768 rows), so the e2e is not vacuous.
-- spoc_llm's differential kernel tests (`test/kernels/test_kernels.exe`, 19
+- The engine's differential kernel tests (`test/kernels/test_kernels.exe`, 19
   tests) pass on HIP, Native and Interpreter against this branch, for both the
   shipped and the `lsr` kernel sources.

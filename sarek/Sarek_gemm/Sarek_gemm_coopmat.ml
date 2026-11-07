@@ -28,7 +28,7 @@ open Sarek_ir_types
 type tiling = {frags_m : int; frags_n : int; waves : int}
 
 (** 2x2 fragments (a 32x32 tile) per wave, 2 waves per block: the best single
-    choice across the spoc_llm prefill shapes measured on the RX 7900 XTX
+    choice across the downstream LLM prefill shapes measured on the RX 7900 XTX
     (specs/coopmat-hip-wmma.md, Benchmark). It is not the best per shape: at
     [N = 1024] one fragment per wave fills more of the 96 compute units, and at
     [N = 12288] 4x2 is faster. *)

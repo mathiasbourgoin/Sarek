@@ -3,14 +3,14 @@ name: roster-spec
 type: spec
 status: live
 feature: Cheap small host->device writes (staged), documented transfer pitfalls
-brief: spoc_llm findings of 2026-10-10 (tartarus, HIP API log, bench/regbench.ml)
+brief: downstream user findings of 2026-10-10 (tartarus, HIP API log, a register benchmark)
 date: 2026-10-10
 version: 1.0.0
 ---
 
 # Spec — transfer-pitfalls
 
-Driven by spoc_llm (Qwen3.5-122B decode on an RX 7900 XTX). Decisions not
+Driven by a downstream LLM inference engine (Qwen3.5-122B decode on an RX 7900 XTX). Decisions not
 dictated by the brief were **made autonomously by the agent** under the
 owner's delegation of 2026-10-10 and are marked *(agent decision)*. Owner
 rule applied throughout: semantics-preserving optimisations may be default;
@@ -20,9 +20,9 @@ anything with risk or a behaviour change is an explicit, opt-in API.
 
 | ID | Finding | Status here |
 |---|---|---|
-| F-1 | `Vector.set` on a vector a kernel has used costs a device→host download (after a device sync) and, at the next launch, a synchronous upload from pageable memory that waits for the GPU queue. spoc_llm: ~27 ms of a ~63 ms GPU budget per token (48 layers × 2 vectors × 8 elements). | Reproduced in SPOC: `bench_hip_small_writes` (rewrite, 300 µs host work, 4 launches): 322 µs/iteration without rewrite, 700 µs with `Vector.set` (spin 1000); 1018 vs 1327 µs (spin 4000). The host work cannot overlap the GPU any more. After this change (three runs, spin 1000): none 322.0–322.5, `Vector.set` 705.2–715.1 (writes 341.3–346.4), `stage_to_device` 330.1–338.9 (writes 9.1–11.5) µs/iteration; raw output `docs/measurements/transfer-pitfalls-2026-10-10/bench_hip_small_writes.txt`. |
-| F-1b | The caller-side workaround (reuse one pinned buffer, `copy_to_device ~stream:default`) races: rewriting the buffer while the previous copy is still queued changes what that copy delivers. | Reproduced: the first version of the bench had a `pinned` mode; its output differed from the `Vector.set` mode ("RESULT MISMATCH"). spoc_llm is safe today only because routing reads the GPU first, which drains the queue. |
-| F-2a | Registering anonymous memory that was never touched gives slow copies; touching first fixes it. | Slow first passes reproduced, the dependence on touching NOT: `bench_hip_register_host` (8 GiB, 5.5 MiB sync copies) and its first versions, 50 first passes over five preparations (written before registering, untouched, written after registering, populated with `MADV_POPULATE_WRITE`, populated then written): 7 ran at 0.95–6.17 GB/s, spread over every preparation (touched 2, untouched 3, written after 1, populated then written 1); about 26 GB/s otherwise; one repeat pass at 1.66. spoc_llm `regbench 8 5.6 400 late`: 10.82 GB/s in one run. |
+| F-1 | `Vector.set` on a vector a kernel has used costs a device→host download (after a device sync) and, at the next launch, a synchronous upload from pageable memory that waits for the GPU queue. Downstream engine: ~27 ms of a ~63 ms GPU budget per token (48 layers × 2 vectors × 8 elements). | Reproduced in SPOC: `bench_hip_small_writes` (rewrite, 300 µs host work, 4 launches): 322 µs/iteration without rewrite, 700 µs with `Vector.set` (spin 1000); 1018 vs 1327 µs (spin 4000). The host work cannot overlap the GPU any more. After this change (three runs, spin 1000): none 322.0–322.5, `Vector.set` 705.2–715.1 (writes 341.3–346.4), `stage_to_device` 330.1–338.9 (writes 9.1–11.5) µs/iteration; raw output `docs/measurements/transfer-pitfalls-2026-10-10/bench_hip_small_writes.txt`. |
+| F-1b | The caller-side workaround (reuse one pinned buffer, `copy_to_device ~stream:default`) races: rewriting the buffer while the previous copy is still queued changes what that copy delivers. | Reproduced: the first version of the bench had a `pinned` mode; its output differed from the `Vector.set` mode ("RESULT MISMATCH"). The downstream engine is safe today only because routing reads the GPU first, which drains the queue. |
+| F-2a | Registering anonymous memory that was never touched gives slow copies; touching first fixes it. | Slow first passes reproduced, the dependence on touching NOT: `bench_hip_register_host` (8 GiB, 5.5 MiB sync copies) and its first versions, 50 first passes over five preparations (written before registering, untouched, written after registering, populated with `MADV_POPULATE_WRITE`, populated then written): 7 ran at 0.95–6.17 GB/s, spread over every preparation (touched 2, untouched 3, written after 1, populated then written 1); about 26 GB/s otherwise; one repeat pass at 1.66. Downstream `regbench 8 5.6 400 late`: 10.82 GB/s in one run. |
 | F-2b | After CPU writes into one 8 GiB registration copies fell to 2.3 GB/s; 64 MiB registrations kept ~26.3. A copy may not span two registrations. | Spanning: reproduced (`hipErrorInvalidValue`, synchronous and stream copies). Slow-after-write: **not reproduced** today: `regbench 8 5.6 400` with an O_DIRECT fill of the registered range 26.30 GB/s (one region) and 25.94 (64 MiB regions); interleaved CPU writes 24.9 GB/s. |
 | F-2c | `hipHostRegister`ed pages are not counted as pinned (`VmPin: 0 kB`). | Reproduced: `VmPin: 0 kB` with 8 GiB registered. Also measured: `hipHostRegister` itself faults in every page (VmRSS 0.19 → 8.58 GB for 8 GiB untouched). |
 
@@ -46,7 +46,7 @@ swap, 17 GB tmpfs, other workloads running. Raw output: `docs/measurements/trans
 ## User Stories
 
 ### US-1: Cheap small host→device writes (P0)
-As spoc_llm's router, I want to publish 8 expert ids and 8 weights per layer to vectors the next kernels read, without making the host wait for the GPU.
+As the downstream engine's router, I want to publish 8 expert ids and 8 weights per layer to vectors the next kernels read, without making the host wait for the GPU.
 **Independent Test**: loop { stage new values; launch a kernel accumulating them } many times; result equals the host-computed sum; HIP time per iteration close to the no-rewrite case.
 **Acceptance Scenarios**:
 1. **Given** a HIP device-current int32 vector of 1000, **When** `stage_to_device src ~dst ~dst_offset:k` for k ∈ {0, 500, 990}, **Then** a read-back shows exactly those ranges written and every other element unchanged.
@@ -110,7 +110,7 @@ The `~populate` option this story asked for was implemented and withdrawn (Clari
 - CHECK-4 [AC-5, AC-6]: `dune build @sarek-hip/test/e2e-hip-bench`.
 - CHECK-5 [AC-7]: `dune runtest`.
 
-(Through `opam exec --switch=/mnt/ssd-external-2to/spoc_llm-env --`.)
+(Through `opam exec` in the local opam switch.)
 
 ## Claims Metadata
 

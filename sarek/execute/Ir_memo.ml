@@ -35,7 +35,7 @@ module Physical = struct
   let equal = ( == )
 
   (* Any function of the contents is consistent with [==]. [Hashtbl.hash]
-     reads a bounded prefix, so this is cheap; spoc_llm names every kernel
+     reads a bounded prefix, so this is cheap; a downstream consumer names every kernel
      "sarek_kern", so the parameter list is what spreads them. *)
   let hash (k : t) =
     Atomic.incr hashes ;

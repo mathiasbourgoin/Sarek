@@ -3,14 +3,14 @@ name: roster-spec
 type: spec
 status: live
 feature: Native logical shift right (lsr) on every backend; automatic unroll hint for small constant-trip for loops
-brief: spoc_llm docs/research/kernels-vs-ggml.md (E29), causes 2(a) and 2(b)
+brief: a downstream user's kernels-vs-ggml report, causes 2(a) and 2(b)
 date: 2026-10-10
 version: 1.0.0
 ---
 
 # Spec — codegen-lsr-unroll
 
-Driven by spoc_llm's kernels-vs-ggml report (tartarus, RX 7900 XTX, 2026-10-10).
+Driven by a downstream LLM inference engine's kernels-vs-ggml report (tartarus, RX 7900 XTX, 2026-10-10).
 Decisions not dictated by the brief were **made autonomously by the agent**
 under the owner's delegation and are marked *(agent decision)*. Owner rule:
 semantics-preserving optimisations may be default; anything that can change
@@ -18,7 +18,7 @@ results must be opt-in.
 
 ## Findings this spec answers
 
-| ID | Finding (spoc_llm, measured) | Answer here |
+| ID | Finding (downstream, measured) | Answer here |
 |---|---|---|
 | F-1 | `x lsr s` on int32 is emitted as `((s == 0) ? x : ((x >> s) ^ ((x >> 31) << ((32 - s) & 31))))`. The unrolled q5_K body has 488 VALU instructions against 236 for a hand-written one that uses plain unsigned shifts. | A logical shift becomes its own IR operator and every backend emits its native unsigned shift. |
 | F-2 | Constant-trip `for` loops stay rolled; adding `_Pragma("unroll")` by hand took q5_K matvec from 40.7 to 35.9 µs. | Small constant-trip loops get an unroll hint by default on the backends that have one. |

@@ -5,7 +5,7 @@
 
 (******************************************************************************
  * Micro-benchmark (docs/plans/warp-shuffle-intake-2026-10-17.md, AC-9): the
- * 8-lane float32 sum of the Katra gated-delta-net reduction, as a xor tree of
+ * 8-lane float32 sum of a downstream gated-delta-net reduction, as a xor tree of
  * three shuffles against shared memory with two barriers per reduction.
  *
  * Each thread runs [iters] dependent reductions (the sum feeds the next), so

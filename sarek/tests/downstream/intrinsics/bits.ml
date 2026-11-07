@@ -3,7 +3,7 @@
 (* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
 (******************************************************************************)
 
-(* Reinterpret an int32 bit pattern as a float32: the spoc_llm intrinsic that
+(* Reinterpret an int32 bit pattern as a float32: the downstream intrinsic that
    exposed the gap, with one spelling per C-family framework that consults the
    intrinsic registry. *)
 

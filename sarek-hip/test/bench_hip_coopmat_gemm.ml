@@ -4,7 +4,7 @@
 (******************************************************************************)
 
 (* f16 GEMM on the RDNA3 matrix units through SCoopmat (Sarek_gemm.Coopmat)
-   against the scalar f32 Sarek_gemm.sgemm_tiled_kernel, at spoc_llm prefill
+   against the scalar f32 Sarek_gemm.sgemm_tiled_kernel, at downstream LLM prefill
    shapes: M = 256 tokens, K = 3072, N in {1024, 3072, 12288}
    (specs/coopmat-hip-wmma.md). rocBLAS is measured by
    tools/probes/rocblas_gemm_f16.cpp with the same method. Each tiling runs

@@ -10,7 +10,7 @@ version: 1.0.0
 
 # Spec - Launch bounds hint
 
-Driver: Katra's fused expert GEMM tiles are limited by the 192-VGPR cap hipcc applies for a
+Driver: a downstream LLM inference engine's fused expert GEMM tiles are limited by the 192-VGPR cap hipcc applies for a
 1024-thread block. A declared bound lifts it (hipcc, gfx1100, 2026-10-16: 192 VGPR with 216 bytes
 of scratch spill, versus 249 VGPR and no spill with `__launch_bounds__(256)`).
 

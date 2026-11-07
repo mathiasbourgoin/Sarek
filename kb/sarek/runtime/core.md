@@ -46,7 +46,7 @@ Reviewed core files: `sarek/core/README.md`, `Advanced.ml`, `Device.ml`, `Error.
 - Kernel argument values must match the backend's expected order and type.
 - (PR #168, branch `feature/spoc-core-decouple`) The pure numeric vector core `spoc_core_base` must NOT link `ctypes` or `unix`; this is enforced at build time by `sarek/core/ffi_free_gate/` (a Bigarray `Vector.create/set/get/to_array` program that builds to bytecode AND js_of_ocaml and runs under `node`). If `ctypes`/`unix` re-enter the numeric core, the gate fails to build.
 
-## Device-only vectors and stream-ordered copies (2026-10, spoc_llm M3)
+## Device-only vectors and stream-ordered copies (2026-10, requested by a downstream user)
 
 Spec: `specs/device-buffers-async-copy.md`. Verified against the branch
 `feat/device-buffers-async-copy`. Metal joined later: copies synchronous,
@@ -104,7 +104,7 @@ launches asynchronous (`Metal_api.Pending`; `specs/metal-ranged-copies.md`,
   `e2e-hip-bench`, information only), `spoc/framework/test/test_framework_sig.ml`
   (`Async_refused`, `Make_refs`).
 
-## Staged small writes and register_host pitfalls (2026-10, spoc_llm)
+## Staged small writes and register_host pitfalls (2026-10, requested by a downstream user)
 
 Spec: `specs/transfer-pitfalls.md`.
 

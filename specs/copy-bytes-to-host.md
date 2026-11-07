@@ -3,14 +3,14 @@ name: roster-spec
 type: spec
 status: live
 feature: Byte-level ranged device-to-host copy (Transfer.copy_bytes_to_host)
-brief: spoc_llm briefs/spoc-copy-bytes-to-host.md
+brief: requested by a downstream user
 date: 2026-10-11
 version: 1.0.0
 ---
 
 # Spec — copy-bytes-to-host
 
-Driven by spoc_llm's exclusive RAM tier: a VRAM victim (an `int32`
+Driven by a downstream LLM inference engine's exclusive RAM tier: a VRAM victim (an `int32`
 device-only vector, read by kernels as `int32`) is written back into a slot of
 the host pool, a `char` Bigarray. `copy_to_host` needs the destination's
 element kind to equal the vector's, and OCaml has no kind-changing blit, so
@@ -25,7 +25,7 @@ not dictated by the brief are marked *(agent decision)*.
 | How many bytes? | `Bigarray.Array1.size_in_bytes dst`; slice the destination with `Bigarray.Array1.sub` for a shorter copy. |
 | Shared path? | `d2h_range ~op ?stream ~src ~src_byte_offset dst`, the body of today's `copy_to_host`. `copy_to_host` keeps its element-range check (and message) in front of it, as `copy_to_device` does in front of `h2d_range` *(agent decision)*. |
 | Obj? | No new use: the ledger root `Obj.repr (dst, src)` moves from `copy_to_host` into `d2h_range`, which takes the Bigarray itself rather than an address and an `Obj.t` *(agent decision)*. |
-| Alignment? | None imposed; the backend copies bytes. spoc_llm's offsets are multiples of 4 and 4096. |
+| Alignment? | None imposed; the backend copies bytes. The downstream engine's offsets are multiples of 4 and 4096. |
 | Host destination during a stream copy? | Undefined until the copy has completed (stream synchronised, an event recorded after it synchronised or queried complete, `flush`): reading it may observe old, new or mixed bytes; writing it races with the DMA. SPOC roots `dst` and `src` meanwhile and records `dst`'s byte range as in flight, so `free_pinned` / `unregister_host` of an overlapping pinned buffer are refused until then. HIP/CUDA may stage a stream copy into pageable memory through a driver bounce buffer and block the host call; use pinned memory when overlap matters. |
 | Location of `src`? | Unchanged (a read). |
 | Backends? | Those with ranged copies (HIP, CUDA, Metal, Vulkan, Native, Interpreter; Vulkan since specs/vulkan-async-api.md). OpenCL, WebGPU refuse with `Feature_not_supported` through `Async.device_to_host`, as for `copy_to_host`. |
@@ -33,7 +33,7 @@ not dictated by the brief are marked *(agent decision)*.
 ## User Story
 
 ### US-1: Write back a device range into host bytes (P0)
-As spoc_llm's exclusive tier, I want to copy a byte range of an `int32`
+As the downstream engine's exclusive tier, I want to copy a byte range of an `int32`
 device vector into a `char` host slot, synchronously or on a stream.
 
 **Acceptance Scenarios**

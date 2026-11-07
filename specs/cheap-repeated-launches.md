@@ -10,7 +10,7 @@ version: 1.0.0
 
 # Spec — Cheap repeated kernel launches
 
-Driver: spoc_llm issues ~495 `Execute.run_vectors` launches per decoded token
+Driver: a downstream LLM inference engine issues ~495 `Execute.run_vectors` launches per decoded token
 on HIP. Per launch, Execute regenerated the kernel source (3–19 µs), re-ran the
 capability analysis (0.3–6 µs) and the backend re-digested the source with MD5
 for its compile-cache key (1–3 µs), all for an IR that had not changed. HIP
