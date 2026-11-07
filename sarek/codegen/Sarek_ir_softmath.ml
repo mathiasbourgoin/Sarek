@@ -877,7 +877,8 @@ let rec fold_stmt_exprs f acc s =
       match op with
       | CM_decl _ | CM_muladd _ -> acc
       | CM_load {index; stride; _} | CM_store {index; stride; _} ->
-          fold_expr f (fold_expr f acc index) stride)
+          fold_expr f (fold_expr f acc index) stride
+      | CM_scale_add _ -> Sarek_coopmat_scale.fold_exprs (fold_expr f) acc op)
 
 let is_softmath_helper_name name =
   let p = "__sarek_f64_" in

@@ -200,7 +200,7 @@ let operand_layouts (k : kernel) =
     (fun acc -> function
       | CM_load {dst; frag; layout; _} when frag.C.frag_use <> C.Accumulator ->
           note acc dst layout
-      | CM_decl _ | CM_load _ | CM_store _ | CM_muladd _ -> acc)
+      | CM_decl _ | CM_load _ | CM_store _ | CM_muladd _ | CM_scale_add _ -> acc)
     []
     (Sarek_ir_analysis.kernel_coopmat_ops k)
 
@@ -211,8 +211,16 @@ let kernel_context (k : kernel) =
 (** {1 Preamble} *)
 
 (** The helper definitions, emitted before [extern "C"] when the kernel has a
-    cooperative-matrix statement: {!Sarek_ir_cuda_coopmat_preamble}. *)
-let preamble = Sarek_ir_cuda_coopmat_preamble.text
+    cooperative-matrix statement: {!Sarek_ir_cuda_coopmat_preamble}, with the
+    [CM_scale_add] helper only when the kernel has that statement. *)
+let preamble (k : kernel) =
+  Sarek_ir_cuda_coopmat_preamble.text
+    ~scale_add:
+      (List.exists
+         (function
+           | CM_scale_add _ -> true
+           | CM_decl _ | CM_load _ | CM_store _ | CM_muladd _ -> false)
+         (Sarek_ir_analysis.kernel_coopmat_ops k))
 
 (** The header comment §6.1 of docs/design/f16-relaxed-accuracy.md requires on a
     generated source whose results are bounded rather than exact. *)
@@ -515,6 +523,23 @@ let gen_op ~indent ~ctx ~expr_str = function
         ~stride
         ~layout
   | CM_muladd {dst; a; b; c; cfg} -> gen_muladd ~indent ~dst ~a ~b ~c cfg
+  | CM_scale_add {dst; dst_frag; src; src_frag; row; col; offset; accumulate} ->
+      check_fragment dst_frag ;
+      check_fragment src_frag ;
+      let amd =
+        Sarek_ir_cuda_coopmat_scale.amd_call
+          ~buffers:ctx.buffers
+          ~expr_str
+          ~dst
+          ~dst_frag
+          ~src
+          ~src_frag
+          ~row
+          ~col
+          ~offset
+          ~accumulate
+      in
+      both_arms ~indent ~amd ~cuda:Sarek_ir_cuda_coopmat_scale.cuda_error
 
 (** {1 Launch shape} *)
 

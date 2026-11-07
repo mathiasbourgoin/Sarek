@@ -222,6 +222,8 @@ let coopmat ctx env = function
           stride = expr ctx env r.stride;
         }
   | CM_muladd _ as op -> op
+  | CM_scale_add _ as op ->
+      Sarek_coopmat_scale.map ~buf:(look_array ctx env) ~expr:(expr ctx env) op
 
 (* What a [let] leaves behind for the later siblings of its target block: the
    names it declared stay unavailable ([visible]) and a scalar stays reachable

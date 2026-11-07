@@ -20,6 +20,7 @@
   Sarek_value
   Sarek_ir_interp_value
   Sarek_ir_interp_intrinsics
+  Sarek_coopmat_scale_ref
   Sarek_ir_interp_eval
   Cpu_pool_lifecycle
   Cpu_domain_pool

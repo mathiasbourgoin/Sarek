@@ -202,7 +202,8 @@ let rec subst_stmt ~rename_binders subst s =
                 index = se r.index;
                 stride = se r.stride;
               }
-        | CM_muladd _ -> op)
+        | CM_muladd _ -> op
+        | CM_scale_add _ -> Sarek_coopmat_scale.map ~buf:(sub subst) ~expr:se op)
 
 (* ------------------------------------------------------------------ *)
 (* Binder collection (for alpha-renaming)                              *)
@@ -595,6 +596,19 @@ and inline_stmt ctx s : stmt =
             let h1, index = hoist_expr ctx r.index in
             let h2, stride = hoist_expr ctx r.stride in
             (h1 @ h2, CM_store {r with index; stride})
+        | CM_scale_add _ ->
+            (* Hoisted in the order [Sarek_coopmat_scale.map] visits the
+               scales, so the hoisted statements run in that order. *)
+            let hoisted = ref [] in
+            let op' =
+              Sarek_coopmat_scale.map_exprs
+                (fun x ->
+                  let h, x' = hoist_expr ctx x in
+                  hoisted := !hoisted @ h ;
+                  x')
+                op
+            in
+            (!hoisted, op')
       in
       with_hoisted ctx h (SCoopmat op')
 

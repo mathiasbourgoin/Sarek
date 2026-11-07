@@ -249,6 +249,32 @@ and pp_coopmat_op fmt = function
         b
         c
         (Sarek_coopmat_types.config_name cfg)
+  | CM_scale_add {dst; src; row; col; offset; accumulate; _} ->
+      let scale fmt s =
+        Format.fprintf fmt "%s[%a]" s.scale_buf pp_expr s.scale_index
+      in
+      Format.fprintf
+        fmt
+        "%s %s coopmat_scale(%s, row %a%a%a);"
+        dst
+        (if accumulate then "+=" else "=")
+        src
+        scale
+        row
+        (fun fmt -> function
+          | None -> () | Some c -> Format.fprintf fmt ", col %a" scale c)
+        col
+        (fun fmt -> function
+          | None -> ()
+          | Some o ->
+              Format.fprintf
+                fmt
+                ", offset %a * %a"
+                scale
+                o.off_row
+                scale
+                o.off_col)
+        offset
 
 and pp_pattern fmt = function
   | PConstr (name, vars) ->

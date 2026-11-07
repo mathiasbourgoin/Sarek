@@ -1232,6 +1232,17 @@ let glsl_coopmat_layout = function
   | Sarek_coopmat_types.Row_major -> "gl_CooperativeMatrixLayoutRowMajor"
   | Sarek_coopmat_types.Col_major -> "gl_CooperativeMatrixLayoutColumnMajor"
 
+(** Why the Vulkan (GLSL) backend refuses {!Sarek_ir_types.CM_scale_add}. *)
+let scale_add_refusal =
+  "Vulkan: CM_scale_add is not lowered. This lowering has no f32 \
+   cooperative-matrix fragment (it emits the integer configurations only), and \
+   the portable routes of docs/design/coopmat-scaled-accumulate.md §3 \
+   (component-wise products with stride-0 broadcast loads of the scales, or a \
+   shared-memory round trip) have not been validated on a driver: whether RADV \
+   accepts stride 0 and component-wise arithmetic on cooperative matrices, \
+   honours NoContraction on it, and offers RoundingModeRTE and DenormPreserve \
+   for 32-bit floats"
+
 let gen_coopmat_op st op =
   let expr_str e =
     let b = Buffer.create 32 in
@@ -1286,6 +1297,13 @@ let gen_coopmat_op st op =
         (escape_glsl_name b)
         (escape_glsl_name c)
         sat
+  | CM_scale_add _ ->
+      (* docs/design/coopmat-scaled-accumulate.md §3. Refused rather than
+         emitted unvalidated: the accumulator layout of KHR cooperative
+         matrices is implementation-defined, so only a whole-matrix route is
+         portable, and none has been run here. *)
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "CM_scale_add" scale_add_refusal)
 
 (** An ["unroll"] hint placed directly on a [for] or [while] loop. *)
 let is_unroll_loop hints body =

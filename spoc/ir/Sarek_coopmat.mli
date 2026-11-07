@@ -173,3 +173,27 @@ val policy_verdict_for :
     reasons. *)
 val policy_decision_for :
   Sarek_policy.Budget.t -> config -> Sarek_policy.decision
+
+(** {1 Scaled accumulation (docs/design/coopmat-scaled-accumulate.md)} *)
+
+(** [scale_add_operands_verdict ~dst_frag ~src_frag]: are these the fragments
+    {!Sarek_ir_types.CM_scale_add} is defined on? [dst_frag] must be an f32
+    accumulator and [src_frag] an s32 or f32 accumulator of the same shape and
+    scope. A u32 source is refused by name: converting it would need a meaning
+    of its own (its values above [2^31] are not s32 values), and none is
+    defined. [Backend_structural] when refused: no device or decision changes
+    it. Shared by the launch gate, the interpreter's gate and the evaluator. *)
+val scale_add_operands_verdict :
+  dst_frag:fragment -> src_frag:fragment -> Sarek_capability.verdict
+
+(** [scale_add_verdict ~support ~dst_frag ~src_frag] is the launch gate's
+    question for one [CM_scale_add] (§3 of the design): the operands as above,
+    then whether the device's backend lowers the statement
+    ({!device_support.ds_scale_add}). [None] support is [Unknown]; the fragments
+    themselves are checked by {!fragment_verdict}, separately. No accuracy
+    policy is involved: the statement is Strict. *)
+val scale_add_verdict :
+  support:device_support option ->
+  dst_frag:fragment ->
+  src_frag:fragment ->
+  Sarek_capability.verdict

@@ -1049,7 +1049,8 @@ let rec map_stmt (f : expr -> expr) (s : stmt) : stmt =
         (match op with
         | CM_decl _ | CM_muladd _ -> op
         | CM_load r -> CM_load {r with index = e r.index; stride = e r.stride}
-        | CM_store r -> CM_store {r with index = e r.index; stride = e r.stride})
+        | CM_store r -> CM_store {r with index = e r.index; stride = e r.stride}
+        | CM_scale_add _ -> Sarek_coopmat_scale.map_exprs e op)
 
 (** Names of helper functions called (directly) from [s]. *)
 let called_helpers (helpers : string list) (s : stmt) : string list =

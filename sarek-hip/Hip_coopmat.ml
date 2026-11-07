@@ -62,6 +62,7 @@ let support ~compute_capability:(major, minor) ~warp_size =
     ds_robust_buffer_access = false;
     ds_subgroup_size = warp_size;
     ds_advertised_count = List.length configs;
+    ds_scale_add = lowered;
     ds_evidence =
       (if lowered then
          Printf.sprintf

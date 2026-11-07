@@ -166,7 +166,7 @@ let accessed_buffers (k : kernel) : string list =
     (function
       | CM_load {src; _} -> Some src
       | CM_store {dst; _} -> Some dst
-      | CM_decl _ | CM_muladd _ -> None)
+      | CM_decl _ | CM_muladd _ | CM_scale_add _ -> None)
     (Sarek_ir_analysis.kernel_coopmat_ops k)
   |> List.sort_uniq String.compare
 
@@ -204,14 +204,17 @@ let check_kernel ?block ~sm_target (k : kernel) : unit =
       (function
         | CM_decl {frag; _} | CM_load {frag; _} | CM_store {frag; _} ->
             check_fragment frag
-        | CM_muladd {cfg; _} -> check_config cfg)
+        | CM_muladd {cfg; _} -> check_config cfg
+        | CM_scale_add _ ->
+            refuse "CM_scale_add" Sarek_ir_cuda_coopmat_scale.cuda_reason)
       ops ;
     if
       List.exists
         (function
           | CM_decl {frag; _} | CM_load {frag; _} | CM_store {frag; _} ->
               is_8bit frag.C.frag_component
-          | CM_muladd {cfg; _} -> is_8bit cfg.C.cfg_a)
+          | CM_muladd {cfg; _} -> is_8bit cfg.C.cfg_a
+          | CM_scale_add _ -> false)
         ops
       &&
       match sm_number sm_target with
@@ -460,3 +463,5 @@ let emit_op buf alloc env = function
   | CM_store {src; frag; dst; index; stride; layout} ->
       emit_store buf alloc env ~src ~frag ~dst ~index ~stride ~layout
   | CM_muladd {dst; a; b; c; cfg} -> emit_muladd buf alloc ~dst ~a ~b ~c cfg
+  | CM_scale_add _ ->
+      refuse "CM_scale_add" Sarek_ir_cuda_coopmat_scale.cuda_reason

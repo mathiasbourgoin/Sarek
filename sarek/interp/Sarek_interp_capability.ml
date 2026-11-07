@@ -59,4 +59,16 @@ let first_refusal (ir : Sarek_ir_types.kernel) : Sarek_capability.verdict option
     @ List.map
         (coopmat_verdict
            ~budget:(Sarek_policy.budget ~kernels:[ir.Sarek_ir_types.kern_name]))
-        (Sarek_ir_analysis.kernel_coopmat_configs ir))
+        (Sarek_ir_analysis.kernel_coopmat_configs ir)
+    (* CM_scale_add is Strict, so the interpreter evaluates every one whose
+       operands are what the statement is defined on, and refuses the others
+       for the reason the device gate gives. *)
+    @ List.filter_map
+        (function
+          | Sarek_ir_types.CM_scale_add {dst_frag; src_frag; _} ->
+              Some
+                (Sarek_coopmat.scale_add_operands_verdict ~dst_frag ~src_frag)
+          | Sarek_ir_types.CM_decl _ | Sarek_ir_types.CM_load _
+          | Sarek_ir_types.CM_store _ | Sarek_ir_types.CM_muladd _ ->
+              None)
+        (Sarek_ir_analysis.kernel_coopmat_ops ir))

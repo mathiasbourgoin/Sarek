@@ -23,6 +23,29 @@
 
 ### Added
 
+- `CM_scale_add`, a cooperative-matrix statement that adds a per-row and per-column scaled copy of
+  an s32 or f32 accumulator fragment into an f32 accumulator, with an optional subtracted
+  `p[i] * q[j]` offset and an optional overwrite (docs/design/coopmat-scaled-accumulate.md). It is
+  what a quantised GEMM in the style of llama.cpp's MMQ kernels needs after accumulating a block
+  exactly in int32 (apply the block's weight and activation scales once, without a store, a
+  scalar pass and a load back), and, in place on an f32 fragment, the per-row rescale of online
+  softmax. The order of the steps is the semantics: each is one binary32 operation rounded to
+  nearest even, never contracted, so the statement is Strict (no `Sarek_policy` grant). The
+  interpreter is the oracle (`Sarek_coopmat_scale_ref`; it keeps subnormals, unlike
+  `Sarek_float32`). HIP gfx11 lowers it in registers and is bit-identical to the interpreter on an
+  RX 7900 XTX over random int32 and f32 fragments and scales (subnormal results included), every
+  flag combination, in place and with shared-memory scales; the gfx1100 ISA of the step has no
+  fused multiply-add (and has one under `-ffp-contract=fast`, the control). The coopmat device
+  record has a new field, `ds_scale_add`, true only from the HIP probe on gfx1100 (compute capability 11.0, the only chip executed; other gfx11 parts are refused by name); the launch gate
+  refuses the statement elsewhere (`coopmat-scale-add`), and a u32 source everywhere
+  (`coopmat-scale-add-u32-source`). CUDA/PTX and CUDA/C refuse it (the wmma accumulator map is
+  undocumented; a shared-memory round trip needs a per-warp scratch whose size code generation
+  does not know, and moving to `mma.sync` rewrites the 8-bit lowering; neither can be executed
+  without an NVIDIA GPU), as do Vulkan (no f32 fragment in the GLSL lowering, RADV route not
+  validated), Metal, OpenCL, WGSL and Native, each with a named reason. Tests:
+  `sarek/tests/unit/test_coopmat_scale_add.ml`, `sarek/tests/e2e/test_coopmat_scale_add_e2e.ml`,
+  and the HIP and CUDA probe tests.
+
 - 8-bit integer element types in IR kernels: `TUint8` (which existed only as a cooperative-matrix
   operand element) and a new `TInt8`. Both are storage types on the `TFloat16` model: an element is
   one byte, every value is an int32. A read zero-extends (u8) or sign-extends (s8); a store of an

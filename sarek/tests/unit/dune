@@ -168,6 +168,16 @@
  (modules test_ptx_snapshot)
  (libraries sarek.codegen ptx_f16_kernels alcotest unix str))
 
+; CM_scale_add (docs/design/coopmat-scaled-accumulate.md) without a device: the
+; interpreter (the oracle) on chosen values that change if a step is fused,
+; reordered or flushed, its refusals, the launch-gate verdict, the HIP lowering
+; text and the named refusals of the other generators. CPU-only.
+
+(test
+ (name test_coopmat_scale_add)
+ (modules test_coopmat_scale_add)
+ (libraries sarek sarek.interp sarek.codegen alcotest))
+
 ; Cooperative matrices in the PTX backend (wmma.*): snapshots, refusals, parity
 ; with the CUDA/C lowering, byte-identity of kernels without coopmat, and a
 ; ptxas gate that skips without ptxas. CPU-only.

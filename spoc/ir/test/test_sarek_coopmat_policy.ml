@@ -109,6 +109,7 @@ let test_device_evidence () =
       ds_robust_buffer_access = false;
       ds_subgroup_size = 32;
       ds_advertised_count = 0;
+      ds_scale_add = false;
       ds_evidence = "HIP: probe rule";
     }
   in

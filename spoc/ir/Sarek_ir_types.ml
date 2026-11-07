@@ -212,9 +212,9 @@ type stmt =
           oblige ~36 exhaustive [elttype] matches to invent an answer for a type
           none of them can represent. Fragments therefore live in their own
           namespace, addressed by name, and the only things that can be done to
-          one are the four below. *)
+          one are the five below. *)
 
-(** The four things that can be done with a cooperative-matrix fragment.
+(** The five things that can be done with a cooperative-matrix fragment.
 
     Fragment names live in a namespace of their own, separate from {!var}. They
     are plain strings for the same reason an [SShared] array name is: a fragment
@@ -287,6 +287,47 @@ and coopmat_op =
           {!Sarek_coopmat_types.accumulation_is_exact} reads to decide whether
           this statement is under the strict contract or needs the relaxation of
           docs/design/f16-relaxed-accuracy.md §1.6. *)
+  | CM_scale_add of {
+      dst : string;
+      dst_frag : Sarek_coopmat_types.fragment;
+      src : string;
+      src_frag : Sarek_coopmat_types.fragment;
+      row : coopmat_scale;
+      col : coopmat_scale option;
+      offset : coopmat_offset option;
+      accumulate : bool;
+    }
+      (** Scaled accumulation (docs/design/coopmat-scaled-accumulate.md): for
+          every element, with [r i = row.(i)], [c j = col.(j)] (1 when
+          [col = None]) and [(p, q)] the [offset] scales,
+          [dst[i][j] <- (dst[i][j] + (f32 (src[i][j]) * r i) * c j) - p i * q j].
+
+          {b The order is the semantics.} Each step is one binary32 operation
+          rounded to nearest even, in exactly this order, never contracted:
+          [t1 = f32 src], [t2 = t1 * r], [t3 = t2 * c], [t4 = dst + t3] ([t3]
+          when [accumulate = false]: the old [dst] is not read), [t5 = p * q],
+          [dst = t4 - t5]. It is therefore Strict: a device performing these
+          operations produces the interpreter's bits, and no accuracy grant is
+          involved.
+
+          [dst_frag] is an f32 accumulator; [src_frag] an s32 or f32 accumulator
+          of the same shape and scope (u32 is refused: its conversion would need
+          its own meaning). [dst] and [src] may name the same f32 fragment (the
+          per-row rescale of online softmax). The scale buffers are float32,
+          global or shared, and their indices are uniform across the subgroup,
+          as for {!CM_load}.
+
+          The consumer is a quantised GEMM that accumulates each block exactly
+          in int32 and then applies the block's per-row and per-column scales
+          once. Without this statement that needs a store of the int32 fragment,
+          a scalar pass and a load back. *)
+
+(** One scale vector of {!CM_scale_add}: element [i] is
+    [scale_buf.(scale_index + i)]. *)
+and coopmat_scale = {scale_buf : string; scale_index : expr}
+
+(** The offset of {!CM_scale_add}: [off_row.(i) * off_col.(j)] is subtracted. *)
+and coopmat_offset = {off_row : coopmat_scale; off_col : coopmat_scale}
 
 (** Declarations *)
 and decl =

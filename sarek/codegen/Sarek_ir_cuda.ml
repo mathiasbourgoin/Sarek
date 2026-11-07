@@ -1112,7 +1112,7 @@ let single_rounding_comment (k : kernel) =
 let cuda_header_for (k : kernel) =
   let coopmat =
     if Sarek_ir_analysis.kernel_has_coopmat_op k then
-      Sarek_ir_cuda_coopmat.relaxed_comment k ^ Sarek_ir_cuda_coopmat.preamble
+      Sarek_ir_cuda_coopmat.relaxed_comment k ^ Sarek_ir_cuda_coopmat.preamble k
     else ""
   in
   if Sarek_ir_analysis.kernel_uses_float16 k then

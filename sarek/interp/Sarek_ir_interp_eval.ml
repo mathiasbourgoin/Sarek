@@ -696,6 +696,81 @@ and exec_coopmat_once state env op =
         else coopmat_muladd_float cfg ma mb mc
       in
       Hashtbl.replace env.coopmats (coopmat_key state dst) out
+  | CM_scale_add {dst; dst_frag; src; src_frag; row; col; offset; accumulate} ->
+      coopmat_scale_add_check ~dst_frag ~src_frag ;
+      let m, n = fragment_dims dst_frag in
+      let read s len = coopmat_read_scale state env s len in
+      (* Read in the documented order, so a refusal names the first bad
+         scale. *)
+      let row = read row m in
+      let col = Option.map (fun s -> read s n) col in
+      let offset =
+        Option.map
+          (fun o ->
+            let p = read o.off_row m in
+            let q = read o.off_col n in
+            (p, q))
+          offset
+      in
+      let to_f32 = function
+        | VInt32 i when src_frag.frag_component = Sint32 ->
+            Sarek_coopmat_scale_ref.of_int32 i
+        | v -> to_float32 v
+      in
+      let out =
+        Sarek_coopmat_scale_ref.apply
+          ~m
+          ~n
+          ~accumulate
+          ~scales:{Sarek_coopmat_scale_ref.row; col; offset}
+          ~dst:(Array.map to_float32 (get_coopmat state env dst))
+          ~src:(Array.map to_f32 (get_coopmat state env src))
+      in
+      Hashtbl.replace
+        env.coopmats
+        (coopmat_key state dst)
+        (Array.map (fun x -> VFloat32 x) out)
+
+(** The operand check of {!Sarek_ir_types.CM_scale_add}, the one the launch gate
+    makes ({!Sarek_coopmat.scale_add_operands_verdict}), so the oracle and the
+    gate refuse the same statements for the same reason. *)
+and coopmat_scale_add_check ~dst_frag ~src_frag =
+  match Sarek_coopmat.scale_add_operands_verdict ~dst_frag ~src_frag with
+  | Sarek_capability.Available -> ()
+  | Sarek_capability.Unavailable cap ->
+      Interp_error.raise_error
+        (Unsupported_operation
+           {operation = "CM_scale_add"; reason = cap.Sarek_capability.cap_why})
+  | Sarek_capability.Unknown why ->
+      Interp_error.raise_error
+        (Unsupported_operation {operation = "CM_scale_add"; reason = why})
+
+(** [len] binary32 scales from [s.scale_buf] at [s.scale_index]. A value that is
+    not a binary32 is refused rather than converted: the statement is defined on
+    float32 buffers, and a silent conversion would make the oracle accept a
+    kernel every code generator refuses. *)
+and coopmat_read_scale state env (s : coopmat_scale) len =
+  let buf = get_array env s.scale_buf in
+  let base = to_int (eval_expr state env s.scale_index) in
+  Array.init len (fun k ->
+      let i = base + k in
+      if i < 0 || i >= Array.length buf then
+        Interp_error.raise_error
+          (Array_bounds_error
+             {array_name = s.scale_buf; index = i; length = Array.length buf})
+      else
+        match buf.(i) with
+        | VFloat32 x -> x
+        | _ ->
+            Interp_error.raise_error
+              (Unsupported_operation
+                 {
+                   operation = "CM_scale_add";
+                   reason =
+                     Printf.sprintf
+                       "the scale buffer %s must hold float32 values"
+                       s.scale_buf;
+                 }))
 
 (* Read the value currently AT an lvalue, sharing rather than copying.
 

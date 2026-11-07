@@ -218,7 +218,8 @@ let check_staged_layout () =
                       if frag.Sarek_coopmat.frag_use = Sarek_coopmat.Matrix_b
                       then Sarek_coopmat.Col_major
                       else Sarek_coopmat.Row_major
-                  | CM_decl _ | CM_store _ | CM_muladd _ -> false)
+                  | CM_decl _ | CM_store _ | CM_muladd _ | CM_scale_add _ ->
+                      false)
                 (Sarek_ir_analysis.kernel_coopmat_ops k)
             in
             let what = Sarek_matrix_rewrite.lowering_name lowering in

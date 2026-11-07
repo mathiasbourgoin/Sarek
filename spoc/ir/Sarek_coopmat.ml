@@ -336,3 +336,103 @@ let fragment_verdict ~support f =
       else
         Sarek_capability.Unavailable
           (device_lacks_fragment ~evidence:s.ds_evidence f)
+
+(* ------------------------------------------------------------------------ *)
+(* Scaled accumulation                                                      *)
+(* ------------------------------------------------------------------------ *)
+
+let scale_add_design = "docs/design/coopmat-scaled-accumulate.md"
+
+let scale_add_refusal ~name ~why ~remedy =
+  Sarek_capability.Unavailable
+    {
+      Sarek_capability.cap_name = name;
+      cap_kind = Sarek_capability.Backend_structural;
+      cap_why = why;
+      cap_evidence = Sarek_capability.Quoted (scale_add_design ^ " §2.2");
+      cap_remedy = Some remedy;
+    }
+
+let scale_add_operands_verdict ~dst_frag ~src_frag =
+  if dst_frag.frag_use <> Accumulator || dst_frag.frag_component <> Float32 then
+    scale_add_refusal
+      ~name:"coopmat-scale-add-destination"
+      ~why:
+        (Printf.sprintf
+           "CM_scale_add accumulates into an f32 accumulator fragment, but its \
+            destination is a %s"
+           (fragment_name dst_frag))
+      ~remedy:"Declare the destination as an f32 accumulator fragment."
+  else if src_frag.frag_use = Accumulator && src_frag.frag_component = Uint32
+  then
+    scale_add_refusal
+      ~name:"coopmat-scale-add-u32-source"
+      ~why:
+        "CM_scale_add converts an s32 or f32 source to f32; a u32 source is \
+         refused, because its values above 2^31 are not s32 values and no \
+         conversion for them is defined"
+      ~remedy:
+        "Accumulate into an s32 fragment (the same bits for a 32-bit wrapping \
+         sum) and scale that."
+  else if
+    src_frag.frag_use <> Accumulator
+    || not
+         (src_frag.frag_component = Sint32 || src_frag.frag_component = Float32)
+  then
+    scale_add_refusal
+      ~name:"coopmat-scale-add-source"
+      ~why:
+        (Printf.sprintf
+           "CM_scale_add scales an s32 or f32 accumulator fragment, but its \
+            source is a %s"
+           (fragment_name src_frag))
+      ~remedy:"Scale an s32 or f32 accumulator fragment."
+  else if
+    src_frag.frag_shape <> dst_frag.frag_shape
+    || src_frag.frag_scope <> dst_frag.frag_scope
+  then
+    scale_add_refusal
+      ~name:"coopmat-scale-add-shape"
+      ~why:
+        (Printf.sprintf
+           "CM_scale_add needs a source and a destination of the same shape \
+            and scope, but they are a %s and a %s"
+           (fragment_name src_frag)
+           (fragment_name dst_frag))
+      ~remedy:"Use fragments of one shape and scope."
+  else Sarek_capability.Available
+
+let device_lacks_scale_add ~evidence =
+  {
+    Sarek_capability.cap_name = "coopmat-scale-add";
+    cap_kind = Sarek_capability.Device_optional;
+    cap_why =
+      Printf.sprintf
+        "the device's backend does not lower CM_scale_add (scaled accumulation \
+         of a cooperative-matrix fragment) on this device (%s)"
+        evidence;
+    cap_evidence =
+      Sarek_capability.Quoted
+        (scale_add_design
+       ^ " §3: lowered on HIP gfx11 only; CUDA, Vulkan, Metal and the backends \
+          without cooperative matrices refuse it");
+    cap_remedy =
+      Some
+        "Run the kernel on a HIP gfx11 device or on the interpreter, or store \
+         the fragment and apply the scales with scalar code.";
+  }
+
+let scale_add_verdict ~support ~dst_frag ~src_frag =
+  match scale_add_operands_verdict ~dst_frag ~src_frag with
+  | (Sarek_capability.Unavailable _ | Sarek_capability.Unknown _) as v -> v
+  | Sarek_capability.Available -> (
+      match support with
+      | None ->
+          Sarek_capability.Unknown
+            "device cooperative-matrix support was not probed, so whether its \
+             backend lowers CM_scale_add is unknown"
+      | Some s ->
+          if s.ds_scale_add then Sarek_capability.Available
+          else
+            Sarek_capability.Unavailable
+              (device_lacks_scale_add ~evidence:s.ds_evidence))

@@ -49,7 +49,11 @@ let test_sm80 () =
   Alcotest.(check int)
     "count = list"
     (List.length s.C.ds_configs)
-    s.C.ds_advertised_count
+    s.C.ds_advertised_count ;
+  Alcotest.(check bool)
+    "CM_scale_add is not lowered on CUDA"
+    false
+    s.C.ds_scale_add
 
 let test_thresholds () =
   Alcotest.(check bool) "sm_70: f16" true (permits (support (7, 0)) f16) ;

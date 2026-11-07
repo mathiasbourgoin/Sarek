@@ -127,6 +127,22 @@ let check_buffer ~buffers ~buf (f : C.fragment) =
              buf
              (elttype_name elt))
 
+(** {!Sarek_ir_types.CM_scale_add} is not lowered on Metal
+    (docs/design/coopmat-scaled-accumulate.md §3): an integer source for the
+    same reason as every integer fragment, an f32 source because the
+    [simdgroup_matrix] element map is not exposed, so the only route is a
+    threadgroup round trip, not written yet. *)
+let refuse_scale_add (src_frag : C.fragment) =
+  if C.component_is_integer src_frag.C.frag_component then
+    unsupported "CM_scale_add" no_integer_reason
+  else
+    unsupported
+      "CM_scale_add"
+      "Metal: CM_scale_add with an f32 source is not lowered: simdgroup_matrix \
+       does not expose which lane holds which element, so it needs a \
+       threadgroup-memory round trip (store, scalar scaling, load), which has \
+       not been written or run"
+
 let check_op ~buffers = function
   | CM_decl {frag; _} -> check_fragment frag
   | CM_load {frag; src; _} ->
@@ -140,6 +156,7 @@ let check_op ~buffers = function
           "Metal: only an accumulator fragment is stored" ;
       check_buffer ~buffers ~buf:dst frag
   | CM_muladd {cfg; _} -> check_config cfg
+  | CM_scale_add {src_frag; _} -> refuse_scale_add src_frag
 
 (** Whole-kernel check, run before any source is emitted: every fragment,
     configuration and buffer of every cooperative-matrix statement. *)
@@ -194,6 +211,7 @@ let gen_op ~indent ~expr_str op =
         a
         b
         c
+  | CM_scale_add {src_frag; _} -> refuse_scale_add src_frag
 
 (** {1 Launch shape} *)
 

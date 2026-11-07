@@ -109,6 +109,10 @@ let coopmat tbl = function
       note tbl dst write_ ;
       expr tbl index ;
       expr tbl stride
+  | CM_scale_add _ as op ->
+      (* The scales are read, never written; the fragments are not buffers. *)
+      List.iter (fun buf -> note tbl buf read_) (Sarek_coopmat_scale.buffers op) ;
+      List.iter (expr tbl) (Sarek_coopmat_scale.exprs op)
 
 let rec stmt tbl s =
   match s with

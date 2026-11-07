@@ -623,6 +623,7 @@ let probe_coopmat ~instance ~phys_dev ~extensions
         ds_robust_buffer_access = false;
         ds_subgroup_size = subgroup_size;
         ds_advertised_count = 0;
+        ds_scale_add = false;
         ds_evidence =
           "Vulkan: VK_KHR_cooperative_matrix is not advertised or its \
            cooperativeMatrix feature is false";
@@ -705,6 +706,10 @@ let probe_coopmat ~instance ~phys_dev ~extensions
             ds_robust_buffer_access = features.ef_coopmat_robust_buffer_access;
             ds_subgroup_size = subgroup_size;
             ds_advertised_count = n;
+            (* CM_scale_add: refused by the GLSL generator until a portable
+               route is validated (docs/design/coopmat-scaled-accumulate.md
+               §3). *)
+            ds_scale_add = false;
             ds_evidence =
               Printf.sprintf
                 "Vulkan: vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR \

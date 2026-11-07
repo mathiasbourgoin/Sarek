@@ -61,7 +61,11 @@ let test_gfx1100 () =
     "no f16 accumulate"
     false
     (permits s {f16 with C.cfg_c = C.Float16; cfg_result = C.Float16}) ;
-  Alcotest.(check int) "subgroup = warp" 32 s.C.ds_subgroup_size
+  Alcotest.(check int) "subgroup = warp" 32 s.C.ds_subgroup_size ;
+  Alcotest.(check bool)
+    "CM_scale_add is lowered (docs/design/coopmat-scaled-accumulate.md)"
+    true
+    s.C.ds_scale_add
 
 let test_refused () =
   List.iter
@@ -71,6 +75,7 @@ let test_refused () =
         (what ^ ": no configuration")
         0
         (List.length s.C.ds_configs) ;
+      Alcotest.(check bool) (what ^ ": no CM_scale_add") false s.C.ds_scale_add ;
       match C.verdict ~support:(Some s) f16 with
       | Sarek_capability.Unavailable cap ->
           Alcotest.(check bool)

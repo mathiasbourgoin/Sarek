@@ -205,6 +205,7 @@ let rec subst_array_read_stmt arr idx_var replacement stmt =
         match op with
         | CM_load {src; _} -> src = arr
         | CM_store {dst; _} -> dst = arr
+        | CM_scale_add _ -> List.mem arr (Sarek_coopmat_scale.buffers op)
         | CM_decl _ | CM_muladd _ -> false
       in
       if names_arr then stmt
@@ -217,7 +218,8 @@ let rec subst_array_read_stmt arr idx_var replacement stmt =
                 {r with index = subst_e r.index; stride = subst_e r.stride}
           | CM_store r ->
               CM_store
-                {r with index = subst_e r.index; stride = subst_e r.stride})
+                {r with index = subst_e r.index; stride = subst_e r.stride}
+          | CM_scale_add _ -> Sarek_coopmat_scale.map_exprs subst_e op)
 
 (** Check if statement uses an array *)
 let rec stmt_uses_array arr stmt =
@@ -250,7 +252,10 @@ let rec stmt_uses_array arr stmt =
       | CM_decl _ | CM_muladd _ -> false
       | CM_load {src = name; index; stride; _}
       | CM_store {dst = name; index; stride; _} ->
-          name = arr || expr_uses_array arr index || expr_uses_array arr stride)
+          name = arr || expr_uses_array arr index || expr_uses_array arr stride
+      | CM_scale_add _ ->
+          List.mem arr (Sarek_coopmat_scale.buffers op)
+          || List.exists (expr_uses_array arr) (Sarek_coopmat_scale.exprs op))
 
 (** {1 Analysis} *)
 
@@ -307,7 +312,7 @@ let rec collect_writes_stmt acc stmt =
          name. *)
       match op with
       | CM_store {dst; index; _} -> (dst, index) :: acc
-      | CM_decl _ | CM_load _ | CM_muladd _ -> acc)
+      | CM_decl _ | CM_load _ | CM_muladd _ | CM_scale_add _ -> acc)
 
 (** Collect all array reads from a statement *)
 let rec collect_reads_stmt acc stmt =
@@ -342,7 +347,15 @@ let rec collect_reads_stmt acc stmt =
           let acc = collect_reads_expr (collect_reads_expr acc index) stride in
           (src, index) :: acc
       | CM_store {index; stride; _} ->
-          collect_reads_expr (collect_reads_expr acc index) stride)
+          collect_reads_expr (collect_reads_expr acc index) stride
+      | CM_scale_add _ ->
+          (* Each scale reads its buffer from its index on, like a load. *)
+          List.fold_left
+            (fun acc s ->
+              (s.scale_buf, s.scale_index)
+              :: collect_reads_expr acc s.scale_index)
+            acc
+            (Sarek_coopmat_scale.scales op))
 
 (** Collect the arrays whose LENGTH an expression takes.
 
@@ -422,7 +435,9 @@ let rec collect_length_uses_stmt acc stmt =
       match op with
       | CM_decl _ | CM_muladd _ -> acc
       | CM_load {index; stride; _} | CM_store {index; stride; _} ->
-          collect_length_uses_expr (collect_length_uses_expr acc index) stride)
+          collect_length_uses_expr (collect_length_uses_expr acc index) stride
+      | CM_scale_add _ ->
+          Sarek_coopmat_scale.fold_exprs collect_length_uses_expr acc op)
 
 (** Check if statement contains barriers *)
 let rec has_barrier stmt =

@@ -246,6 +246,8 @@ let fold_local_array_lengths (body : Sarek_ir_types.stmt) : Sarek_ir_types.stmt
     | SCoopmat (CM_store r) ->
         SCoopmat
           (CM_store {r with index = ex env r.index; stride = ex env r.stride})
+    | SCoopmat (CM_scale_add _ as op) ->
+        SCoopmat (Sarek_coopmat_scale.map_exprs (ex env) op)
     | (SBarrier | SWarpBarrier | SMemFence | SEmpty | SNative _ | SCoopmat _) as
       s ->
         s
@@ -419,7 +421,8 @@ let rename_shadowing_locals ~collides ~fresh_name body =
                   index = re_expr env r.index;
                   stride = re_expr env r.stride;
                 }
-          | CM_muladd _ -> op)
+          | CM_muladd _ -> op
+          | CM_scale_add _ -> Sarek_coopmat_scale.map_exprs (re_expr env) op)
   in
   re_stmt SM.empty body
 
