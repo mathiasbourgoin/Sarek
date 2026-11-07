@@ -110,12 +110,20 @@ let retype (v : var) = {v with var_type = TInt32}
 let narrowed t e =
   match e with ECast (t', _) when t' = t -> e | _ -> ECast (t, e)
 
+(** A binder is identified by its id AND name, and an occurrence is retyped only
+    while it still carries an 8-bit type: ids are not globally unique (a pass
+    may number a fresh temporary from 0), so an id alone could retype an
+    unrelated variable. *)
+let key (v : var) = (v.var_id, v.var_name)
+
+let is_lowered keys (v : var) = is_8bit v.var_type && List.mem (key v) keys
+
 (** Every [EVar] of a retyped binder carries the binder's record, so it is
-    retyped too (matched by [var_id], which the IR keeps unique per binder). *)
+    retyped too. *)
 let rec retype_expr ids e =
   let r = retype_expr ids in
   match e with
-  | EVar v when List.mem v.var_id ids -> EVar (retype v)
+  | EVar v when is_lowered ids v -> EVar (retype v)
   | EConst _ | EVar _ | EArrayLen _ -> e
   | EArrayRead (a, i) -> EArrayRead (a, r i)
   | EArrayReadExpr (b, i) -> EArrayReadExpr (r b, r i)
@@ -133,7 +141,7 @@ let rec retype_expr ids e =
   | EMatch (s, cases) -> EMatch (r s, List.map (fun (p, a) -> (p, r a)) cases)
 
 let rec retype_lvalue ids = function
-  | LVar v when List.mem v.var_id ids -> LVar (retype v)
+  | LVar v when is_lowered ids v -> LVar (retype v)
   | LVar _ as lv -> lv
   | LArrayElem (a, i) -> LArrayElem (a, retype_expr ids i)
   | LArrayElemExpr (b, i) ->
@@ -146,7 +154,7 @@ let rec local_scalars keep acc = function
   | SLet (v, _, b) | SLetMut (v, _, b) ->
       local_scalars
         keep
-        (if keep v.var_type then (v.var_id, v.var_type) :: acc else acc)
+        (if keep v.var_type then (key v, v.var_type) :: acc else acc)
         b
   | SSeq ss -> List.fold_left (local_scalars keep) acc ss
   | SIf (_, t, e) ->
@@ -164,7 +172,9 @@ let rec local_scalars keep acc = function
 let rec lower_stmt types s =
   let ids = List.map fst types in
   let e = retype_expr ids and r = lower_stmt types in
-  let narrow_of (v : var) = List.assoc_opt v.var_id types in
+  let narrow_of (v : var) =
+    if is_8bit v.var_type then List.assoc_opt (key v) types else None
+  in
   let bind v x =
     match narrow_of v with
     | Some t -> (retype v, narrowed t (e x))
@@ -203,7 +213,7 @@ let lower_body keep stmt locals =
   let decls =
     List.filter_map
       (function
-        | DLocal (v, _) when keep v.var_type -> Some (v.var_id, v.var_type)
+        | DLocal (v, _) when keep v.var_type -> Some (key v, v.var_type)
         | _ -> None)
       locals
   in

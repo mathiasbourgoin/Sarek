@@ -615,7 +615,11 @@ end = struct
       | Memory.Scalar_kind Spoc_core.Vector_types.Int64, Bigarray_storage _
       | Memory.Scalar_kind Spoc_core.Vector_types.Float16, Bigarray_storage _
       | Memory.Scalar_kind Spoc_core.Vector_types.Float32, Bigarray_storage _
-      | Memory.Scalar_kind Spoc_core.Vector_types.Float64, Bigarray_storage _ ->
+      | Memory.Scalar_kind Spoc_core.Vector_types.Float64, Bigarray_storage _
+      (* 8-bit storage: the element is exchanged as the int32 its read yields
+         (Sarek_ir_int8), as Execute's exec-arg arms do. *)
+      | Memory.Scalar_kind Spoc_core.Vector_types.Char, Bigarray_storage _
+      | Memory.Scalar_kind Spoc_core.Vector_types.Int8, Bigarray_storage _ ->
           ()
       | _ ->
           Interpreter_error.(
@@ -682,6 +686,20 @@ end = struct
               Typed_value.TV_Scalar
                 (Typed_value.SV
                    ((module Typed_value.Float64_type), Bigarray.Array1.get ba i))
+          | Memory.Scalar_kind Spoc_core.Vector_types.Char, Bigarray_storage ba
+            ->
+              (* zero extension *)
+              Typed_value.TV_Scalar
+                (Typed_value.SV
+                   ( (module Typed_value.Int32_type),
+                     Int32.of_int (Char.code (Bigarray.Array1.get ba i)) ))
+          | Memory.Scalar_kind Spoc_core.Vector_types.Int8, Bigarray_storage ba
+            ->
+              (* sign extension: Bigarray.int8_signed reads -128..127 *)
+              Typed_value.TV_Scalar
+                (Typed_value.SV
+                   ( (module Typed_value.Int32_type),
+                     Int32.of_int (Bigarray.Array1.get ba i) ))
           | _ ->
               Interpreter_error.(
                 raise_error
@@ -736,6 +754,28 @@ end = struct
                   Interpreter_error.(
                     raise_error
                       (feature_not_supported "float64 buffer set conversion")))
+          | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+              Memory.Scalar_kind Spoc_core.Vector_types.Char,
+              Bigarray_storage ba ) -> (
+              (* the low byte, as a device store keeps it *)
+              match S.to_primitive x with
+              | Typed_value.PInt32 n ->
+                  Bigarray.Array1.set ba i (Char.chr (Int32.to_int n land 0xff))
+              | _ ->
+                  Interpreter_error.(
+                    raise_error
+                      (feature_not_supported "uint8 buffer set conversion")))
+          | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+              Memory.Scalar_kind Spoc_core.Vector_types.Int8,
+              Bigarray_storage ba ) -> (
+              (* Bigarray.int8_signed keeps the low 8 bits *)
+              match S.to_primitive x with
+              | Typed_value.PInt32 n ->
+                  Bigarray.Array1.set ba i (Int32.to_int n)
+              | _ ->
+                  Interpreter_error.(
+                    raise_error
+                      (feature_not_supported "int8 buffer set conversion")))
           | _ ->
               Interpreter_error.(
                 raise_error

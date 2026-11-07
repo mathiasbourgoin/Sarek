@@ -427,8 +427,8 @@ let test_coopmat_int8_buffer_codegen () =
 
 (** Kernel fusion substitutes a producer's stored expression for the consumer's
     read, which would drop the narrowing of an 8-bit store. *)
-let test_fusion_declines () =
-  let inter = K.var 0 "inter" (TVec TUint8)
+let fusion_pair elt =
+  let inter = K.var 0 "inter" (TVec elt)
   and src = K.var 1 "src" (TVec TInt32)
   and out = K.var 2 "out" (TVec TInt32)
   and i = K.var 3 "i" TInt32 in
@@ -437,7 +437,7 @@ let test_fusion_declines () =
     {
       default_kernel with
       kern_name = "p";
-      kern_params = [K.vec_param src TInt32; K.vec_param inter TUint8];
+      kern_params = [K.vec_param src TInt32; K.vec_param inter elt];
       kern_body = SLet (i, K.gid, K.store "inter" iv (K.read "src" iv));
     }
   in
@@ -445,14 +445,54 @@ let test_fusion_declines () =
     {
       default_kernel with
       kern_name = "c";
-      kern_params = [K.vec_param inter TUint8; K.vec_param out TInt32];
+      kern_params = [K.vec_param inter elt; K.vec_param out TInt32];
       kern_body = SLet (i, K.gid, K.store "out" iv (K.read "inter" iv));
     }
   in
-  Alcotest.(check bool)
-    "fusion through a uint8 intermediate is declined"
-    false
-    (Sarek.Sarek_fusion.can_fuse producer consumer "inter")
+  (producer, consumer)
+
+(** Both the element-wise and the stencil fusion admit the int32 pair (the
+    control) and decline the same pair through a uint8 intermediate. *)
+let test_fusion_declines () =
+  let check name fuse =
+    let p32, c32 = fusion_pair TInt32 and p8, c8 = fusion_pair TUint8 in
+    Alcotest.(check bool) (name ^ ": int32 control fuses") true (fuse p32 c32) ;
+    Alcotest.(check bool) (name ^ ": uint8 declined") false (fuse p8 c8)
+  in
+  check "can_fuse" (fun p c -> Sarek.Sarek_fusion.can_fuse p c "inter") ;
+  check "can_fuse_stencil" (fun p c ->
+      Sarek.Sarek_fusion.can_fuse_stencil p c "inter")
+
+(** Lowering an 8-bit local matches its binder by id AND name: an int32 local
+    with the same id (a pass may number a fresh temporary from 0) keeps its
+    value. Checked on the emitted GLSL; the interpreter keys variables by id and
+    so requires distinct ids anyway. *)
+let test_lowering_matches_binder () =
+  let x = K.var 0 "x" TUint8
+  and y = K.var 0 "y" TInt32
+  and out = K.var 1 "out" (TVec TInt32) in
+  let k =
+    {
+      default_kernel with
+      kern_name = "int8_same_id";
+      kern_params = [K.vec_param out TInt32];
+      kern_body =
+        SLet
+          ( x,
+            K.i32 300,
+            SLet
+              ( y,
+                K.i32 1000,
+                SSeq
+                  [
+                    K.store "out" (K.i32 0) (EVar x);
+                    K.store "out" (K.i32 1) (EVar y);
+                  ] ) );
+    }
+  in
+  let glsl = Sarek_ir_glsl.generate ~block:(1, 1, 1) k in
+  check_has "GLSL" glsl "int x = int(uint8_t(300));" ;
+  check_has "GLSL" glsl "int y = 1000;"
 
 let () =
   Alcotest.run
@@ -493,6 +533,10 @@ let () =
         [
           Alcotest.test_case "Int8 gate" `Quick test_capability;
           Alcotest.test_case "fusion declines" `Quick test_fusion_declines;
+          Alcotest.test_case
+            "lowering matches the binder, not only its id"
+            `Quick
+            test_lowering_matches_binder;
           Alcotest.test_case
             "s8 coopmat from an int8 buffer (interpreter)"
             `Quick

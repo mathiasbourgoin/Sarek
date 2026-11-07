@@ -49,13 +49,6 @@ val refusal : kernel -> string option
     [TInt8]. The identity for any other type. *)
 val narrow : elttype -> int32 -> int32
 
-(** Make the storage semantics explicit: {!lower_scalars}, then every read of an
-    8-bit array becomes [ECast (t, read)] and every store into one stores
-    [ECast (t, value)] (left as is when the value already is that cast). The
-    result has the same meaning under the semantics above; an evaluator that
-    implements only [ECast] then implements the reads and stores too. Used by
-    the interpreter. *)
-val lower_scalars : kernel -> kernel
 (** Rewrite every 8-bit local scalar ([SLet], [SLetMut], [DLocal] of type
     [TUint8]/[TInt8]) into an int32 binder holding the narrowed value:
     [SLet (v : TUint8, e, b)] becomes [SLet (v : TInt32, ECast (TUint8, e), b)]
@@ -63,6 +56,7 @@ val lower_scalars : kernel -> kernel
     such a binder means (a C [unsigned char] local); the rewrite is for the
     targets that have no implicit 8/32-bit conversion (GLSL, PTX) and for the
     interpreter. *)
+val lower_scalars : kernel -> kernel
 
 (** For the C-family emitters (CUDA/HIP, OpenCL, Metal): make every conversion
     of an int32 to the signed 8-bit type an explicit [ECast (TInt8, _)] (the
@@ -79,4 +73,10 @@ val define_signed_narrowing : kernel -> kernel
     implementation-defined conversion. *)
 val c_signed_narrowing : string -> string
 
+(** Make the storage semantics explicit: {!lower_scalars}, then every read of an
+    8-bit array becomes [ECast (t, read)] and every store into one stores
+    [ECast (t, value)] (left as is when the value already is that cast). The
+    result has the same meaning under the semantics above; an evaluator that
+    implements only [ECast] then implements the reads and stores too. Used by
+    the interpreter. *)
 val normalise : kernel -> kernel
