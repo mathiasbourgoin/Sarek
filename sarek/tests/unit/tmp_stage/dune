@@ -1,0 +1,12 @@
+(executable
+ (name stage)
+ (libraries sarek sarek.stdlib sarek.codegen sarek_ir sarek_cuda unix)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -32-33-34-69)))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:stage.exe})))

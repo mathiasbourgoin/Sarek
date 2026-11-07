@@ -180,6 +180,17 @@ type context = {
   buffers : (string * elttype) list;
       (** element types of the kernel's array parameters and shared arrays *)
   operand_layouts : (string * operand_layout) list;
+  shared : string list;  (** the kernel's [.shared] arrays *)
+  globals : string list;
+      (** the kernel's array parameters: the only operands whose base is known
+          to be 32-byte aligned (device allocations) *)
+  mutable proven : coopmat_op list;
+      (** the loads and stores proven aligned ({!Sarek_ir_coopmat_align}), set
+          by the generator for the body it emits; physical identity *)
+  warps : int option;
+      (** warps per block when the launch block is known: the size of the
+          staging buffer. [None]: a misaligned access traps. *)
+  mutable tiles_used : bool;  (** a staging path was emitted *)
 }
 
 let operand_layouts (k : kernel) =
@@ -197,9 +208,74 @@ let operand_layouts (k : kernel) =
     []
     (Sarek_ir_analysis.kernel_coopmat_ops k)
 
-(** What the [SCoopmat] arm needs from the kernel it is emitting. *)
-let kernel_context (k : kernel) =
-  {buffers = kernel_buffers k; operand_layouts = operand_layouts k}
+(** The kernel's [.shared] arrays, declared in [kern_locals] or in the body. *)
+let shared_arrays (k : kernel) =
+  let declared =
+    Sarek_ir_analysis.kernel_fold
+      {
+        fe = (fun acc _ -> acc);
+        ft = (fun acc _ -> acc);
+        fs =
+          (fun acc -> function
+            | SLet (v, EArrayCreate (_, _, Shared), _) -> v.var_name :: acc
+            | _ -> acc);
+        fnative = (fun acc -> acc);
+        visit_lvalue = false;
+      }
+      []
+      k
+  in
+  List.filter_map
+    (function DShared (name, _, _) -> Some name | _ -> None)
+    k.kern_locals
+  @ declared
+
+(** The kernel's array parameters. *)
+let global_arrays (k : kernel) =
+  List.filter_map
+    (function
+      | DParam (v, Some _) -> Some v.var_name
+      | DParam ({var_type = TVec _; var_name; _}, None) -> Some var_name
+      | DParam _ | DLocal _ | DShared _ -> None)
+    k.kern_params
+
+(** What the [SCoopmat] arm needs from the kernel it is emitting. [block] is the
+    launch block when it is known. *)
+let kernel_context ?block (k : kernel) =
+  {
+    buffers = kernel_buffers k;
+    operand_layouts = operand_layouts k;
+    shared = shared_arrays k;
+    globals = global_arrays k;
+    proven = [];
+    warps = Option.map (fun (bx, by, bz) -> bx * by * bz / 32) block;
+    tiles_used = false;
+  }
+
+(** Bytes of staging shared memory per warp: one 16x16 tile of the widest
+    element (4 bytes). *)
+let tile_bytes_per_warp = 1024
+
+(** File-scope declarations of the per-warp staging buffer, when a staging path
+    was emitted; empty otherwise. Not compiled for HIP (the AMD arm has no
+    alignment precondition). *)
+let tiles_declaration (ctx : context) =
+  match (ctx.tiles_used, ctx.warps) with
+  | true, Some warps ->
+      Printf.sprintf
+        "#if !defined(__HIP_PLATFORM_AMD__)\n\
+         __shared__ __align__(32) unsigned char sarek_cm_tiles[%d];\n\
+         __device__ __forceinline__ unsigned char *sarek_cm_tile() {\n\
+        \  unsigned w = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z \
+         * blockDim.x * blockDim.y) >> 5;\n\
+        \  if (w >= %d) __trap();\n\
+        \  return sarek_cm_tiles + w * %d;\n\
+         }\n\
+         #endif\n"
+        (warps * tile_bytes_per_warp)
+        warps
+        tile_bytes_per_warp
+  | _ -> ""
 
 (** {1 Preamble} *)
 
@@ -370,8 +446,43 @@ let cuda_mem_layout = function
   | C.Row_major -> "nvcuda::wmma::mem_row_major"
   | C.Col_major -> "nvcuda::wmma::mem_col_major"
 
-let gen_load ~indent ~buffers ~expr_str ~dst ~(frag : C.fragment) ~src ~index
-    ~stride ~layout =
+(** The CUDA arm of a load or store. Proven aligned (and not from a [.shared]
+    array, whose alignment this generator does not declare): the bare [wmma]
+    call. Otherwise, with a known block: a warp-uniform test, the bare call when
+    aligned and the staged one when not. Block unknown: [sarek_cm_require],
+    which traps. *)
+let guarded ~(ctx : context) ~op ~buf ~(frag : C.fragment) ~ptr ~stride ~direct
+    ~staged =
+  let proven =
+    List.mem buf ctx.globals && Sarek_ir_coopmat_align.is_proven ctx.proven op
+  in
+  let bytes = cuda_elt_bytes frag.C.frag_component in
+  if proven then direct
+  else
+    match ctx.warps with
+    | None ->
+        Printf.sprintf
+          "sarek_cm_require(%s, (%s), %d); %s"
+          ptr
+          stride
+          bytes
+          direct
+    | Some _ ->
+        ctx.tiles_used <- true ;
+        let t = cuda_elt frag.C.frag_component in
+        Printf.sprintf
+          "if (sarek_cm_misaligned(%s, (%s), %d)) { %s *sarek_cm_t = (%s \
+           *)sarek_cm_tile(); %s } else { %s }"
+          ptr
+          stride
+          bytes
+          t
+          t
+          (staged "sarek_cm_t")
+          direct
+
+let gen_load ~ctx ~op ~indent ~buffers ~expr_str ~dst ~(frag : C.fragment) ~src
+    ~index ~stride ~layout =
   check_fragment frag ;
   check_buffer ~buffers ~buf:src frag ;
   let index = expr_str index and stride = expr_str stride in
@@ -394,19 +505,33 @@ let gen_load ~indent ~buffers ~expr_str ~dst ~(frag : C.fragment) ~src ~index
     ~cuda:
       (cuda_arm
          frag
-         (Printf.sprintf
-            "sarek_cm_require(%s, (%s), %d); \
-             nvcuda::wmma::load_matrix_sync(%s, %s, (%s)%s);"
-            ptr
-            stride
-            (cuda_elt_bytes frag.C.frag_component)
-            dst
-            ptr
-            stride
-            mem_layout))
+         (guarded
+            ~ctx
+            ~op
+            ~buf:src
+            ~frag
+            ~ptr
+            ~stride
+            ~direct:
+              (Printf.sprintf
+                 "nvcuda::wmma::load_matrix_sync(%s, %s, (%s)%s);"
+                 dst
+                 ptr
+                 stride
+                 mem_layout)
+            ~staged:(fun tile ->
+              Printf.sprintf
+                "sarek_cm_stage_in(%s, %s, (%s)); __syncwarp(); \
+                 nvcuda::wmma::load_matrix_sync(%s, %s, 16%s); __syncwarp();"
+                tile
+                ptr
+                stride
+                dst
+                tile
+                mem_layout)))
 
-let gen_store ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst ~index
-    ~stride ~layout =
+let gen_store ~ctx ~op ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst
+    ~index ~stride ~layout =
   check_fragment frag ;
   if frag.C.frag_use <> C.Accumulator then
     unsupported
@@ -427,16 +552,30 @@ let gen_store ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst ~index
          index
          stride)
     ~cuda:
-      (Printf.sprintf
-         "sarek_cm_require(%s, (%s), %d); nvcuda::wmma::store_matrix_sync(%s, \
-          %s, (%s), %s);"
-         ptr
-         stride
-         (cuda_elt_bytes frag.C.frag_component)
-         ptr
-         src
-         stride
-         (cuda_mem_layout layout))
+      (guarded
+         ~ctx
+         ~op
+         ~buf:dst
+         ~frag
+         ~ptr
+         ~stride
+         ~direct:
+           (Printf.sprintf
+              "nvcuda::wmma::store_matrix_sync(%s, %s, (%s), %s);"
+              ptr
+              src
+              stride
+              (cuda_mem_layout layout))
+         ~staged:(fun tile ->
+           Printf.sprintf
+             "nvcuda::wmma::store_matrix_sync(%s, %s, 16, %s); __syncwarp(); \
+              sarek_cm_stage_out(%s, %s, (%s)); __syncwarp();"
+             tile
+             src
+             (cuda_mem_layout layout)
+             ptr
+             tile
+             stride))
 
 let gen_muladd ~indent ~dst ~a ~b ~c (cfg : C.config) =
   check_config cfg ;
@@ -482,14 +621,28 @@ let gen_muladd ~indent ~dst ~a ~b ~c (cfg : C.config) =
 
 (** [gen_op ~indent ~ctx ~expr_str op] is the source for one cooperative matrix
     statement, both arms; [ctx] is {!kernel_context} of the kernel. *)
-let gen_op ~indent ~ctx ~expr_str = function
+let gen_op ~indent ~ctx ~expr_str (op : coopmat_op) =
+  match op with
   | CM_decl {name; frag} -> gen_decl ~indent ~ctx name frag
   | CM_load {dst; frag; src; index; stride; layout} ->
       let buffers = ctx.buffers in
-      gen_load ~indent ~buffers ~expr_str ~dst ~frag ~src ~index ~stride ~layout
+      gen_load
+        ~ctx
+        ~op
+        ~indent
+        ~buffers
+        ~expr_str
+        ~dst
+        ~frag
+        ~src
+        ~index
+        ~stride
+        ~layout
   | CM_store {src; frag; dst; index; stride; layout} ->
       let buffers = ctx.buffers in
       gen_store
+        ~ctx
+        ~op
         ~indent
         ~buffers
         ~expr_str

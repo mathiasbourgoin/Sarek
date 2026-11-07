@@ -112,6 +112,17 @@ type reg_alloc = {
       (** Cooperative-matrix fragments declared so far, by name (a later
           declaration of the same name replaces the earlier one). Empty for
           every kernel without an [SCoopmat] statement. *)
+  mutable coop_proven : coopmat_op list;
+      (** The cooperative-matrix loads and stores proven aligned at code
+          generation ({!Sarek_ir_coopmat_align}), by physical identity. Set by
+          [generate]. *)
+  mutable coop_warps : int option;
+      (** Warps per block when the launch block is known: the size of the
+          staging buffer. [None]: a misaligned access traps. *)
+  coop_slow : Buffer.t;
+      (** Out-of-line slow paths (staging through shared memory), appended after
+          the kernel's final [ret]. *)
+  mutable coop_tiles : bool;  (** the staging buffer is declared *)
   mutable coop_buffers : string list;
       (** Arrays a cooperative-matrix load or store reads or writes: a [.shared]
           one is declared 32-byte aligned (what [wmma] requires). Set by
@@ -144,6 +155,10 @@ let make_alloc () =
     inline_budget = Hashtbl.create 4;
     inline_ret = [];
     coop_frags = Hashtbl.create 4;
+    coop_proven = [];
+    coop_warps = None;
+    coop_slow = Buffer.create 256;
+    coop_tiles = false;
     coop_buffers = [];
     coop_layouts = [];
   }

@@ -14,6 +14,19 @@
   Tests: `sarek/tests/unit/test_ptx_coopmat.ml` (snapshots, refusals, full parity grid with CUDA/C,
   ptxas gate that skips without ptxas) and `sarek/tests/e2e/test_ptx_coopmat_e2e.ml` /
   `test_ptx_coopmat_int8_e2e.ml` (differential, need an NVIDIA GPU; skip elsewhere).
+  Misaligned tiles (a start index or stride that is not a multiple of the 32-byte / 16-byte `wmma`
+  requirement) no longer trap on CUDA/C and CUDA/PTX: an access provably aligned at code generation
+  (`Sarek_ir_coopmat_align`: constants and let-bound multiples) is the bare instruction; any other
+  access, with the launch block known, tests alignment at run time (one warp-uniform branch) and a
+  misaligned tile is staged element by element through a 32-byte aligned per-warp shared buffer
+  (1 KiB per warp, declared only when an access is unproven), so results are the interpreter's for
+  any index and stride, in either layout, for loads and stores (a store writes only its tile). With
+  no block known the trap remains. A kernel whose accesses depend on scalar arguments (a GEMM's `k`
+  and `n`) pays no buffer when the launch arguments are aligned: `Sarek_ir_coopmat_align.derive`
+  reduces "every access is aligned" to a condition on the kernel's int32 parameters (for the GEMM,
+  `k` and `n` multiples of 8), and `Execute` generates and runs the variant without check or buffer
+  when the actual arguments satisfy it, the staged variant otherwise (one source per variant and block;
+  CUDA frameworks only). Test: `sarek/tests/e2e/test_coopmat_misalign_e2e.ml`.
   Not yet executed on NVIDIA hardware.
 
 ## 2026-10

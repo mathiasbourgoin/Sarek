@@ -17,6 +17,7 @@
   Sarek_policy_env
   Sarek_policy
   Sarek_coopmat_types
+  Sarek_ir_coopmat_align
   Sarek_coopmat
   Sarek_f16_policy
   Sarek_ir_codegen

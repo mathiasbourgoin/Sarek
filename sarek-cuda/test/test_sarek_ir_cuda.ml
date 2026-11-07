@@ -20,7 +20,8 @@ let st : Sarek_ir_cuda.state =
   {
     variants = [];
     coopmat =
-      Sarek_codegen.Sarek_ir_cuda_coopmat.{buffers = []; operand_layouts = []};
+      Sarek_codegen.Sarek_ir_cuda_coopmat.kernel_context
+        Sarek_ir_types.default_kernel;
     narrowing = Barrier_unless_exact Sarek_codegen.Sarek_ir_f16_narrowing.empty;
     sites = {total = 0; proven = 0};
   }
