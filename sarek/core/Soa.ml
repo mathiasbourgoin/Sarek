@@ -36,17 +36,16 @@ let reject_non_flat name fields =
                    slice 1 supports f16 vectors, not aggregate fields)"
                   fname
                   name))
-      | TUint8 ->
-          (* Not a missing marshaller like the f16 case above: a uint8 field is
-             a cooperative-matrix operand element, which no host record can hold
-             because nothing outside CM_load/CM_store ever reads or writes one.
-             A field of this type in a [@@sarek.type] record means the type
-             escaped the Vulkan coopmat path, not that SoA needs extending. *)
+      | (TUint8 | TInt8) as t ->
+          (* 8-bit types are array element types only (Sarek_ir_int8): no
+             record field, host or device, has one, so there is nothing to
+             split. *)
           raise
             (Unsupported
                (Printf.sprintf
-                  "uint8 field %S in %S: uint8 is a cooperative-matrix operand \
-                   element type (Vulkan only), not a record field type"
+                  "%s field %S in %S: 8-bit integer types are array element \
+                   types only, not record field types"
+                  (Sarek_ir_pp.string_of_elttype t)
                   fname
                   name))
       | TRecord _ ->

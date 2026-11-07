@@ -1545,6 +1545,20 @@
  (action
   (run %{dep:test_coopmat_integer_e2e.exe})))
 
+; 8-bit storage types (uint8/int8): global reads, stores and casts, and u8/s8
+; shared arrays, on every enumerated device, bit-identical to the interpreter,
+; with the interpreter checked against an independent host model and a
+; zero-extension control that must be rejected. A device without 8-bit storage
+; must be refused by the launch gate. Native is skipped (IR kernels).
+; SAREK_TEST_EXCLUDE_DEVICES=sub1,sub2 skips devices by name. Built by the
+; test_int32_bitcasts stanza below (which links the HIP and CUDA/C plugins).
+; Run with: dune exec sarek/tests/e2e/test_int8_storage_e2e.exe
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_int8_storage_e2e.exe})))
+
 ; float64 literal precision, Float64 scalar conversions, and the softmath
 ; helper name collision on GLSL. One sub-expression per output slot, compared
 ; bit-for-bit with OCaml binary64. The scalar parameter is deliberately named
@@ -2015,6 +2029,7 @@
 (executables
  (names
   test_int32_bitcasts
+  test_int8_storage_e2e
   test_warp_shuffle_parity
   test_warp_shuffle_reduce
   bench_warp_shuffle
@@ -2043,6 +2058,7 @@
   test_matrix_kernel_scope)
  (modules
   test_int32_bitcasts
+  test_int8_storage_e2e
   test_warp_shuffle_parity
   test_warp_shuffle_reduce
   bench_warp_shuffle
@@ -2087,6 +2103,7 @@
   sarek_backend_error
   sarek.codegen
   sarek.execute
+  int8_kernels
   (select
    backend_hip.ml
    from

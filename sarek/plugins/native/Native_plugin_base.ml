@@ -247,6 +247,7 @@ end = struct
           [
             Sarek_ir_analysis.Float64;
             Sarek_ir_analysis.Int64;
+            Sarek_ir_analysis.Int8;
             Sarek_ir_analysis.Warp_shuffle;
           ];
         (* backlog-62: no cooperative-matrix probe on this backend. [None] is
@@ -354,6 +355,13 @@ end = struct
             size;
             device;
           }
+      | Bigarray.Int8_signed ->
+          {
+            storage = Bigarray_storage arr;
+            kind = Scalar_kind Spoc_core.Vector_types.Int8;
+            size;
+            device;
+          }
       | Bigarray.Complex32 ->
           {
             storage = Bigarray_storage arr;
@@ -456,6 +464,14 @@ end = struct
             {
               storage = Bigarray_storage ba;
               kind = Scalar_kind Spoc_core.Vector_types.Char;
+              size;
+              device;
+            }
+      | Bigarray.Int8_signed ->
+          Some
+            {
+              storage = Bigarray_storage ba;
+              kind = Scalar_kind Spoc_core.Vector_types.Int8;
               size;
               device;
             }

@@ -300,11 +300,12 @@ and eval_special_expr state env = function
       | TFloat32 -> VFloat32 (to_float32 v)
       | TFloat64 -> VFloat64 (to_float64 v)
       | TBool -> VBool (to_bool v)
-      | TUint8 ->
-          (* The narrowing store into a [uint8] array (a byte plane of the
-             int32 matrix-unit rewrite, specs/matrix-pattern-rewrite.md): the
-             low 8 bits, as the C [(unsigned char)] cast keeps them. *)
-          VInt32 (Int32.logand (to_int32 v) 0xffl)
+      | (TUint8 | TInt8) as t ->
+          (* 8-bit storage types (Sarek_ir_int8): the int32 a store of [v]
+             followed by a read gives back: the low byte, zero-extended for
+             uint8 and sign-extended for int8. Reads and stores of 8-bit arrays
+             reach this arm too, through [Sarek_ir_int8.normalise]. *)
+          VInt32 (Sarek_ir_int8.narrow t (to_int32 v))
       | _ -> v)
   | _ ->
       Interp_error.raise_error

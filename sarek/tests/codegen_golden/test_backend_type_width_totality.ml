@@ -69,7 +69,8 @@ open Sarek_codegen
 let next_elt : elttype -> elttype option = function
   | TInt32 -> Some TInt64
   | TInt64 -> Some TUint8
-  | TUint8 -> Some TFloat16
+  | TUint8 -> Some TInt8
+  | TInt8 -> Some TFloat16
   | TFloat16 -> Some TFloat32
   | TFloat32 -> Some TFloat64
   | TFloat64 -> Some TBool
@@ -95,6 +96,7 @@ let name_of_elt = function
   | TInt64 -> "TInt64"
   | TFloat16 -> "TFloat16"
   | TUint8 -> "TUint8"
+  | TInt8 -> "TInt8"
   | TFloat32 -> "TFloat32"
   | TFloat64 -> "TFloat64"
   | TBool -> "TBool"
@@ -138,6 +140,15 @@ let c_family_width = function
      bit-identical to the interpreter over all 65536 operand pairs, which a
      4-byte slot would make impossible. *)
   | "unsigned char" -> Some (Bytes 1)
+  (* [TInt8] on CUDA/HIP, and [TUint8]/[TInt8] on OpenCL C (whose [char] is
+     signed, OpenCL C 6.1.1): C fixes sizeof of every character type at 1 (C11
+     6.5.3.4), and OpenCL C fixes [char]/[uchar] at 8 bits in its table of
+     built-in scalar types. Measured end to end by test_int8_storage_e2e, which
+     reads and writes these buffers at a 1-byte stride on HIP and OpenCL
+     devices bit-identically to the interpreter. *)
+  | "signed char" -> Some (Bytes 1)
+  | "uchar" -> Some (Bytes 1)
+  | "char" -> Some (Bytes 1)
   | "float" -> Some (Bytes 4)
   | "double" -> Some (Bytes 8)
   | "void" -> Some (No_memory_form "C `void` has no object representation")
@@ -152,6 +163,10 @@ let metal_width = function
   | "int" -> Some (Bytes 4)
   | "long" -> Some (Bytes 8)
   | "half" -> Some (Bytes 2)
+  (* MSL fixes [char]/[uchar] at 8 bits (MSL spec, size and alignment of
+     scalar data types). Not executed: no Apple device here. *)
+  | "uchar" -> Some (Bytes 1)
+  | "char" -> Some (Bytes 1)
   | "float" -> Some (Bytes 4)
   | "void" -> Some (No_memory_form "MSL `void` has no object representation")
   | _ -> None
@@ -182,6 +197,9 @@ let glsl_width = function
      element silently occupying 4 bytes on the device would make every
      cooperative-matrix operand load read one value in four. *)
   | "uint8_t" -> Some (Bytes 1)
+  (* Measured the same way on the int8 storage shader of
+     test_int8_storage_e2e: %char = OpTypeInt 8 1, ArrayStride 1. *)
+  | "int8_t" -> Some (Bytes 1)
   | "int64_t" -> Some (Bytes 8)
   | "float16_t" -> Some (Bytes 2)
   | "float" -> Some (Bytes 4)
@@ -297,7 +315,7 @@ let run_mapper b t =
 let test_enumeration_is_complete () =
   Alcotest.(check int)
     "scalar elttype constructors swept"
-    8
+    9
     (List.length all_scalar_elts) ;
   Alcotest.(check int) "backends swept" 6 (List.length backends) ;
   (* A count alone does not prove the chain was walked correctly — see the

@@ -38,6 +38,13 @@ val reject_feature :
   Sarek_ir_types.kernel ->
   unit
 
+(** [reject_int8_misuse ~raise_ ~backend k] raises, via [raise_], when [k] uses
+    [TUint8]/[TInt8] outside the positions {!Sarek_ir_int8} supports (see
+    {!Sarek_ir_int8.refusal}). Every backend calls it at its [generate] entry.
+*)
+val reject_int8_misuse :
+  raise_:(string -> unit) -> backend:string -> Sarek_ir_types.kernel -> unit
+
 (** {1 Measured f16 refusals (#57 slices 2a/2b, single-sourced by #138)}
 
     Two backends left {!reject_feature} because "not yet supported" was false of

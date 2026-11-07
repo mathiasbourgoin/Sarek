@@ -441,6 +441,17 @@ let escape_wgsl_name name =
   then wgsl_escape_prefix ^ name
   else name
 
+(** Why WGSL refuses the 8-bit storage types. Structural, not a queue position:
+    WGSL's scalar types are bool, i32, u32, f32 and f16, it has no 8-bit integer
+    type and no 8-bit storage access, so a one-byte element stride cannot be
+    spelled. Emulating it with 32-bit words and masks would make two invocations
+    storing neighbouring bytes race on one word. *)
+let int8_refusal =
+  "WGSL: WebGPU has no 8-bit integer type (WGSL scalars are bool, i32, u32, \
+   f32 and f16) and no 8-bit storage access, so a uint8/int8 array cannot be \
+   laid out; emulating it in 32-bit words would make stores to neighbouring \
+   bytes race. Use int32 elements, or another backend"
+
 (** Map Sarek IR element type to WGSL type string. Float64 (f64) is not
     supported in WebGPU — callers must check for TFloat64 before reaching this
     function and raise [Codegen_error.unsupported_construct]. *)
@@ -460,17 +471,13 @@ let rec wgsl_type_of_elttype = function
            "f16"
            "WGSL: float16 not yet supported (#57 slice 2 — needs a module-top \
             `enable f16;` directive)")
-  | TUint8 ->
-      (* Core WebGPU has no 8-bit scalar at all, but even if it did this arm
-         would refuse: [TUint8] is not a general integer type here, it is the
-         element type of a cooperative-matrix operand buffer, and WGSL has no
-         cooperative-matrix construct to consume one. *)
+  | (TUint8 | TInt8) as t ->
+      (* Unreachable past [reject_int8_kernel]; kept a refusal with the same
+         reason so a direct caller of this mapper cannot get a type string. *)
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
-           "uint8"
-           "WGSL: uint8 is a cooperative-matrix operand element type, emitted \
-            only by the Vulkan and CUDA/HIP backends, and WGSL has no \
-            cooperative-matrix path")
+           (Sarek_ir_pp.string_of_elttype t)
+           int8_refusal)
   | TFloat32 -> "f32"
   | TFloat64 ->
       Codegen_error.raise_error
@@ -491,7 +498,8 @@ let rec has_float64 = function
   | TRecord (_, fields) -> List.exists (fun (_, t) -> has_float64 t) fields
   | TVariant (_, constrs) ->
       List.exists (fun (_, ts) -> List.exists has_float64 ts) constrs
-  | TInt32 | TInt64 | TFloat16 | TFloat32 | TBool | TUnit | TUint8 -> false
+  | TInt32 | TInt64 | TFloat16 | TFloat32 | TBool | TUnit | TUint8 | TInt8 ->
+      false
 
 (** {1 Thread Intrinsics}
 
@@ -1602,8 +1610,8 @@ let reject_float16_kernel =
 
 (* Whole-kernel cooperative-matrix gate, at the same choke point and for the
    reason given at {!Sarek_ir_codegen.reject_feature}: the per-node arms see
-   only what the emitter reaches, and a [TUint8] parameter that is never loaded
-   from carries the feature without reaching any of them. Not routed through
+   only what the emitter reaches, and a cooperative-matrix statement can sit in
+   a branch the emitter never enters. Not routed through
    [reject_feature] because its composed sentence hardcodes "#57 slice 2", which
    is the f16 history and not this one. *)
 let reject_coopmat_kernel (k : kernel) : unit =
@@ -1615,6 +1623,14 @@ let reject_coopmat_kernel (k : kernel) : unit =
           matrices and their uint8 operand buffers are emitted only by the \
           Vulkan and CUDA/HIP backends (backlog-62)")
 
+(* The 8-bit storage gate, at the same choke point and for the same reason: an
+   8-bit parameter that is never read carries the type without reaching any
+   arm of the type mapper. *)
+let reject_int8_kernel (k : kernel) : unit =
+  if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int8 k then
+    Codegen_error.raise_error
+      (Codegen_error.unsupported_construct "int8" int8_refusal)
+
 (** Generate WGSL source with custom type definitions.
 
     Omitting it is what every runtime caller does and reproduces the
@@ -1623,6 +1639,7 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
+  reject_int8_kernel k ;
   if params_have_float64 k.kern_params then
     Codegen_error.raise_error
       (Codegen_error.unsupported_construct

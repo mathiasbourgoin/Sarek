@@ -54,24 +54,24 @@ type elttype =
   | TFloat32
   | TFloat64
   | TUint8
-      (** Unsigned 8-bit integer {e storage} type (backlog-62 slice 3).
+      (** Unsigned 8-bit integer {e storage} type, on the [TFloat16] model: an
+          array element occupies one byte, but there is no 8-bit value at run
+          time and no 8-bit arithmetic. Reading an element gives an int32
+          (zero-extended); storing an int32 keeps its low 8 bits;
+          [ECast (TUint8, e)] is the int32 [e land 0xff]. Valid as the element
+          type of a global ([TVec]) or shared ([DShared],
+          [EArrayCreate (_, _, Shared)]) array and as a cast target; an 8-bit
+          scalar binder, record field or private array is refused (see
+          {!Sarek_ir_int8}, which holds the shared semantics).
 
-          It exists for one reason and its scope is deliberately that narrow: it
-          is the element type of a cooperative-matrix OPERAND BUFFER. Every one
-          of the twelve integer configurations the local RX 7900 XTX advertises
-          has 8-bit operands with a 32-bit accumulator, and [coopMatLoad]
-          requires the backing array's element type to MATCH the fragment's
-          component type — so there is no route to an integer fragment through a
-          wider buffer, and no way to reach the strict-contract tensor-core path
-          without an 8-bit element type in the IR.
-
-          There is no arithmetic on it. No binop, no literal, no cast to or from
-          it is emitted by any backend; a [TUint8] value reaches a kernel only
-          by being read by {!Sarek_ir_types.CM_load} and leaves only by
-          {!Sarek_ir_types.CM_store}. That is not an oversight to be filled in
-          later — widening it into a general arithmetic type is a separate
-          decision with its own promotion and overflow questions, and this slice
-          measured none of them. *)
+          It is also the element type of an 8-bit cooperative-matrix operand
+          buffer, of either signedness: [coopMatLoad] requires the backing
+          array's element type to match the fragment's component type, and the
+          s8 fragments of this IR read a [TUint8] buffer as signed. *)
+  | TInt8
+      (** Signed 8-bit integer storage type: as [TUint8], with the read
+          sign-extended and [ECast (TInt8, e)] the low byte of [e]
+          sign-extended. *)
   | TBool
   | TUnit
   | TRecord of string * (string * elttype) list

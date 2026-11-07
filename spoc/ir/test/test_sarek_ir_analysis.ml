@@ -974,10 +974,17 @@ let test_kernel_requirements () =
     = [Float64; Float16]) ;
   (* Every feature must be reachable from [all_features]; a new constructor that
      is not added there would silently never be required. *)
-  assert (List.length all_features = 5) ;
+  assert (List.length all_features = 6) ;
   assert (
     List.map feature_name all_features
-    = ["float64"; "float16"; "int64"; "cooperative-matrix"; "warp-shuffle"]) ;
+    = [
+        "float64";
+        "float16";
+        "int64";
+        "int8-storage";
+        "cooperative-matrix";
+        "warp-shuffle";
+      ]) ;
   (* [Int64], added in #141 so the GLSL backend can gate
      `#extension GL_ARB_gpu_shader_int64` on the user's own int64 and not only
      on the software-f64 helpers that bit-cast a double. *)
@@ -1163,17 +1170,37 @@ let test_coopmat_detection () =
      an element type, so before the [fs] hook existed no folder could see it. *)
   assert (kernel_uses Coopmat (empty_kernel muladd)) ;
   assert (kernel_has_coopmat_op (empty_kernel muladd)) ;
-  (* A TUint8 buffer alone reports the FEATURE but not an OPERATION. That
-     distinction is what lets the GLSL backend emit the int8 extension without
-     the cooperative-matrix one, and it is asserted in BOTH directions because
-     collapsing the two is the easy mistake. *)
+  (* An 8-bit buffer is a plain storage type: it reports [Int8] and NOT
+     [Coopmat]. It used to report [Coopmat] when [TUint8] existed only as a
+     cooperative-matrix operand element; a kernel that merely stores int8
+     values must not acquire a cooperative-matrix requirement. Both
+     signednesses, and both directions of the implication. *)
   let k_u8 =
     feature_kern
       [DParam (u8_param, Some {arr_elttype = TUint8; arr_memspace = Global})]
       SEmpty
   in
-  assert (kernel_uses Coopmat k_u8) ;
-  assert (not (kernel_has_coopmat_op k_u8)) ;
+  let s8_param = {u8_param with var_type = TVec TInt8} in
+  let k_s8 =
+    feature_kern
+      [DParam (s8_param, Some {arr_elttype = TInt8; arr_memspace = Global})]
+      SEmpty
+  in
+  let k_shared_s8 =
+    empty_kernel
+      (SLet
+         ( {u8_param with var_type = TArray (TInt8, Shared)},
+           EArrayCreate (TInt8, EConst (CInt32 64l), Shared),
+           SEmpty ))
+  in
+  List.iter
+    (fun k ->
+      assert (kernel_uses Int8 k) ;
+      assert (not (kernel_uses Coopmat k)) ;
+      assert (not (kernel_has_coopmat_op k)))
+    [k_u8; k_s8; k_shared_s8] ;
+  (* A cooperative-matrix statement does not, by itself, need 8-bit storage. *)
+  assert (not (kernel_uses Int8 (empty_kernel muladd))) ;
   (* And an ordinary kernel trips neither. *)
   assert (not (kernel_uses Coopmat (empty_kernel SEmpty))) ;
   assert (not (kernel_has_coopmat_op (empty_kernel SEmpty))) ;

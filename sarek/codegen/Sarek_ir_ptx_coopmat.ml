@@ -182,20 +182,14 @@ let sm_number target =
   int_of_string_opt digits
 
 (** The whole-kernel refusal, run before any instruction is emitted (a per-node
-    refusal would name whichever node the emitter reached first, and a [TUint8]
-    buffer that is only stored to reaches none). Also the launch shape: the
-    instructions run on whole warps, and a partial warp has inactive lanes that
-    would feed them undefined operands. *)
+    refusal would name whichever node the emitter reached first). A uint8 buffer
+    without a cooperative-matrix statement is ordinary 8-bit storage
+    (Sarek_ir_int8) and is not this function's business. Also the launch shape:
+    the instructions run on whole warps, and a partial warp has inactive lanes
+    that would feed them undefined operands. *)
 let check_kernel ?block ~sm_target (k : kernel) : unit =
   let ops = Sarek_ir_analysis.kernel_coopmat_ops k in
-  if ops = [] then begin
-    if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
-      refuse
-        "uint8 buffer"
-        "a uint8 operand buffer without a cooperative-matrix statement (uint8 \
-         is the element type of 8-bit operand buffers only)"
-  end
-  else begin
+  if ops <> [] then begin
     (match sm_number sm_target with
     | Some sm when sm >= min_sm -> ()
     | _ ->
@@ -268,6 +262,9 @@ let elt_name = function
   | TFloat16 -> "float16"
   | TFloat32 -> "float32"
   | TUint8 -> "uint8"
+  (* s8 fragments read a uint8 buffer too: the bytes are the same. *)
+  | TInt8 ->
+      "int8 (an 8-bit fragment of either signedness loads a uint8 buffer)"
   | TInt32 -> "int32"
   | _ -> "a non-numeric type"
 

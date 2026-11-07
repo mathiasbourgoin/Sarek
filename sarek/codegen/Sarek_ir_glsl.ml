@@ -109,6 +109,10 @@ type state = {
   needs_int64 : bool;
   f64_needs_copysign : bool;
   helper_vec_param_indices : (string, int list) Hashtbl.t;
+  byte_arrays : (string * elttype) list;
+      (** The kernel's 8-bit arrays ({!Sarek_ir_int8.byte_arrays}). GLSL has no
+          implicit conversion between [uint8_t]/[int8_t] and [int], so a read
+          must be widened and a store narrowed by name. *)
 }
 
 (** {1 Type Mapping} *)
@@ -333,15 +337,20 @@ let rec glsl_type_of_elttype = function
            Sarek_ir_codegen.glsl_float16_refusal)
   | TUint8 ->
       (* Spelled under GL_EXT_shader_explicit_arithmetic_types_int8, which
-         {!glsl_header} emits whenever the kernel mentions this type at all. The
-         extension is not optional in the way the fp64 one is: [uint8_t] does
-         not parse under plain [#version 450].
+         {!glsl_header} emits whenever the kernel uses an 8-bit type at all
+         (or a cooperative matrix). The extension is not optional in the way
+         the fp64 one is: [uint8_t] does not parse under plain [#version 450].
 
-         Unlike every other arm of this function, nothing arithmetic is ever
-         generated at this type — see {!Sarek_ir_types.TUint8}. It appears in
-         exactly two positions: the element type of a storage buffer, and the
-         component type of a cooperative-matrix fragment. *)
+         8-bit storage (Sarek_ir_int8): nothing arithmetic is generated at
+         this type. GLSL has no implicit conversion to or from [int], so the
+         emitter widens every read ([int(a[i])], zero extension), narrows
+         every store ([a[i] = uint8_t(e)], low 8 bits) and spells [ECast] as
+         the round trip [int(uint8_t(e))]. Also the component type of a uint8
+         cooperative-matrix fragment. *)
       "uint8_t"
+  | TInt8 ->
+      (* As [TUint8]; [int(int8_t)] sign-extends. *)
+      "int8_t"
   | TFloat32 -> "float"
   | TFloat64 -> "double" (* Requires GL_ARB_gpu_shader_fp64 *)
   | TBool -> "bool"
@@ -514,11 +523,25 @@ let rec gen_expr st buf = function
       Buffer.add_string buf (gen_unop op) ;
       gen_expr st buf e ;
       Buffer.add_char buf ')'
+  | EArrayRead (arr, idx) when List.mem_assoc arr st.byte_arrays ->
+      (* An 8-bit element reads as an int32 (Sarek_ir_int8): widen it. *)
+      Buffer.add_string buf "int(" ;
+      Buffer.add_string buf (escape_glsl_name arr) ;
+      Buffer.add_char buf '[' ;
+      gen_expr st buf idx ;
+      Buffer.add_string buf "])"
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf (escape_glsl_name arr) ;
       Buffer.add_char buf '[' ;
       gen_expr st buf idx ;
       Buffer.add_char buf ']'
+  | EArrayReadExpr ((EVar v as base), idx)
+    when Option.is_some (Sarek_ir_int8.byte_elt_of_type v.var_type) ->
+      Buffer.add_string buf "int((" ;
+      gen_expr st buf base ;
+      Buffer.add_string buf ")[" ;
+      gen_expr st buf idx ;
+      Buffer.add_string buf "])"
   | EArrayReadExpr (base, idx) ->
       Buffer.add_char buf '(' ;
       gen_expr st buf base ;
@@ -532,6 +555,14 @@ let rec gen_expr st buf = function
       Buffer.add_string buf field
   | EIntrinsic (path, name, args) ->
       Dispatch.gen_intrinsic (glsl_backend st) buf path name args
+  | ECast (((TUint8 | TInt8) as ty), e) ->
+      (* The int32 a store followed by a read gives back (Sarek_ir_int8):
+         narrow, then widen with the extension of the type. *)
+      Buffer.add_string buf "int(" ;
+      Buffer.add_string buf (glsl_type_of_elttype ty) ;
+      Buffer.add_char buf '(' ;
+      gen_expr st buf e ;
+      Buffer.add_string buf "))"
   | ECast (ty, e) ->
       Buffer.add_string buf (glsl_type_of_elttype ty) ;
       Buffer.add_char buf '(' ;
@@ -996,6 +1027,12 @@ let rec gen_lvalue st buf = function
 
 (** {1 Statement Generation} *)
 
+(** The 8-bit element type a store into [lv] narrows to, if any. *)
+let byte_store_elt st = function
+  | LArrayElem (arr, _) -> List.assoc_opt arr st.byte_arrays
+  | LArrayElemExpr (EVar v, _) -> Sarek_ir_int8.byte_elt_of_type v.var_type
+  | LArrayElemExpr _ | LVar _ | LRecordField _ -> None
+
 (** Nested indentation level *)
 let indent_nested indent = indent ^ "  "
 
@@ -1257,12 +1294,24 @@ let is_unroll_loop hints body =
 let rec gen_stmt st buf indent = function
   | SEmpty -> ()
   | SSeq stmts -> List.iter (gen_stmt st buf indent) stmts
-  | SAssign (lv, e) ->
+  | SAssign (lv, e) -> (
       Buffer.add_string buf indent ;
       gen_lvalue st buf lv ;
       Buffer.add_string buf " = " ;
-      gen_expr st buf e ;
-      Buffer.add_string buf ";\n"
+      match byte_store_elt st lv with
+      | Some t ->
+          (* An int32 stored into an 8-bit element keeps its low 8 bits
+             (Sarek_ir_int8); GLSL wants the conversion spelled. A value that
+             already is the cast to this type is narrowed once, not
+             narrowed-widened-narrowed. *)
+          let e = match e with ECast (t', x) when t' = t -> x | _ -> e in
+          Buffer.add_string buf (glsl_type_of_elttype t) ;
+          Buffer.add_char buf '(' ;
+          gen_expr st buf e ;
+          Buffer.add_string buf ");\n"
+      | None ->
+          gen_expr st buf e ;
+          Buffer.add_string buf ";\n")
   | SIf (cond, then_, else_opt) -> (
       Buffer.add_string buf indent ;
       Buffer.add_string buf "if (" ;
@@ -2030,6 +2079,7 @@ let state (k : kernel) : state =
     needs_int64;
     f64_needs_copysign;
     helper_vec_param_indices = Hashtbl.create 16;
+    byte_arrays = Sarek_ir_int8.byte_arrays k;
   }
 
 (** Emit the needed software f64-transcendental helpers ([st.f64_helpers]). The
@@ -2162,6 +2212,12 @@ let gen_variant_def buf v =
 let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float16_kernel k ;
+  Sarek_ir_codegen.reject_int8_misuse
+    ~raise_:(fun reason ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "int8" reason))
+    ~backend:"Vulkan"
+    k ;
   (* A local that redeclares a local, or is not an identifier; reserved words
      and parameter shadowing have the escapers of this backend. See
      Sarek_ir_names. *)
@@ -2169,6 +2225,9 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
   (* Inline vector-parameter helpers (buffers cannot be passed as GLSL function
      arguments — see Sarek_ir_inline_vec). *)
   let k = Sarek_ir_inline_vec.inline_vec_helpers ~backend:"Vulkan" k in
+  (* An 8-bit local scalar becomes an int holding the narrowed value: GLSL has
+     no implicit conversion between uint8_t/int8_t and int (Sarek_ir_int8). *)
+  let k = Sarek_ir_int8.lower_scalars k in
   (* A [for] bound is evaluated once (Sarek_ir_for_bound), then unroll hints
      for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_for_bound.hoist k in
@@ -2188,7 +2247,9 @@ let generate_with_types ?block ?(log : string -> unit = fun _ -> ())
        ~uses_float64:(Sarek_ir_analysis.kernel_uses_float64 k)
        ~uses_int64:st.needs_int64
        ~uses_coopmat:(Sarek_ir_analysis.kernel_has_coopmat_op k)
-       ~uses_uint8:(Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k)
+       ~uses_uint8:
+         (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int8 k
+         || Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k)
        ~uses_loop_attributes:(kernel_has_unroll_loop k)
        ~warp_calls
        ()) ;

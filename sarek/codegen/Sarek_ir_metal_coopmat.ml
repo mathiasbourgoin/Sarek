@@ -34,12 +34,13 @@ let unsupported what why =
 
 let shape_8 = {C.m = 8; n = 8; k = 8}
 
-(** The reason integer components have no lowering, shared with the [TUint8]
-    buffer arm of the type mapper. *)
+(** The reason integer fragments have no lowering. A plain 8-bit buffer is
+    ordinary storage on Metal ([uchar]/[char]); only the integer fragment is
+    refused. *)
 let no_integer_reason =
   "Metal: there is no integer simdgroup_matrix (MSL's simdgroup_matrix element \
-   types are half, float and bfloat), so integer cooperative matrices and \
-   their uint8 operand buffers have no Metal lowering"
+   types are half, float and bfloat), so integer cooperative matrices have no \
+   Metal lowering"
 
 (** Refuse, at code generation, a fragment this lowering cannot represent. Total
     over the fragment type. *)

@@ -213,14 +213,15 @@ let exists_folder ~leaf ?(type_leaf = fun _ -> false)
     [Kernel.requirements] capability field reduces to, and it lives in the right
     layer already ([spoc/ir], no backend dependencies). *)
 
-type feature = Float64 | Float16 | Int64 | Coopmat | Warp_shuffle
+type feature = Float64 | Float16 | Int64 | Int8 | Coopmat | Warp_shuffle
 
-let all_features = [Float64; Float16; Int64; Coopmat; Warp_shuffle]
+let all_features = [Float64; Float16; Int64; Int8; Coopmat; Warp_shuffle]
 
 let feature_name = function
   | Float64 -> "float64"
   | Float16 -> "float16"
   | Int64 -> "int64"
+  | Int8 -> "int8-storage"
   | Coopmat -> "cooperative-matrix"
   | Warp_shuffle -> "warp-shuffle"
 
@@ -234,14 +235,15 @@ let rec elttype_uses (f : feature) = function
   | TVariant (_, constrs) ->
       List.exists (fun (_, args) -> List.exists (elttype_uses f) args) constrs
   | TArray (elt, _) | TVec elt -> elttype_uses f elt
-  (* [TUint8] counts as Coopmat, and this is load-bearing rather than tidy. It
-     is the element type of a cooperative-matrix OPERAND BUFFER and exists for
-     nothing else, so a kernel that declares one already needs shaderInt8 and
-     storageBuffer8BitAccess on the device and the int8 extension in the shader
-     — whether or not it also reaches a multiply-add. Reporting it as
-     feature-free would let a kernel acquire the 8-bit requirement without
-     passing the gate that checks for it. *)
-  | TUint8 -> f = Coopmat
+  (* 8-bit storage, of either signedness. A kernel that declares an 8-bit
+     buffer needs byte-addressable storage on the device (on Vulkan,
+     shaderInt8 and storageBuffer8BitAccess) whether or not it also reaches a
+     cooperative-matrix statement; it does NOT need cooperative matrices.
+     [TUint8] used to count as [Coopmat] when it existed only as an operand
+     element type, and every consumer of that rule (the GLSL int8 extension,
+     the whole-kernel coopmat refusals, kernel fusion) now asks for [Int8]
+     explicitly. *)
+  | TUint8 | TInt8 -> f = Int8
   | TInt32 | TFloat32 | TBool | TUnit -> false
 
 (** Is constant [c] a literal of width [f]? [Float64] and [Int64] each have one
@@ -269,7 +271,7 @@ let feature_leaf f = function
 let feature_stmt_leaf f s =
   match (f, s) with
   | Coopmat, SCoopmat _ -> true
-  | (Coopmat | Float64 | Float16 | Int64 | Warp_shuffle), _ -> false
+  | (Coopmat | Float64 | Float16 | Int64 | Int8 | Warp_shuffle), _ -> false
 
 let folder_of f =
   exists_folder
@@ -288,6 +290,8 @@ let float16_folder = folder_of Float16
 
 let int64_folder = folder_of Int64
 
+let int8_folder = folder_of Int8
+
 let coopmat_folder = folder_of Coopmat
 
 let warp_shuffle_folder = folder_of Warp_shuffle
@@ -296,6 +300,7 @@ let folder = function
   | Float64 -> float64_folder
   | Float16 -> float16_folder
   | Int64 -> int64_folder
+  | Int8 -> int8_folder
   | Coopmat -> coopmat_folder
   | Warp_shuffle -> warp_shuffle_folder
 
@@ -613,11 +618,12 @@ let kernel_coopmat_ops k =
 
 (** Whether the kernel contains a cooperative-matrix OPERATION.
 
-    Strictly stronger than [kernel_uses Coopmat], which is also true for a
-    kernel that merely declares a [TUint8] buffer. The distinction is what lets
-    the GLSL backend emit the 8-bit extension without the cooperative-matrix
-    one: a kernel that never reaches a multiply-add must not carry a shader
-    requirement the device gate was never asked about. *)
+    The same answer as [kernel_uses Coopmat] since an 8-bit buffer stopped
+    implying [Coopmat] ([kernel_uses Int8] answers that question now). Kept as
+    its own name because its callers ask about OPERATIONS: the GLSL backend
+    emits the cooperative-matrix extensions on it, and a kernel that never
+    reaches one must not carry a shader requirement the device gate was never
+    asked about. *)
 let kernel_has_coopmat_op k = kernel_coopmat_ops k <> []
 
 (** The distinct configurations a kernel's multiply-adds require.

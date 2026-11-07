@@ -21,11 +21,10 @@ val fail : string -> 'a
     construct named [what]. *)
 val unsupported : string -> 'a
 
-(** [unsupported_coopmat_elttype what] raises {!Ptx_codegen_error} for a
-    [TUint8] reaching the site named [what]. [TUint8] is not a general 8-bit
-    integer: it is the element type of a cooperative-matrix operand buffer,
-    meaningful only with the [SCoopmat] statements the Vulkan backend emits, so
-    no amount of PTX register work makes it representable here. *)
+(** [unsupported_coopmat_elttype what] raises {!Ptx_codegen_error} for an 8-bit
+    type reaching a register-type question at the site named [what]. The 8-bit
+    types are storage types: an element is loaded into, and stored from, a
+    32-bit register, so no register class of their own exists. *)
 val unsupported_coopmat_elttype : string -> 'a
 
 (** {1 Value bindings} *)

@@ -78,7 +78,8 @@ let next_scalar : type a b. (a, b) Vector.scalar_kind -> packed option =
   | Vector.Float64 -> Some (Pack Vector.Int32)
   | Vector.Int32 -> Some (Pack Vector.Int64)
   | Vector.Int64 -> Some (Pack Vector.Char)
-  | Vector.Char -> Some (Pack Vector.Complex32)
+  | Vector.Char -> Some (Pack Vector.Int8)
+  | Vector.Int8 -> Some (Pack Vector.Complex32)
   | Vector.Complex32 -> None
 
 let unfold_kinds () =
@@ -187,19 +188,29 @@ let probe_of : type a b. (a, b) Vector.scalar_kind -> probe = function
         {
           kind = Vector.char;
           label = "Char";
-          (* No IR counterpart, and this is the recorded wrong-width defect:
-             [Spoc_core.Vector.char] is a Bigarray of OCaml chars, ONE byte per
-             element, and the IR has no 1-byte element type. [char] used to
-             lower to [Ir.TInt32] — declaring `int*` on the device, four bytes
-             — so a `char vector` kernel strode the buffer at 4x the host's
-             element size with no diagnostic. [Sarek_lower_ir] now rejects it
-             rather than mapping it, which is why this is [None] and not a
-             width this sweep could check. *)
-          ir = None;
+          (* [Spoc_core.Vector.char] is a Bigarray of OCaml chars, ONE byte per
+             element: the host side of the IR's 8-bit [TUint8] storage type.
+             (The DSL's source [char] used to lower to [Ir.TInt32] and stride
+             the buffer at 4x; [Sarek_lower_ir] rejects it, and that front-end
+             question is unchanged — this is the IR element type.) *)
+          ir = Some Ir.TUint8;
           sample = 'A';
           expect = 'A';
           equal = Char.equal;
           show = (fun c -> String.make 1 c);
+        }
+  | Vector.Int8 ->
+      Probe
+        {
+          kind = Vector.int8;
+          label = "Int8";
+          ir = Some Ir.TInt8;
+          (* Negative on purpose: an unsigned or 4-byte round trip would not
+             give it back. *)
+          sample = -56;
+          expect = -56;
+          equal = Int.equal;
+          show = string_of_int;
         }
   | Vector.Complex32 ->
       Probe
@@ -223,7 +234,7 @@ let label_of (Probe p) = p.label
 (* ------------------------------------------------------------------ *)
 
 let test_enumeration_is_complete () =
-  Alcotest.(check int) "host scalar kinds swept" 7 (List.length all_kinds) ;
+  Alcotest.(check int) "host scalar kinds swept" 8 (List.length all_kinds) ;
   (* A count alone does not prove the chain was walked correctly: an off-by-one
      walk that omits one kind and duplicates another keeps the count. *)
   let labels = List.map label_of all_probes in
@@ -236,7 +247,7 @@ let test_enumeration_is_complete () =
 (** Pinned exactly. A host scalar kind with no IR element type cannot be used as
     a kernel element type at all, so growing this set silently is how a width
     would get dropped from the DSL without anything going red. *)
-let expected_no_ir_counterpart = ["Char"; "Complex32"]
+let expected_no_ir_counterpart = ["Complex32"]
 
 let test_no_ir_counterpart_set_is_exactly_as_recorded () =
   let actual =
@@ -327,7 +338,7 @@ let roundtrip_through_exec_arg (Probe p) : outcome =
     that cannot be a kernel element type anyway. A kind that CAN be a kernel
     element type appearing here would mean that element type does not work on
     the Interpreter device, which is exactly the f16 hole. *)
-let expected_exec_arg_refusals = ["Char"; "Complex32"]
+let expected_exec_arg_refusals = ["Complex32"]
 
 let test_exec_arg_roundtrip_totality () =
   let refused = ref [] in

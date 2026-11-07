@@ -213,22 +213,23 @@ let new_label a =
 
 (** {1 Type mapping} *)
 
-(* [TUint8] is not a general 8-bit integer here: it is the element type of an
-   8-bit cooperative-matrix operand buffer ({!Sarek_ir_ptx_coopmat}): it can be
-   an array element (global or shared) but never a scalar register. *)
+(* The 8-bit types are storage types (Sarek_ir_int8): an element is loaded into
+   a 32-bit register by [ld.u8]/[ld.s8] and stored from one by [st.u8], and
+   every value in between is an int32. So they are array element types (global
+   or shared) but never a register type, and reaching a register-type question
+   with one is an emitter defect, not a missing width. *)
 let unsupported_coopmat_elttype what =
   unsupported
     (Printf.sprintf
-       "%s: uint8 is an 8-bit cooperative-matrix operand element type, emitted \
-        only by the Vulkan and CUDA/HIP backends; the PTX backend lowers f16 \
-        cooperative matrices only"
+       "%s: uint8/int8 are storage types with no register class of their own \
+        (an 8-bit element is read into, and stored from, a 32-bit register)"
        what)
 
 let ptx_reg_type_of = function
   | TInt32 | TBool -> ".u32"
   | TInt64 -> ".u64"
   | TFloat16 -> ".b16"
-  | TUint8 -> unsupported_coopmat_elttype "TUint8 register type"
+  | TUint8 | TInt8 -> unsupported_coopmat_elttype "8-bit register type"
   | TFloat32 -> ".f32"
   | TFloat64 -> ".f64"
   | TUnit -> ".u32"
@@ -241,7 +242,7 @@ let new_reg_for_type alloc = function
   | TInt32 | TBool | TUnit -> new_u32 alloc
   | TInt64 -> new_u64 alloc
   | TFloat16 -> new_f16 alloc
-  | TUint8 -> unsupported_coopmat_elttype "TUint8 new_reg"
+  | TUint8 | TInt8 -> unsupported_coopmat_elttype "8-bit new_reg"
   | TFloat32 -> new_f32 alloc
   | TFloat64 -> new_f64 alloc
   | TVec _ | TArray _ -> new_u64 alloc
@@ -502,7 +503,7 @@ let rec mov_binding buf ~src ~dst =
 
 let ptx_align_of_elttype = function
   | TFloat16 -> 2
-  | TUint8 -> 1
+  | TUint8 | TInt8 -> 1
   | TFloat32 | TInt32 | TBool -> 4
   | TFloat64 | TInt64 -> 8
   | TUnit -> 4
@@ -518,7 +519,7 @@ let shared_align alloc name elt =
 
 let ptx_btype_of_elttype = function
   | TFloat16 -> "b16"
-  | TUint8 -> "b8"
+  | TUint8 | TInt8 -> "b8"
   | TFloat32 | TInt32 | TBool | TUnit -> "b32"
   | TFloat64 | TInt64 -> "b64"
   | TVec _ | TArray _ -> "b64"

@@ -86,6 +86,7 @@ module Make (Ops : CUSTOM_OPS) : sig
     | Int32 : (int32, Bigarray.int32_elt) scalar_kind
     | Int64 : (int64, Bigarray.int64_elt) scalar_kind
     | Char : (char, Bigarray.int8_unsigned_elt) scalar_kind
+    | Int8 : (int, Bigarray.int8_signed_elt) scalar_kind
     | Complex32 : (Complex.t, Bigarray.complex32_elt) scalar_kind
 
   type location =
@@ -233,6 +234,8 @@ module Make (Ops : CUSTOM_OPS) : sig
 
   val char_type_id : char Sarek_ir_types.Type_id.t
 
+  val int8_type_id : int Sarek_ir_types.Type_id.t
+
   val complex32_type_id : Complex.t Sarek_ir_types.Type_id.t
 
   val scalar_type_id : ('a, 'b) scalar_kind -> 'a Sarek_ir_types.Type_id.t
@@ -256,6 +259,9 @@ module Make (Ops : CUSTOM_OPS) : sig
 
   val char_vector_type_id :
     (char, Bigarray.int8_unsigned_elt) t Sarek_ir_types.Type_id.t
+
+  val int8_vector_type_id :
+    (int, Bigarray.int8_signed_elt) t Sarek_ir_types.Type_id.t
 
   val complex32_vector_type_id :
     (Complex.t, Bigarray.complex32_elt) t Sarek_ir_types.Type_id.t
@@ -379,6 +385,8 @@ module Make (Ops : CUSTOM_OPS) : sig
   val int64 : (int64, Bigarray.int64_elt) kind
 
   val char : (char, Bigarray.int8_unsigned_elt) kind
+
+  val int8 : (int, Bigarray.int8_signed_elt) kind
 
   val complex32 : (Complex.t, Bigarray.complex32_elt) kind
 end

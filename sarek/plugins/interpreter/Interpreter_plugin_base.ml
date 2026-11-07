@@ -336,6 +336,13 @@ end = struct
             size;
             device;
           }
+      | Bigarray.Int8_signed ->
+          {
+            storage = Bigarray_storage arr;
+            kind = Scalar_kind Spoc_core.Vector_types.Int8;
+            size;
+            device;
+          }
       | Bigarray.Complex32 ->
           {
             storage = Bigarray_storage arr;
@@ -433,6 +440,14 @@ end = struct
             {
               storage = Bigarray_storage ba;
               kind = Scalar_kind Spoc_core.Vector_types.Char;
+              size;
+              device;
+            }
+      | Bigarray.Int8_signed ->
+          Some
+            {
+              storage = Bigarray_storage ba;
+              kind = Scalar_kind Spoc_core.Vector_types.Int8;
               size;
               device;
             }

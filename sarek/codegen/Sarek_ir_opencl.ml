@@ -133,14 +133,21 @@ let rec opencl_type_of_elttype = function
            "f16"
            Sarek_ir_codegen.opencl_float16_refusal)
   | TUint8 ->
-      (* OpenCL C spells an 8-bit unsigned integer `uchar` perfectly well; that
-         is not what is being refused. [TUint8] reaches the IR only as the
-         element type of a cooperative-matrix operand buffer, and OpenCL has no
-         cooperative-matrix path to load it into. Mapping the type would let the
-         buffer through while the matching [SCoopmat] statement is refused, i.e.
-         it would move the diagnostic away from the construct that caused it. *)
-      Codegen_error.raise_error
-        (Codegen_error.unsupported_construct "uint8" coopmat_refusal)
+      (* 8-bit storage (Sarek_ir_int8). OpenCL C follows C99: a [uchar]
+         operand is promoted to [int] by zero extension, and an [int] stored
+         into one is converted modulo 2^8, so reads, stores and [ECast] are
+         the generic arms. Byte-addressable stores are core since OpenCL C
+         1.1 (cl_khr_byte_addressable_store before). A uint8 cooperative-matrix
+         OPERAND buffer is still refused, by [reject_coopmat_kernel], on the
+         statement that loads it. *)
+      "uchar"
+  | TInt8 ->
+      (* OpenCL C [char] is signed (OpenCL C 6.1.1), unlike C's. The
+         conversion of an out-of-range [int] to [char] is
+         implementation-defined; clang, which every OpenCL C compiler this
+         project reaches is built on, defines it as modulo 2^8, measured by
+         test_int8_storage_e2e. *)
+      "char"
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TBool -> "int"
@@ -854,13 +861,15 @@ let reject_float16_kernel (k : kernel) : unit =
 (* The cooperative-matrix counterpart, at the same whole-kernel choke point and
    for the same reason the f16 gate is there: a refusal that only fires from
    inside the statement walk names whichever node happened to be reached first,
-   while the thing the user has to change is a property of the KERNEL. Note this
-   also catches a kernel that merely declares a [TUint8] buffer without ever
-   reaching a multiply-add, which the per-statement arm cannot see.
+   while the thing the user has to change is a property of the KERNEL.
 
    Deliberately not {!Sarek_ir_codegen.reject_feature}: that composer hardcodes
    "not yet supported (#57 slice 2)", and citing the f16 slice for a
-   cooperative-matrix refusal would send a reader to the wrong history. *)
+   cooperative-matrix refusal would send a reader to the wrong history.
+
+   An 8-bit buffer alone no longer reaches it: [kernel_uses Coopmat] is raised
+   by cooperative-matrix statements only, and a plain uint8/int8 array is
+   ordinary storage here. *)
 let reject_coopmat_kernel (k : kernel) : unit =
   if Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat k then
     Codegen_error.raise_error
@@ -932,18 +941,15 @@ let rec zero_expr (t : elttype) : expr =
            "recursion"
            "OpenCL: a recursive helper returning an array, vector or f16 \
             cannot have its residual call elided; rewrite it without recursion")
-  | TUint8 ->
-      (* A zero of this type would be spellable — but a helper cannot return a
-         cooperative-matrix operand element in the first place, since nothing
-         but [CM_load]/[CM_store] ever touches one. Reaching here means the type
-         escaped its intended scope, which is worth a diagnostic rather than a
-         plausible-looking literal. *)
+  | TUint8 | TInt8 ->
+      (* Unreachable: an 8-bit helper result is refused at the generate entry
+         (Sarek_ir_codegen.reject_int8_misuse), before recursion is resolved.
+         Kept a diagnostic rather than a plausible-looking literal. *)
       Codegen_error.raise_error
         (Codegen_error.unsupported_construct
-           "uint8"
-           "OpenCL: uint8 is a cooperative-matrix operand element type, \
-            emitted only by the Vulkan and CUDA/HIP backends, and cannot be \
-            the return type of a helper")
+           "int8"
+           "OpenCL: an 8-bit integer type is a storage type and cannot be the \
+            return type of a helper")
 
 (** Inline budget declared by [hf], parsed from an [SPragma] at its body root.
 
@@ -1173,6 +1179,12 @@ let generate_with_types ?block
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float16_kernel k ;
   reject_coopmat_kernel k ;
+  Sarek_ir_codegen.reject_int8_misuse
+    ~raise_:(fun reason ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "int8" reason))
+    ~backend:"OpenCL"
+    k ;
   (* Names the target cannot take as written (a shadowing [let], a reserved
      word); see Sarek_ir_names. Before every other pass, so they see final
      names. *)

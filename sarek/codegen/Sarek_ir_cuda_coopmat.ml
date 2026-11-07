@@ -115,6 +115,9 @@ let elttype_name = function
   | TFloat16 -> "float16"
   | TFloat32 -> "float32"
   | TUint8 -> "uint8"
+  (* s8 fragments read a uint8 buffer too: the bytes are the same. *)
+  | TInt8 ->
+      "int8 (an 8-bit fragment of either signedness loads a uint8 buffer)"
   | TInt32 -> "int32"
   | TInt64 -> "int64"
   | TFloat64 -> "float64"

@@ -139,7 +139,12 @@ module Metal : Framework_sig.PLUGIN_BASE = struct
              MSL does have [long], so int64 is provided. *)
         device_features =
           (if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
-          @ [Sarek_ir_analysis.Int64; Sarek_ir_analysis.Warp_shuffle]
+          @ [
+              Sarek_ir_analysis.Int64;
+              (* [char]/[uchar] storage is core MSL. *)
+              Sarek_ir_analysis.Int8;
+              Sarek_ir_analysis.Warp_shuffle;
+            ]
           (* Warp_shuffle: simd_shuffle is part of MSL for every device Sarek
              supports (Apple GPU family 4+, macOS 10.14+). Not executed in CI;
              golden text only (docs/plans/warp-shuffle-intake-2026-10-17.md,

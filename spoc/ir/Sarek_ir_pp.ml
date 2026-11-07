@@ -14,6 +14,7 @@ let rec string_of_elttype = function
   | TFloat32 -> "float32"
   | TFloat64 -> "float64"
   | TUint8 -> "uint8"
+  | TInt8 -> "int8"
   | TBool -> "bool"
   | TUnit -> "unit"
   | TRecord (name, _) -> name

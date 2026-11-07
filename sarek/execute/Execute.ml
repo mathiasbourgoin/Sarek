@@ -127,7 +127,19 @@ let exec_arg_of_vector : type a b. (a, b) Vector.t -> Framework_sig.exec_arg =
             let of_bytes = custom_value_of_bytes custom
           end in
           Typed_value.TV_Composite (Typed_value.CV ((module C), Vector.get v i))
-      | Vector.Scalar (Vector.Char | Vector.Complex32) ->
+      | Vector.Scalar Vector.Char ->
+          (* An 8-bit element reads as the int32 it promotes to (zero
+             extension), which is what the IR's [TUint8] read yields. *)
+          Typed_value.TV_Scalar
+            (Typed_value.SV
+               ( (module Typed_value.Int32_type),
+                 Int32.of_int (Char.code (Vector.get v i)) ))
+      | Vector.Scalar Vector.Int8 ->
+          (* Sign extension: the IR's [TInt8] read. *)
+          Typed_value.TV_Scalar
+            (Typed_value.SV
+               ((module Typed_value.Int32_type), Int32.of_int (Vector.get v i)))
+      | Vector.Scalar Vector.Complex32 ->
           Execute_error.raise_error
             (Unsupported_argument
                {arg_type = type_name; context = "vector element access"})
@@ -187,6 +199,25 @@ let exec_arg_of_vector : type a b. (a, b) Vector.t -> Framework_sig.exec_arg =
           | Typed_value.PInt64 _ -> type_error "float" "int64"
           | Typed_value.PBool _ -> type_error "float" "bool"
           | Typed_value.PBytes _ -> type_error "float" "bytes")
+      | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+          Vector.Scalar Vector.Char ) -> (
+          (* Mirrors the [get] arm: an int32 stored into an 8-bit element keeps
+             its low byte. *)
+          match S.to_primitive x with
+          | Typed_value.PInt32 n ->
+              Vector.set v i (Char.chr (Int32.to_int n land 0xff))
+          | Typed_value.PInt64 _ -> type_error "uint8" "int64"
+          | Typed_value.PFloat _ -> type_error "uint8" "float"
+          | Typed_value.PBool _ -> type_error "uint8" "bool"
+          | Typed_value.PBytes _ -> type_error "uint8" "bytes")
+      | ( Typed_value.TV_Scalar (Typed_value.SV ((module S), x)),
+          Vector.Scalar Vector.Int8 ) -> (
+          match S.to_primitive x with
+          | Typed_value.PInt32 n -> Vector.set v i (Int32.to_int n)
+          | Typed_value.PInt64 _ -> type_error "int8" "int64"
+          | Typed_value.PFloat _ -> type_error "int8" "float"
+          | Typed_value.PBool _ -> type_error "int8" "bool"
+          | Typed_value.PBytes _ -> type_error "int8" "bytes")
       | ( Typed_value.TV_Composite (Typed_value.CV ((module C), x)),
           Vector.Custom custom ) ->
           if C.name <> custom.Vector.name || C.size <> custom.Vector.elem_size
@@ -589,9 +620,14 @@ let ir_elttype_of_vector_kind : type a b.
   | Vector.Scalar Vector.Float64 -> Some Sarek_ir_types.TFloat64
   | Vector.Scalar Vector.Int32 -> Some Sarek_ir_types.TInt32
   | Vector.Scalar Vector.Int64 -> Some Sarek_ir_types.TInt64
-  (* No IR constructor: these fall through to the byte-width comparison, not to
-     an implicit pass. *)
-  | Vector.Scalar (Vector.Char | Vector.Complex32) -> None
+  (* The two 8-bit kinds have exact counterparts, so a [char] vector cannot be
+     passed for an int8 parameter (its bytes would be read back as unsigned on
+     the CPU backends and signed on the device). *)
+  | Vector.Scalar Vector.Char -> Some Sarek_ir_types.TUint8
+  | Vector.Scalar Vector.Int8 -> Some Sarek_ir_types.TInt8
+  (* No IR constructor: falls through to the byte-width comparison, not to an
+     implicit pass. *)
+  | Vector.Scalar Vector.Complex32 -> None
   | Vector.Custom _ -> None
 
 let elttype_label (t : Sarek_ir_types.elttype) : string =
@@ -949,6 +985,10 @@ let check_device_capabilities ~(device : Device.t) (ir : Sarek_ir_types.kernel)
     [
       Sarek_ir_analysis.Float64;
       Sarek_ir_analysis.Int64;
+      (* 8-bit storage (uint8/int8 arrays): every backend but Vulkan provides
+         it by construction; a Vulkan device must have enabled shaderInt8 and
+         storageBuffer8BitAccess. *)
+      Sarek_ir_analysis.Int8;
       (* Warp shuffles, warp_size and lane_id: a device lists the feature in
          [device_features] only when it probed (or, for CUDA, HIP, Metal,
          Native and the interpreter, by construction) that it can run them. *)
@@ -1776,6 +1816,10 @@ let vector_to_interp_array : type a b.
       (* Char type: convert to int32 *)
       Array.init len (fun i ->
           Sarek_ir_interp.VInt32 (Int32.of_int (Char.code (Vector.get vec i))))
+  | Vector.Scalar Vector.Int8 ->
+      (* Signed 8-bit: the sign-extended int32 an 8-bit read yields. *)
+      Array.init len (fun i ->
+          Sarek_ir_interp.VInt32 (Int32.of_int (Vector.get vec i)))
   | Vector.Scalar Vector.Complex32 ->
       (* Complex32: not directly supported, skip for now *)
       Array.init len (fun _i -> Sarek_ir_interp.VUnit)
@@ -1836,12 +1880,18 @@ let interp_array_to_vector : type a b.
         | _ -> () (* Skip other values *)
       done
   | Vector.Scalar Vector.Char ->
-      (* Char type: convert from int32 *)
+      (* Char type: convert from int32, keeping the low byte as a device store
+         does ([Char.chr] would raise on anything else rather than wrap). *)
       for i = 0 to len - 1 do
         Vector.set
           vec
           i
-          (Char.chr (Int32.to_int (Sarek_ir_interp.to_int32 arr.(i))))
+          (Char.chr (Int32.to_int (Sarek_ir_interp.to_int32 arr.(i)) land 0xff))
+      done
+  | Vector.Scalar Vector.Int8 ->
+      (* [Bigarray.int8_signed] keeps the low 8 bits of the [int] it is given. *)
+      for i = 0 to len - 1 do
+        Vector.set vec i (Int32.to_int (Sarek_ir_interp.to_int32 arr.(i)))
       done
   | Vector.Scalar Vector.Complex32 ->
       (* Complex32: not directly supported, skip for now *)

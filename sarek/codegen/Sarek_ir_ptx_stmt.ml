@@ -48,8 +48,8 @@ let refuse_aggregate_state_space_array ~what ~(name : string) (elt : elttype) :
            tyname
            what
            what)
-  | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TUint8 | TBool | TUnit
-  | TArray _ | TVec _ ->
+  | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TUint8 | TInt8 | TBool
+  | TUnit | TArray _ | TVec _ ->
       ()
 
 (** {1 Statement emitter} *)

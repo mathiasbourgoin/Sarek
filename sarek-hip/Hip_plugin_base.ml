@@ -56,10 +56,12 @@ module Hip : Framework_sig.PLUGIN_BASE = struct
            omitted for the same reason — unprobed, so not claimed. *)
         (* Warp_shuffle: __shfl* are core HIP device functions on every AMD
            target, with the width the device reports (warp_size below). *)
+        (* Int8: byte loads and stores are core HIP on every AMD target. *)
         device_features =
           [
             Sarek_ir_analysis.Float64;
             Sarek_ir_analysis.Int64;
+            Sarek_ir_analysis.Int8;
             Sarek_ir_analysis.Warp_shuffle;
           ];
         coopmat = Some (Hip_coopmat.probe d);

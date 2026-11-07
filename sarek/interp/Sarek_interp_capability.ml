@@ -10,6 +10,9 @@ let device_features =
     Sarek_ir_analysis.Float64;
     Sarek_ir_analysis.Int64;
     Sarek_ir_analysis.Float16;
+    (* 8-bit storage: an element is carried as the int32 its read yields, and
+       every store narrows (Sarek_ir_int8.normalise). *)
+    Sarek_ir_analysis.Int8;
     (* The interpreter simulates the warp: Sarek_warp.simulated_width lanes
        exchanging through shared memory. *)
     Sarek_ir_analysis.Warp_shuffle;
@@ -38,7 +41,8 @@ let coopmat_verdict ?(budget = Sarek_policy.budget ~kernels:[])
    ungated capability. *)
 let is_width_feature = function
   | Sarek_ir_analysis.Float64 | Sarek_ir_analysis.Float16
-  | Sarek_ir_analysis.Int64 | Sarek_ir_analysis.Warp_shuffle ->
+  | Sarek_ir_analysis.Int64 | Sarek_ir_analysis.Int8
+  | Sarek_ir_analysis.Warp_shuffle ->
       true
   | Sarek_ir_analysis.Coopmat -> false
 

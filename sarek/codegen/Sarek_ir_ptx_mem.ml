@@ -21,7 +21,7 @@ open Sarek_ir_ptx_types
     [unsupported]. *)
 
 let elt_shift = function
-  | TUint8 -> 0
+  | TUint8 | TInt8 -> 0
   | TFloat16 -> 1
   | TFloat32 | TInt32 -> 2
   | TFloat64 | TInt64 -> 3
@@ -77,6 +77,20 @@ let emit_array_read ?(nc = false) buf alloc r_base r_idx elt_type ~space =
       let r = new_f16 alloc in
       emit buf "ld.%s.b16 %s, [%s];" sp r r_addr ;
       r
+  | (TUint8 | TInt8) as t ->
+      (* 8-bit storage (Sarek_ir_int8): the PTX ISA lets [ld] write a register
+         wider than its type, zero-extending a [.u8] and sign-extending a
+         [.s8] ("Operand Size Exceeding Instruction-Type Size"), so the element
+         arrives as the int32 the IR says it is. *)
+      let r = new_u32 alloc in
+      emit
+        buf
+        "ld.%s.%s %s, [%s];"
+        sp
+        (if t = TInt8 then "s8" else "u8")
+        r
+        r_addr ;
+      r
   | TFloat32 ->
       let r = new_f32 alloc in
       emit buf "ld.%s.f32 %s, [%s];" sp r r_addr ;
@@ -110,6 +124,15 @@ let check_store_value_class sp elt_type r_val =
               a float16 array"
              sp
              r_val)
+  | TUint8 | TInt8 ->
+      if is_f16_reg r_val || is_f32_reg r_val || is_f64_reg r_val then
+        fail
+          (Printf.sprintf
+             "PTX codegen: %s array write: value register %s is a float; an \
+              8-bit array stores the low byte of an integer, so convert the \
+              value to int32 first"
+             sp
+             r_val)
   | _ -> reject_f16_operand (sp ^ " array write") r_val
 
 let emit_array_write buf alloc r_base r_idx r_val elt_type ~space =
@@ -118,6 +141,10 @@ let emit_array_write buf alloc r_base r_idx r_val elt_type ~space =
   let r_addr = emit_elt_addr buf alloc r_base r_idx elt_type ~space in
   match elt_type with
   | TFloat16 -> emit buf "st.%s.b16 [%s], %s;" sp r_addr r_val
+  | TUint8 | TInt8 ->
+      (* [st] of a register wider than its type stores the low bits (same ISA
+         section as the load): the low byte of the int32, either signedness. *)
+      emit buf "st.%s.u8 [%s], %s;" sp r_addr r_val
   | TFloat32 -> emit buf "st.%s.f32 [%s], %s;" sp r_addr r_val
   | TInt32 -> emit buf "st.%s.s32 [%s], %s;" sp r_addr r_val
   | TFloat64 -> emit buf "st.%s.f64 [%s], %s;" sp r_addr r_val

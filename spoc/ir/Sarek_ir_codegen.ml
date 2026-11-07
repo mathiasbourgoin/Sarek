@@ -67,6 +67,17 @@ let reject_feature ~raise_ ~backend ?hint (feature : Sarek_ir_analysis.feature)
          (Sarek_ir_analysis.feature_name feature)
          detail)
 
+(** Refuse a kernel that uses an 8-bit type outside the positions
+    {!Sarek_ir_int8} supports (a scalar binder, a record field, a private array,
+    an ambiguous array name). One choke point for every backend, so the same
+    kernel is refused with the same sentence everywhere and the interpreter
+    (which raises the same {!Sarek_ir_int8.refusal}) cannot accept what a
+    backend refuses. *)
+let reject_int8_misuse ~raise_ ~backend (k : Sarek_ir_types.kernel) : unit =
+  match Sarek_ir_int8.refusal k with
+  | None -> ()
+  | Some why -> raise_ (Printf.sprintf "%s: %s" backend why)
+
 (** {1 Measured f16 refusals (#57 slices 2a/2b, single-sourced by #138)}
 
     Two backends left {!reject_feature} because "not yet supported" was false of
@@ -895,8 +906,8 @@ let referenced_type_names (ty : Sarek_ir_types.elttype) : string list =
           acc := mangle_name name :: !acc ;
           List.iter (fun (_, args) -> List.iter go args) constrs
       | TArray (elt, _) | TVec elt -> go elt
-      | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TUint8 | TBool
-      | TUnit ->
+      | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TUint8 | TInt8
+      | TBool | TUnit ->
           ()
     end
   in

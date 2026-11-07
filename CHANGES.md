@@ -23,6 +23,30 @@
 
 ### Added
 
+- 8-bit integer element types in IR kernels: `TUint8` (which existed only as a cooperative-matrix
+  operand element) and a new `TInt8`. Both are storage types on the `TFloat16` model: an element is
+  one byte, every value is an int32. A read zero-extends (u8) or sign-extends (s8); a store of an
+  int32 keeps its low 8 bits; `ECast (TUint8, e)` / `ECast (TInt8, e)` give the int32 that store
+  followed by a read would. Global (`TVec`) and shared (`DShared`, `EArrayCreate _ Shared`) arrays;
+  an 8-bit scalar variable, record field or private array is refused by every backend and the
+  interpreter with one message (`Sarek_ir_int8.refusal`). Use cases: unpacking packed 4-bit
+  weights into a u8 shared tile before an 8-bit `CM_load`, int8 quantisation of activations.
+  Lowered by the interpreter, CUDA C and HIP (`unsigned char`/`signed char`), OpenCL C
+  (`uchar`/`char`), Metal (`uchar`/`char`), Vulkan GLSL (`uint8_t`/`int8_t`, explicit widening on
+  read and narrowing on store) and PTX (`ld.u8`/`ld.s8` into 32-bit registers, `st.u8`,
+  `and.b32`/`bfe.s32`); WGSL refuses (WebGPU has no 8-bit type). New capability feature
+  `Sarek_ir_analysis.Int8` ("int8-storage"), checked by the launch gate: provided by construction
+  on CUDA, HIP, Metal, Native and the interpreter, on OpenCL from version 1.1, on Vulkan when the
+  device enabled both `shaderInt8` and `storageBuffer8BitAccess`. A plain 8-bit buffer no longer
+  counts as a cooperative-matrix requirement (`kernel_uses Coopmat` is raised by `SCoopmat`
+  statements only); kernel fusion still declines 8-bit kernels, since substituting a stored
+  expression would drop the narrowing. Host kind `Vector.int8` (`Bigarray.int8_signed`);
+  `Vector.char` is the u8 host kind, and the launch check now maps `Char` to `TUint8` and `Int8` to
+  `TInt8` exactly. Not in the DSL (`[%kernel]`) yet, hence not on Native.
+  Executed bit-identical to the interpreter on HIP, Vulkan (RADV) and OpenCL (rusticl, pocl, Intel
+  CPU) on an RX 7900 XTX workstation (`sarek/tests/e2e/test_int8_storage_e2e.ml`); CUDA C, PTX and
+  Metal are checked on the emitted text only (`sarek/tests/unit/test_int8_storage.ml`).
+
 - CUDA/PTX lowers `SCoopmat` to `wmma.load/mma/store` (tensor cores, PTX ISA 6.0, sm_70+), so the
   default CUDA backend reaches the matrix units the CUDA/C backend already reached through
   `nvcuda::wmma`. Same accepted cases as CUDA/C (16x16x16, subgroup scope, any row/column layout):

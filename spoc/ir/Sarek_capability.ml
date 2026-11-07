@@ -126,6 +126,21 @@ let device_lacks_feature (f : Sarek_ir_analysis.feature) =
              VkPhysicalDeviceFeatures2; OpenCL: cl_khr_fp16 is an optional \
              extension",
           Some "Use float32." )
+    | Sarek_ir_analysis.Int8 ->
+        ( "the device does not report 8-bit storage (Vulkan: \
+           VkPhysicalDeviceShaderFloat16Int8Features.shaderInt8 and \
+           VkPhysicalDevice8BitStorageFeatures.storageBuffer8BitAccess, both \
+           enabled on the logical device), and GLSL uint8_t/int8_t lower to \
+           SPIR-V declaring OpCapability Int8 and StorageBuffer8BitAccess",
+          Quoted
+            "Vulkan specification, VUID-VkShaderModuleCreateInfo-pCode-08740: \
+             a declared SPIR-V capability must have its corresponding \
+             requirement satisfied; shaderInt8 and storageBuffer8BitAccess are \
+             optional features",
+          Some
+            "Use int32 elements, or select a device that reports 8-bit storage \
+             (CUDA, HIP, OpenCL, Metal, the CPU backends, or a Vulkan device \
+             with both features)." )
     | Sarek_ir_analysis.Coopmat ->
         (* Reached only through [device_lacks_feature], i.e. by a caller that
            knows a kernel wants cooperative matrices but has no CONFIGURATION to
