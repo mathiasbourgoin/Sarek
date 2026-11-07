@@ -138,6 +138,10 @@ module Opencl : Framework_sig.PLUGIN_BASE = struct
         device_features =
           (if d.supports_fp64 then [Sarek_ir_analysis.Float64] else [])
           @ (if d.supports_int64 then [Sarek_ir_analysis.Int64] else [])
+          (* Int8: byte-addressable stores are core from OpenCL 1.1
+             (cl_khr_byte_addressable_store in 1.0), so the device's reported
+             version decides; an unparsable version (0, 0) claims nothing. *)
+          @ (if d.version >= (1, 1) then [Sarek_ir_analysis.Int8] else [])
           (* Warp_shuffle: only when the sub-group probe measured
              lane = linear id mod W in the 1-D and 2-D shapes. The extension
              strings alone are a hint, not an authorisation. *)

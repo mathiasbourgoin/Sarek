@@ -25,6 +25,7 @@ type (_, _) scalar_kind =
   | Int32 : (int32, Bigarray.int32_elt) scalar_kind
   | Int64 : (int64, Bigarray.int64_elt) scalar_kind
   | Char : (char, Bigarray.int8_unsigned_elt) scalar_kind
+  | Int8 : (int, Bigarray.int8_signed_elt) scalar_kind
   | Complex32 : (Complex.t, Bigarray.complex32_elt) scalar_kind
 
 (** {1 Kind helpers — pure} *)
@@ -37,6 +38,7 @@ let to_bigarray_kind : type a b. (a, b) scalar_kind -> (a, b) Bigarray.kind =
   | Int32 -> Bigarray.Int32
   | Int64 -> Bigarray.Int64
   | Char -> Bigarray.Char
+  | Int8 -> Bigarray.Int8_signed
   | Complex32 -> Bigarray.Complex32
 
 let bigarray_elem_size : type a b. (a, b) Bigarray.kind -> int = function
@@ -63,6 +65,7 @@ let scalar_elem_size : type a b. (a, b) scalar_kind -> int = function
   | Int32 -> 4
   | Int64 -> 8
   | Char -> 1
+  | Int8 -> 1
   | Complex32 -> 8
 
 let scalar_kind_name : type a b. (a, b) scalar_kind -> string = function
@@ -72,6 +75,7 @@ let scalar_kind_name : type a b. (a, b) scalar_kind -> string = function
   | Int32 -> "Int32"
   | Int64 -> "Int64"
   | Char -> "Char"
+  | Int8 -> "Int8"
   | Complex32 -> "Complex32"
 
 (** {1 Type-id singletons for scalar element types} *)
@@ -94,6 +98,9 @@ let int64_type_id : int64 Sarek_ir_types.Type_id.t =
 let char_type_id : char Sarek_ir_types.Type_id.t =
   Sarek_ir_types.Type_id.create ()
 
+let int8_type_id : int Sarek_ir_types.Type_id.t =
+  Sarek_ir_types.Type_id.create ()
+
 let complex32_type_id : Complex.t Sarek_ir_types.Type_id.t =
   Sarek_ir_types.Type_id.create ()
 
@@ -105,4 +112,5 @@ let scalar_type_id : type a b. (a, b) scalar_kind -> a Sarek_ir_types.Type_id.t
   | Int32 -> int32_type_id
   | Int64 -> int64_type_id
   | Char -> char_type_id
+  | Int8 -> int8_type_id
   | Complex32 -> complex32_type_id

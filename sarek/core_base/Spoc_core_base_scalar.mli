@@ -22,6 +22,7 @@ type (_, _) scalar_kind =
   | Int32 : (int32, Bigarray.int32_elt) scalar_kind
   | Int64 : (int64, Bigarray.int64_elt) scalar_kind
   | Char : (char, Bigarray.int8_unsigned_elt) scalar_kind
+  | Int8 : (int, Bigarray.int8_signed_elt) scalar_kind
   | Complex32 : (Complex.t, Bigarray.complex32_elt) scalar_kind
 
 (** {1 Kind helpers — pure} *)
@@ -51,6 +52,8 @@ val int32_type_id : int32 Sarek_ir_types.Type_id.t
 val int64_type_id : int64 Sarek_ir_types.Type_id.t
 
 val char_type_id : char Sarek_ir_types.Type_id.t
+
+val int8_type_id : int Sarek_ir_types.Type_id.t
 
 val complex32_type_id : Complex.t Sarek_ir_types.Type_id.t
 

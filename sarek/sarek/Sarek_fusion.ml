@@ -691,10 +691,21 @@ let can_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
     && not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat consumer)
   in
 
+  (* No 8-bit storage in either. Substituting the producer's stored expression
+     for the consumer's read drops the narrowing the store performed: a
+     producer storing 300 into a uint8 intermediate is read back as 44, the
+     substituted expression is 300. Before 8-bit arrays were ordinary storage
+     this was covered by [no_coopmat] above, since a uint8 buffer counted as a
+     cooperative-matrix feature. *)
+  let no_int8 =
+    (not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int8 producer))
+    && not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int8 consumer)
+  in
+
   let no_warp_ops = neither_uses_warp_ops producer consumer in
 
   prod_writes_inter && cons_reads_inter && patterns_ok && no_barriers
-  && no_atomics && no_coopmat && no_warp_ops
+  && no_atomics && no_coopmat && no_int8 && no_warp_ops
   && not (length_of_intermediate_needed producer consumer intermediate)
 
 (** Fuse producer into consumer, eliminating intermediate array.

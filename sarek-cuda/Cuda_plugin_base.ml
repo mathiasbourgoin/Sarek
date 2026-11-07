@@ -70,10 +70,12 @@ module Cuda : Framework_sig.PLUGIN_BASE = struct
            permissive default this list exists to remove. *)
         (* Warp_shuffle: shfl.sync / __shfl_sync need sm_30, below every device
            Sarek targets. *)
+        (* Int8: byte loads and stores are core CUDA C / PTX on every target. *)
         device_features =
           [
             Sarek_ir_analysis.Float64;
             Sarek_ir_analysis.Int64;
+            Sarek_ir_analysis.Int8;
             Sarek_ir_analysis.Warp_shuffle;
           ];
         (* backlog-62: no cooperative-matrix probe here. [None] is "not

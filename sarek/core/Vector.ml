@@ -308,6 +308,11 @@ let int64 = Scalar Int64
 
 let char = Scalar Char
 
+(** Signed 8-bit elements, the host side of an IR [TInt8] array. Host values are
+    OCaml [int]s; [set] keeps the low 8 bits (two's complement), as a device
+    store does. *)
+let int8 = Scalar Int8
+
 let complex32 = Scalar Complex32
 
 (** Create an f16 vector. Elements are ordinary OCaml [float]s; every [set]

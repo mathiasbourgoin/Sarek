@@ -89,6 +89,7 @@ module Make (Ops : CUSTOM_OPS) = struct
     | Int32 : (int32, Bigarray.int32_elt) scalar_kind
     | Int64 : (int64, Bigarray.int64_elt) scalar_kind
     | Char : (char, Bigarray.int8_unsigned_elt) scalar_kind
+    | Int8 : (int, Bigarray.int8_signed_elt) scalar_kind
     | Complex32 : (Complex.t, Bigarray.complex32_elt) scalar_kind
 
   type location =
@@ -333,6 +334,8 @@ module Make (Ops : CUSTOM_OPS) = struct
 
   let char_type_id = Spoc_core_base_scalar.char_type_id
 
+  let int8_type_id = Spoc_core_base_scalar.int8_type_id
+
   let complex32_type_id = Spoc_core_base_scalar.complex32_type_id
 
   let scalar_type_id = Spoc_core_base_scalar.scalar_type_id
@@ -365,6 +368,10 @@ module Make (Ops : CUSTOM_OPS) = struct
       (char, Bigarray.int8_unsigned_elt) t Sarek_ir_types.Type_id.t =
     Sarek_ir_types.Type_id.create ()
 
+  let int8_vector_type_id :
+      (int, Bigarray.int8_signed_elt) t Sarek_ir_types.Type_id.t =
+    Sarek_ir_types.Type_id.create ()
+
   let complex32_vector_type_id :
       (Complex.t, Bigarray.complex32_elt) t Sarek_ir_types.Type_id.t =
     Sarek_ir_types.Type_id.create ()
@@ -377,6 +384,7 @@ module Make (Ops : CUSTOM_OPS) = struct
     | Scalar Int32 -> int32_vector_type_id
     | Scalar Int64 -> int64_vector_type_id
     | Scalar Char -> char_vector_type_id
+    | Scalar Int8 -> int8_vector_type_id
     | Scalar Complex32 -> complex32_vector_type_id
     | Custom c -> c.vector_type_id
 
@@ -741,6 +749,8 @@ module Make (Ops : CUSTOM_OPS) = struct
   let int64 = Scalar Int64
 
   let char = Scalar Char
+
+  let int8 = Scalar Int8
 
   let complex32 = Scalar Complex32
 end

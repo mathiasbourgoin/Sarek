@@ -436,15 +436,9 @@ let variant_tag_of_ctor (ctor : string) : int = Hashtbl.hash ctor mod 256
     is that the two backends which do have to put something in the slot put the
     same thing, and that the something is a value the interpreter can match.
 
-    [TUint8] gets [VInt32 0l], and that is a GUESS rather than a convention:
-    [TUint8] appears nowhere else in this interpreter, so unlike [TFloat16] —
-    whose [VFloat32] carrier is established by [Sarek_ir_interp_eval] and
-    [Sarek_ir_interp] — nothing here fixes its representation. It exists only as
-    a cooperative-matrix operand element type, which does not reach a kernel
-    array declaration, so the arm is unreachable in practice; it is written this
-    way so that the match is exhaustive rather than because a zero of that type
-    has been agreed. If [TUint8] ever becomes a real element type, decide its
-    carrier before trusting this.
+    [TUint8] and [TInt8] get [VInt32 0l]: an 8-bit element is carried as the
+    int32 its read yields (see {!Sarek_ir_int8}), and zero is in range for both
+    signednesses.
 
     [TArray] and [TVec] elements stay [VUnit]: an array of arrays is not
     expressible as a kernel array element type on any backend, and inventing a
@@ -460,7 +454,7 @@ let rec default_value_of_elttype (ty : elttype) : value =
   | TInt64 -> VInt64 0L
   | TFloat16 | TFloat32 -> VFloat32 0.0
   | TFloat64 -> VFloat64 0.0
-  | TUint8 -> VInt32 0l
+  | TUint8 | TInt8 -> VInt32 0l
   | TBool -> VBool false
   | TUnit -> VUnit
   | TRecord (name, fields) ->

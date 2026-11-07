@@ -155,6 +155,7 @@ let string_of_elttype = function
   | TInt64 -> "TInt64"
   | TFloat16 -> "TFloat16"
   | TUint8 -> "TUint8"
+  | TInt8 -> "TInt8"
   | TFloat32 -> "TFloat32"
   | TFloat64 -> "TFloat64"
   | TBool -> "TBool"

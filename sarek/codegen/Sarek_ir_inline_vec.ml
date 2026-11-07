@@ -326,7 +326,8 @@ let default_expr ctx = function
   | TFloat64 -> EConst (CFloat64 0.0)
   | TBool -> EConst (CBool false)
   | TUnit -> EConst CUnit
-  | (TFloat16 | TUint8 | TRecord _ | TVariant _ | TArray _ | TVec _) as t ->
+  | (TFloat16 | TUint8 | TInt8 | TRecord _ | TVariant _ | TArray _ | TVec _) as
+    t ->
       (* TFloat16 has no default initializer here because f16 has no IR
          constant (no literal, by design — see Sarek_ir_types.elttype): there is
          no [CFloat16 0.0] to return. An f16-returning helper would need an
@@ -334,10 +335,10 @@ let default_expr ctx = function
          reachable once f16 helper inlining is actually exercised, so reject
          with the existing diagnostic rather than guess.
 
-         TUint8 joins it for a stronger reason: a cooperative-matrix operand
-         element cannot be a helper's return type at all — no expression
-         produces or consumes one — so this arm is a shape the front end cannot
-         build, and inventing a zero for it would only hide that. *)
+         The 8-bit types join it for a stronger reason: they are storage
+         types and cannot be a helper's return type at all
+         (Sarek_ir_int8.refusal), so this arm is a shape no accepted kernel
+         has, and inventing a zero for it would only hide that. *)
       fail
         ctx
         "recursion+vector helper"
@@ -349,7 +350,8 @@ let default_expr ctx = function
            | TVariant (n, _) -> "variant " ^ n
            | TArray _ -> "an array"
            | TFloat16 -> "float16"
-           | TUint8 -> "uint8 (a Vulkan cooperative-matrix operand element)"
+           | TUint8 -> "uint8 (a storage type)"
+           | TInt8 -> "int8 (a storage type)"
            | _ -> "a vector"))
 
 (* ------------------------------------------------------------------ *)

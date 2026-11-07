@@ -36,17 +36,17 @@ let soa_leaves_of_param param_name (elt : elttype) : (string * elttype) list =
                     a float16 vector"
                    param_name
                    fname)
-          | TUint8 ->
-              (* Not a width limitation: a uint8 field is a cooperative-matrix
-                 operand element, and the statements that give it meaning are
-                 refused by this backend, so splitting it into its own SoA leaf
-                 would manufacture a buffer nothing can read. *)
+          | (TUint8 | TInt8) as t ->
+              (* Unreachable past the generate entry's
+                 Sarek_ir_codegen.reject_int8_misuse, which refuses an 8-bit
+                 record field outright; kept total. *)
               fail
                 (Printf.sprintf
-                   "PTX codegen: SoA parameter '%s': uint8 field '%s' is a \
-                    cooperative-matrix operand element type, emitted only by \
-                    the Vulkan and CUDA/HIP backends"
+                   "PTX codegen: SoA parameter '%s': %s field '%s': 8-bit \
+                    integer types are array element types only, not record \
+                    field types"
                    param_name
+                   (Sarek_ir_pp.string_of_elttype t)
                    fname)
           | TRecord _ ->
               fail
@@ -242,18 +242,15 @@ let emit_params buf alloc (env : env) ~(soa_params : string list)
                     float16 vector, or a float32 scalar to narrow in the \
                     kernel"
                    v.var_name)
-          | TUint8 ->
-              (* A scalar uint8 parameter is not something the surface language
-                 can build; the type exists only as a cooperative-matrix operand
-                 buffer element, so seeing one here means the kernel targeted
-                 the wrong backend rather than that PTX is missing a width. *)
+          | (TUint8 | TInt8) as t ->
+              (* Unreachable past Sarek_ir_codegen.reject_int8_misuse, which
+                 refuses an 8-bit scalar binder; kept total. *)
               fail
                 (Printf.sprintf
-                   "PTX codegen: kernel parameter '%s' has type uint8, a \
-                    cooperative-matrix operand element type emitted only by \
-                    the Vulkan and CUDA/HIP backends; the PTX backend has no \
-                    cooperative-matrix path"
-                   v.var_name)
+                   "PTX codegen: kernel parameter '%s' is a scalar %s: 8-bit \
+                    integer types are storage types; pass an int32 scalar"
+                   v.var_name
+                   (Sarek_ir_pp.string_of_elttype t))
           | TRecord (tname, _) | TVariant (tname, _) ->
               (* C-17 / FR-030: by-value aggregate params have no host
                  marshalling; a TVec of the same type IS accepted (EC-11). *)
@@ -404,7 +401,11 @@ let make_ptx_header ?(sm_target = "sm_86") ?(ptx_version = "8.0") () =
       to before. *)
 let generate ?(sm_target = "sm_86") ?(soa_params = []) ?block (k : kernel) :
     string =
+  Sarek_ir_codegen.reject_int8_misuse ~raise_:unsupported ~backend:"PTX" k ;
   Sarek_ir_ptx_coopmat.check_kernel ~sm_target ?block k ;
+  (* An 8-bit local scalar becomes a 32-bit register holding the narrowed value
+     (there is no 8-bit register class; Sarek_ir_int8). *)
+  let k = Sarek_ir_int8.lower_scalars k in
   let k = Sarek_ir_ptx_unroll.rewrite k in
   let alloc = make_alloc () in
   List.iter

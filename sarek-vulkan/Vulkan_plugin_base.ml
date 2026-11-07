@@ -78,6 +78,16 @@ module Vulkan = struct
               (if dev.Vulkan_api.Device.supports_fp16 then
                  [Sarek_ir_analysis.Float16]
                else []);
+              (* 8-bit storage: the GLSL emitter declares uint8_t/int8_t under
+                 GL_EXT_shader_explicit_arithmetic_types_int8, which lowers to
+                 OpCapability Int8, and an 8-bit buffer member adds
+                 StorageBuffer8BitAccess. Both features must have been ENABLED
+                 on the logical device, which is what these two fields report. *)
+              (if
+                 dev.Vulkan_api.Device.supports_int8
+                 && dev.Vulkan_api.Device.storage_buffer_8bit
+               then [Sarek_ir_analysis.Int8]
+               else []);
               (* Warp_shuffle: probed (BASIC and SHUFFLE subgroup operations
                  for the compute stage), never assumed. NOT probed: that the
                  hardware lane of an invocation equals its linear local id

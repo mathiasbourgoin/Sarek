@@ -191,8 +191,9 @@ model and the original the C-first one.
 
 - `ECast (TUint8, e)`: the low 8 bits of an int32 (narrowing store into a
   `uint8` array). Lowered by the CUDA/HIP generator (`(unsigned char)`) and the
-  interpreter; refused elsewhere. The `TUint8` "no arithmetic" rule otherwise
-  stands.
+  interpreter when this rewrite was written; since then `TUint8` and `TInt8`
+  are general 8-bit storage types on every backend but WGSL (reads, stores and
+  casts, no 8-bit arithmetic; see `spoc/ir/Sarek_ir_int8.mli`).
 - Component `BFloat16` (`Sarek_coopmat_types`): a bf16 operand fragment loaded
   from a **float32** buffer, each element rounded to bfloat16 (round to
   nearest even); exact for values already representable. HIP gfx11:

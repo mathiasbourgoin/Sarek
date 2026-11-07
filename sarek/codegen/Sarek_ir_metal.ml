@@ -69,13 +69,17 @@ let rec metal_type_of_elttype = function
          the plain [half] cast needs no barrier. *)
       "half"
   | TUint8 ->
-      (* [TUint8] is not a general 8-bit integer in this IR: it marks an
-         integer cooperative-matrix operand buffer, which has no Metal lowering
-         (no integer simdgroup_matrix). *)
-      Codegen_error.raise_error
-        (Codegen_error.unsupported_construct
-           "uint8"
-           Sarek_ir_metal_coopmat.no_integer_reason)
+      (* 8-bit storage (Sarek_ir_int8). MSL is C++14-based: a [uchar] operand
+         is promoted to [int] by zero extension and an [int] stored into one is
+         converted modulo 2^8, so reads, stores and [ECast] are the generic
+         arms. An integer cooperative-matrix fragment is still refused, by
+         Sarek_ir_metal_coopmat.check_kernel (no integer simdgroup_matrix). *)
+      "uchar"
+  | TInt8 ->
+      (* MSL [char] is signed. The conversion of an out-of-range [int] to it is
+         implementation-defined in C++14; the Metal compiler is clang, which
+         defines it as modulo 2^8. Not executed: no Apple device here. *)
+      "char"
   | TFloat32 -> "float"
   | TFloat64 ->
       (* Until #64 slice 1 this arm was `"float"`, with a comment saying Metal
@@ -1217,6 +1221,12 @@ let reject_warp_in_helpers (k : kernel) : unit =
 let generate_with_types ?block
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
   reject_float64_kernel k ;
+  Sarek_ir_codegen.reject_int8_misuse
+    ~raise_:(fun reason ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "int8" reason))
+    ~backend:"Metal"
+    k ;
   (* Whole-kernel cooperative-matrix check: every fragment, configuration and
      buffer, and the launch block when it is known. A statement-walk refusal
      would name whichever node the emitter reached first. *)

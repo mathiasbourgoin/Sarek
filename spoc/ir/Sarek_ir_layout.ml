@@ -94,7 +94,7 @@ let layout_error_message = function
    host PPX (via read_float64/write_float64) and placed on their natural 8-byte
    boundary by the aligned layout. *)
 let scalar_size = function
-  | TUint8 -> 1
+  | TUint8 | TInt8 -> 1
   | TFloat16 -> 2
   | TInt32 | TFloat32 | TBool | TUnit -> 4
   | TInt64 | TFloat64 -> 8
@@ -109,7 +109,7 @@ let scalar_size = function
   | TVec _ -> invalid_arg "Sarek_ir_layout.scalar_size: not a scalar type: TVec"
 
 let scalar_align = function
-  | TUint8 -> 1
+  | TUint8 | TInt8 -> 1
   | TFloat16 -> 2
   | TInt32 | TFloat32 | TBool | TUnit -> 4
   | TInt64 | TFloat64 -> 8
@@ -127,8 +127,8 @@ let align_up off a = if a <= 1 then off else (off + a - 1) / a * a
     rejected below top level, so their value here is a harmless placeholder used
     only before {!flatten_field} produces the typed rejection. *)
 let rec elttype_align = function
-  | (TInt32 | TFloat32 | TBool | TUnit | TInt64 | TFloat64 | TFloat16 | TUint8)
-    as t ->
+  | ( TInt32 | TFloat32 | TBool | TUnit | TInt64 | TFloat64 | TFloat16 | TUint8
+    | TInt8 ) as t ->
       scalar_align t
   | TRecord (_, fields) -> record_align fields
   | TVariant _ -> 4 (* rejected below top level; placeholder *)
@@ -187,7 +187,7 @@ let ( let* ) = Result.bind
 let rec flatten_field ~type_name ~path ~offset (t : elttype) :
     (leaf list * int, layout_error) result =
   match t with
-  | TInt32 | TInt64 | TFloat32 | TFloat64 | TBool | TUnit | TUint8 ->
+  | TInt32 | TInt64 | TFloat32 | TFloat64 | TBool | TUnit | TUint8 | TInt8 ->
       let size = scalar_size t in
       let align = scalar_align t in
       if offset mod align <> 0 then
@@ -322,7 +322,8 @@ let variant_layout ~type_name (ctors : (string * elttype list) list) :
 
 let elttype_layout (t : elttype) : (layout, layout_error) result =
   match t with
-  | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TBool | TUnit | TUint8 ->
+  | TInt32 | TInt64 | TFloat16 | TFloat32 | TFloat64 | TBool | TUnit | TUint8
+  | TInt8 ->
       Ok (LScalar {size = scalar_size t; align = scalar_align t})
   | TRecord (name, fields) ->
       let* rl = record_layout ~type_name:name fields in

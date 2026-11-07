@@ -118,6 +118,17 @@ type arg = ArgArray of value array | ArgScalar of value
 (** Run a kernel on CPU *)
 let run_kernel (k : kernel) ~block:(bx, by, bz) ~grid:(gx, gy, gz)
     (args : (string * arg) list) =
+  (* 8-bit storage types: refuse what no backend accepts, then make the
+     narrowing of every 8-bit store and the extension of every 8-bit read
+     explicit, so the evaluator implements them through its [ECast] arm alone.
+     A store into a [Vector.char] buffer would otherwise keep a value outside
+     0..255 that the host write-back cannot represent. *)
+  (match Sarek_ir_int8.refusal k with
+  | None -> ()
+  | Some reason ->
+      Interp_error.raise_error
+        (Unsupported_operation {operation = "8-bit storage type"; reason})) ;
+  let k = Sarek_ir_int8.normalise k in
   let env =
     create_env ~policy:(Sarek_policy.budget ~kernels:[k.kern_name]) ()
   in
@@ -194,6 +205,11 @@ let vector_to_array : type a b. (a, b) Spoc_core.Vector.t -> value array =
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Char ->
       Array.init len (fun i ->
           VInt32 (Int32.of_int (Char.code (Spoc_core.Vector.get vec i))))
+  | Spoc_core.Vector.Scalar Spoc_core.Vector.Int8 ->
+      (* [Bigarray.int8_signed] reads back -128..127: the sign-extended int32 an
+         8-bit read yields (Sarek_ir_int8). *)
+      Array.init len (fun i ->
+          VInt32 (Int32.of_int (Spoc_core.Vector.get vec i)))
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Complex32 ->
       Interp_error.raise_error
         (Unsupported_operation
@@ -259,8 +275,19 @@ let array_to_vector : type a b. value array -> (a, b) Spoc_core.Vector.t -> unit
         | _ -> () (* Skip other values *)
       done
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Char ->
+      (* The low byte, as a device store keeps it: every store into an 8-bit
+         array is already narrowed (Sarek_ir_int8.normalise), and [Char.chr]
+         would raise on anything else rather than wrap. *)
       for i = 0 to len - 1 do
-        Spoc_core.Vector.set vec i (Char.chr (Int32.to_int (to_int32 arr.(i))))
+        Spoc_core.Vector.set
+          vec
+          i
+          (Char.chr (Int32.to_int (to_int32 arr.(i)) land 0xff))
+      done
+  | Spoc_core.Vector.Scalar Spoc_core.Vector.Int8 ->
+      (* [Bigarray.int8_signed] keeps the low 8 bits of the [int] it is given. *)
+      for i = 0 to len - 1 do
+        Spoc_core.Vector.set vec i (Int32.to_int (to_int32 arr.(i)))
       done
   | Spoc_core.Vector.Scalar Spoc_core.Vector.Complex32 ->
       Interp_error.raise_error

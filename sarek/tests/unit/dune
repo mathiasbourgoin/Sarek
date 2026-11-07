@@ -190,6 +190,33 @@
  (modules test_ptx_f16)
  (libraries sarek.codegen ptx_f16_kernels alcotest))
 
+; 8-bit storage types (uint8/int8): the IR kernels and their host model,
+; shared with the device e2e test (test_int8_storage_e2e), and the CPU half:
+; interpreter against the model, emitted spelling per backend, refusals,
+; capability gate.
+
+(library
+ (name int8_kernels)
+ (modules int8_kernels)
+ (libraries sarek_ir))
+
+(library
+ (name int8_refused_kernels)
+ (modules int8_refused_kernels)
+ (libraries sarek_ir int8_kernels))
+
+(test
+ (name test_int8_storage)
+ (modules test_int8_storage)
+ (libraries
+  sarek
+  sarek.codegen
+  sarek.interpreter
+  spoc_core
+  int8_kernels
+  int8_refused_kernels
+  alcotest))
+
 ; ptxas sweep over the WHOLE PTX intrinsic surface: one kernel per intrinsic
 ; name, enumerated from Sarek_ir_ptx_expr's own dispatch registry so a new
 ; intrinsic is assembled automatically. Skips cleanly without ptxas.

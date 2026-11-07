@@ -25,7 +25,8 @@ This PR changes no generated code and no result: it only reports.
   PPX cannot link (the PPX links only `spoc.ir`).
 - `SCoopmat` lowers on HIP gfx11 (f16×f16+f32→f32 relaxed, opt-in; {u8,s8}×{u8,s8}
   →{s32,u32} strict), CUDA (compile-only), Vulkan/GLSL (integer, per device probe).
-- The DSL has no 8-bit integer type; `TUint8` is IR-only, without arithmetic.
+- The DSL has no 8-bit integer type; `TUint8`/`TInt8` are IR-only storage
+  types, without arithmetic (`spoc/ir/Sarek_ir_int8.mli`).
 
 ## The pattern (what is recognised)
 

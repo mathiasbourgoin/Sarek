@@ -179,10 +179,19 @@ let rec cuda_type_of_elttype = function
   | TFloat32 -> "float"
   | TFloat64 -> "double"
   | TUint8 ->
-      (* [TUint8] exists as the element type of an 8-bit cooperative-matrix
-         operand buffer; Sarek_ir_cuda_coopmat reads it as unsigned char (u8)
-         or signed char (s8) as the fragment says. *)
+      (* 8-bit storage (Sarek_ir_int8). C promotes an [unsigned char] operand
+         to [int] by zero extension and converts an [int] stored into one
+         modulo 2^8, which is the storage semantics exactly, so reads, stores
+         and [ECast] need no arm of their own. Also the element type of an
+         8-bit cooperative-matrix operand buffer; Sarek_ir_cuda_coopmat reads
+         it as unsigned char (u8) or signed char (s8) as the fragment says. *)
       "unsigned char"
+  | TInt8 ->
+      (* Promotion sign-extends. The conversion of an out-of-range [int] to
+         [signed char] is implementation-defined before C++20; clang (HIP) and
+         nvcc both define it as modulo 2^8, which C++20 made normative, and
+         test_int8_storage_e2e measures it against the interpreter. *)
+      "signed char"
   | TBool -> "int"
   | TUnit -> "void"
   | TRecord (name, _) -> mangle_name name
@@ -1111,6 +1120,12 @@ let cuda_header_for (k : kernel) =
     that would have distinguished them, [SNative], now refuses outright. *)
 let generate_with_types ?block
     ~(types : (string * (string * elttype) list) list) (k : kernel) : string =
+  Sarek_ir_codegen.reject_int8_misuse
+    ~raise_:(fun reason ->
+      Codegen_error.raise_error
+        (Codegen_error.unsupported_construct "int8" reason))
+    ~backend:"CUDA"
+    k ;
   (* A cooperative-matrix kernel must run whole 32-wide waves/warps. Checked
      here, where the launch block is known (Execute passes it), so a bad block
      is refused before any compile. *)

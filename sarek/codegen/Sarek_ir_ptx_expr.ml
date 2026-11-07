@@ -1311,13 +1311,27 @@ and emit_cast_from_non_f16 buf alloc r_src dst_ty : string =
          CUDA / nvrtc f16 narrowing row), so the plain narrowing of the rounded
          f32 value is the DSL's two-step rounding. *)
       emit_f16_narrow buf alloc (emit_cast buf alloc r_src TFloat32)
-  | TUint8 ->
-      (* Unreachable through any front end — no cast to or from a
-         cooperative-matrix operand element type is producible from the surface
-         syntax, by design. Kept a refusal rather than a truncating u32 path so
-         that if some rewrite ever synthesizes one, it is a diagnostic instead
-         of a silent narrowing. *)
-      unsupported_coopmat_elttype "ECast to uint8"
+  | (TUint8 | TInt8) as t ->
+      (* 8-bit storage (Sarek_ir_int8): the int32 a store followed by a read
+         gives back. [and.b32 _, _, 255] keeps the low byte; [bfe.s32 _, _, 0,
+         8] extracts it sign-extended. An integer source only: a float has no
+         defined low byte, and the interpreter and C would disagree on it out
+         of range. An int64 source is truncated to int32 first, which keeps the
+         same low byte. *)
+      if is_f16_reg r_src || is_f32_reg r_src || is_f64_reg r_src then
+        unsupported
+          "ECast of a float to uint8/int8: convert to int32 first (the 8-bit \
+           types are integer storage types)"
+      else
+        let r_src =
+          if is_u64_reg r_src then emit_cast_from_non_f16 buf alloc r_src TInt32
+          else r_src
+        in
+        let r = new_u32 alloc in
+        (match t with
+        | TInt8 -> emit buf "bfe.s32 %s, %s, 0, 8;" r r_src
+        | _ -> emit buf "and.b32 %s, %s, 255;" r r_src) ;
+        r
   | TFloat32 ->
       if is_f32_reg r_src then r_src
       else
