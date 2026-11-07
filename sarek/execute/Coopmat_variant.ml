@@ -134,6 +134,14 @@ let bases_aligned (k : kernel) bases arrays =
           | None -> false)
         arrays
 
+(** Whether [choose] has anything to decide for [k] on [framework]: a CUDA
+    framework and a kernel with cooperative-matrix statements. The launch path
+    asks this first: for every other launch it is a string comparison against
+    two names (a kernel on a CUDA framework: one physical comparison with the
+    last kernel seen), and nothing is allocated. *)
+let relevant ~framework (k : kernel) =
+  List.mem framework frameworks && (entry_of k).applicable
+
 let aligned_launches = Atomic.make 0
 
 let checked_launches = Atomic.make 0
