@@ -427,7 +427,7 @@ let copy_register alloc bytes =
     address register of the buffer (a [.shared] window offset) and the register
     holding 16. [load]: copy in, then [wmma.load]; else [wmma.store], then copy
     out. *)
-let emit_slow_path alloc ~label ~done_label (a : access) ~load ~wmma =
+let emit_slow_path alloc ~label ~done_label (a : access) ~layout ~load ~wmma =
   let b = alloc.coop_slow in
   let warps = Option.get alloc.coop_warps in
   ensure_tiles alloc ~warps ;
@@ -516,7 +516,64 @@ let emit_slow_path alloc ~label ~done_label (a : access) ~load ~wmma =
   else begin
     wmma b tile sixteen ;
     emit b "bar.warp.sync 0xffffffff;" ;
-    copy_all ()
+    (* Rows (columns) closer than 16 elements overlap in memory, and then the
+       interpreter's answer is the LAST write of its loop (rows outer, columns
+       inner). Parallel lanes would race on the shared cells, so that case is
+       written serially, by lane 0, in the interpreter's order. *)
+    let overlap = new_pred alloc and magnitude = new_u32 alloc in
+    let serial = new_label alloc and joined = new_label alloc in
+    emit b "abs.s32 %s, %s;" magnitude a.stride ;
+    emit b "setp.lt.s32 %s, %s, 16;" overlap magnitude ;
+    emit b "@%s bra %s;" overlap serial ;
+    copy_all () ;
+    emit b "bra %s;" joined ;
+    emit b "%s:" serial ;
+    let not_leader = new_pred alloc in
+    emit b "setp.ne.u32 %s, %s, 0;" not_leader lane ;
+    emit b "@%s bra %s;" not_leader joined ;
+    let r = new_u32 alloc and c = new_u32 alloc in
+    let row_loop = new_label alloc and col_loop = new_label alloc in
+    emit b "mov.u32 %s, 0;" r ;
+    emit b "%s:" row_loop ;
+    emit b "mov.u32 %s, 0;" c ;
+    emit b "%s:" col_loop ;
+    (* element (r, c): in the buffer at outer * 16 + inner, in memory at
+       index + outer * stride + inner, outer / inner being (r, c) row-major and
+       (c, r) column-major *)
+    let outer, inner = if layout = C.Col_major then (c, r) else (r, c) in
+    let toff = new_u32 alloc and taddr = new_u32 alloc in
+    emit b "mad.lo.u32 %s, %s, 16, %s;" toff outer inner ;
+    emit b "mad.lo.u32 %s, %s, %d, %s;" taddr toff a.bytes tile ;
+    let v = copy_register alloc a.bytes in
+    emit b "ld.shared.%s %s, [%s];" w v taddr ;
+    (match a.space with
+    | Some SpaceShared ->
+        let off = new_u32 alloc and offb = new_u32 alloc in
+        let addr = new_u32 alloc in
+        emit b "mad.lo.s32 %s, %s, %s, %s;" off outer a.stride a.index ;
+        emit b "add.s32 %s, %s, %s;" off off inner ;
+        emit b "mul.lo.u32 %s, %s, %d;" offb off a.bytes ;
+        emit b "add.u32 %s, %s, %s;" addr a.base offb ;
+        emit b "st.shared.%s [%s], %s;" w addr v
+    | Some SpaceLocal | None ->
+        let idx64 = new_u64 alloc and in64 = new_u64 alloc in
+        let off64 = new_u64 alloc and offb = new_u64 alloc in
+        let addr = new_u64 alloc in
+        emit b "cvt.s64.s32 %s, %s;" idx64 a.index ;
+        emit b "mad.wide.s32 %s, %s, %s, %s;" off64 outer a.stride idx64 ;
+        emit b "cvt.u64.u32 %s, %s;" in64 inner ;
+        emit b "add.s64 %s, %s, %s;" off64 off64 in64 ;
+        emit b "mul.lo.s64 %s, %s, %d;" offb off64 a.bytes ;
+        emit b "add.u64 %s, %s, %s;" addr a.base offb ;
+        emit b "st.global.%s [%s], %s;" w addr v) ;
+    let more_cols = new_pred alloc and more_rows = new_pred alloc in
+    emit b "add.u32 %s, %s, 1;" c c ;
+    emit b "setp.lt.u32 %s, %s, 16;" more_cols c ;
+    emit b "@%s bra %s;" more_cols col_loop ;
+    emit b "add.u32 %s, %s, 1;" r r ;
+    emit b "setp.lt.u32 %s, %s, 16;" more_rows r ;
+    emit b "@%s bra %s;" more_rows row_loop ;
+    emit b "%s:" joined
   end ;
   (* the buffer is reused by the next staged access *)
   emit b "bar.warp.sync 0xffffffff;" ;
@@ -527,7 +584,7 @@ let emit_slow_path alloc ~label ~done_label (a : access) ~load ~wmma =
     staging buffer. Proven aligned: the bare instruction. Unproven with a known
     block: a warp-uniform branch to the out-of-line slow path. Unproven without
     a block (no buffer can be sized): the trap. *)
-let emit_guarded buf alloc ~op (a : access) ~load ~direct ~staged =
+let emit_guarded buf alloc ~op (a : access) ~layout ~load ~direct ~staged =
   if Sarek_ir_coopmat_align.is_proven alloc.coop_proven op then
     direct buf a.addr a.stride
   else if alloc.coop_warps = None then begin
@@ -541,7 +598,14 @@ let emit_guarded buf alloc ~op (a : access) ~load ~direct ~staged =
     emit buf "@%s bra %s;" bad slow ;
     direct buf a.addr a.stride ;
     emit buf "%s:" done_ ;
-    emit_slow_path alloc ~label:slow ~done_label:done_ a ~load ~wmma:staged
+    emit_slow_path
+      alloc
+      ~label:slow
+      ~done_label:done_
+      a
+      ~layout
+      ~load
+      ~wmma:staged
   end
 
 let emit_load buf alloc env ~op ~dst ~(frag : C.fragment) ~src ~index ~stride
@@ -580,6 +644,7 @@ let emit_load buf alloc env ~op ~dst ~(frag : C.fragment) ~src ~index ~stride
     alloc
     ~op
     a
+    ~layout
     ~load:true
     ~direct:(instr (ss a))
     ~staged:(instr "shared")
@@ -612,6 +677,7 @@ let emit_store buf alloc env ~op ~src ~(frag : C.fragment) ~dst ~index ~stride
     alloc
     ~op
     a
+    ~layout
     ~load:false
     ~direct:(instr (ss a))
     ~staged:(instr "shared")
