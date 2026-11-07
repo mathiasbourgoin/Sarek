@@ -53,6 +53,53 @@ let staging_for =
       done ;
       y.((block_idx_x * 256l) + tid) <- acc]
 
+(* a matvec row loop with a RUNTIME trip count and global loads only *)
+let dyn_matvec =
+  [%kernel
+    fun (w : float32 vector)
+        (x : float32 vector)
+        (y : float32 vector)
+        (n : int32) ->
+      let tid = thread_idx_x in
+      let acc = mut 0.0 in
+      let k = mut tid in
+      while k < n do
+        acc := acc +. (w.((block_idx_x * n) + k) *. x.(k)) ;
+        k := k + 256l
+      done ;
+      y.((block_idx_x * 256l) + tid) <- acc]
+
+(* staging with a RUNTIME number of global loads per thread, each followed by
+   its shared store, then one barrier *)
+let dyn_stage =
+  [%kernel
+    fun (w : float32 vector)
+        (x : float32 vector)
+        (y : float32 vector)
+        (n : int32)
+        (cnt : int32) ->
+      let%shared (stage : float32) = 4096l in
+      let tid = thread_idx_x in
+      let acc = mut 0.0 in
+      let c = mut 0l in
+      while c < n do
+        let i = mut 0l in
+        while i < cnt do
+          stage.(tid + (i * 256l)) <-
+            w.((block_idx_x * n) + c + (i * 256l) + tid) ;
+          i := i + 1l
+        done ;
+        block_barrier () ;
+        let j = mut 0l in
+        while j < 256l do
+          acc := acc +. (stage.(j) *. x.(c + j)) ;
+          j := j + 1l
+        done ;
+        block_barrier () ;
+        c := c + 256l
+      done ;
+      y.((block_idx_x * 256l) + tid) <- acc]
+
 let ir_of (_, kirc) =
   match kirc.Sarek.Kirc_types.body_ir with
   | Some ir -> ir
@@ -150,10 +197,38 @@ let () =
         in
         Printf.printf "######## %s\n" name ;
         let sass_spoc, _ = analyse (name ^ ": SPOC PTX") spoc_ptx in
+        let replace_all hay a b =
+          let buf = Buffer.create (String.length hay) in
+          let n = String.length a and l = String.length hay in
+          let i = ref 0 in
+          while !i < l do
+            if !i + n <= l && String.sub hay !i n = a then begin
+              Buffer.add_string buf b ;
+              i := !i + n
+            end
+            else begin
+              Buffer.add_char buf hay.[!i] ;
+              incr i
+            end
+          done ;
+          Buffer.contents buf
+        in
+        let spoc_nc = replace_all spoc_ptx "ld.global.f32" "ld.global.nc.f32" in
+        let _ =
+          analyse (name ^ ": SPOC PTX with ld.global.nc (experiment)") spoc_nc
+        in
         let sass_nvrtc, _ =
           analyse (name ^ ": NVRTC PTX of the CUDA-C") nvrtc_ptx
         in
-        Printf.printf "######## %s: NVRTC PTX (kernel)\n%s\n" name nvrtc_ptx ;
-        Printf.printf "######## %s: SASS of SPOC PTX\n%s\n" name sass_spoc ;
-        Printf.printf "######## %s: SASS of NVRTC PTX\n%s\n" name sass_nvrtc)
-      [("while", staging); ("for", staging_for)]
+        if String.length name >= 3 && String.sub name 0 3 = "dyn" then begin
+          Printf.printf "######## %s: SPOC PTX\n%s\n" name spoc_ptx ;
+          Printf.printf "######## %s: NVRTC PTX (kernel)\n%s\n" name nvrtc_ptx ;
+          Printf.printf "######## %s: SASS of SPOC PTX\n%s\n" name sass_spoc ;
+          Printf.printf "######## %s: SASS of NVRTC PTX\n%s\n" name sass_nvrtc
+        end)
+      [
+        ("while", staging);
+        ("for", staging_for);
+        ("dyn_matvec", dyn_matvec);
+        ("dyn_stage", dyn_stage);
+      ]
