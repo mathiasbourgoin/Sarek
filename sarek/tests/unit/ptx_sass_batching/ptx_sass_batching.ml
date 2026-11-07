@@ -245,6 +245,37 @@ let compile label ptx =
   List.iter (fun f -> try Sys.remove f with Sys_error _ -> ()) [ptx_f; cubin] ;
   (analyse_sass sass (registers_of info), sass)
 
+(* Opcode histogram of a SASS text: where the instructions of a kernel go. *)
+let print_histogram label sass =
+  let table = Hashtbl.create 64 in
+  List.iter
+    (fun line ->
+      match opcode line with
+      | Some op ->
+          let op =
+            match String.index_opt op '.' with
+            | Some i -> String.sub op 0 i
+            | None -> op
+          in
+          Hashtbl.replace
+            table
+            op
+            (1 + Option.value ~default:0 (Hashtbl.find_opt table op))
+      | None -> ())
+    (lines sass) ;
+  let rows =
+    List.sort
+      (fun (_, a) (_, b) -> compare b a)
+      (List.of_seq (Hashtbl.to_seq table))
+  in
+  Printf.printf "  histogram %s:" label ;
+  List.iter (fun (op, n) -> if n >= 4 then Printf.printf " %s=%d" op n) rows ;
+  print_newline ()
+
+(* The full SASS is printed for the one kernel under study. *)
+let dump_sass name =
+  contains name "fused"
+
 let print_row label m =
   Printf.printf
     "  %-34s LDG %3d  CONSTANT %3d  in flight %3d  IMAD %4d (WIDE %3d)  LEA \
@@ -280,7 +311,7 @@ let () =
             ir
         in
         Printf.printf "######## %s\n" name ;
-        let m_spoc, _ = compile (name ^ " SPOC PTX") spoc in
+        let m_spoc, sass_spoc = compile (name ^ " SPOC PTX") spoc in
         print_row "SPOC PTX" m_spoc ;
         if nvrtc then begin
           let cuda =
@@ -295,8 +326,17 @@ let () =
               ~arch:"compute_75"
               cuda
           in
-          let m_nvrtc, _ = compile (name ^ " NVRTC PTX") ptx in
-          print_row "NVRTC PTX of the CUDA-C" m_nvrtc
+          let m_nvrtc, sass_nvrtc = compile (name ^ " NVRTC PTX") ptx in
+          print_row "NVRTC PTX of the CUDA-C" m_nvrtc ;
+          if dump_sass name then begin
+            print_histogram "SPOC" sass_spoc ;
+            print_histogram "NVRTC" sass_nvrtc ;
+            Printf.printf
+              "==== SPOC PTX\n%s\n==== SPOC SASS\n%s\n==== NVRTC SASS\n%s\n"
+              spoc
+              sass_spoc
+              sass_nvrtc
+          end
         end ;
         if streaming then
           expect
