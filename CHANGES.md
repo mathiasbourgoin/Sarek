@@ -81,8 +81,7 @@
   `nvcuda::wmma`. Same accepted cases as CUDA/C (16x16x16, subgroup scope, any row/column layout):
   f16 operands with an f32 accumulator (sm_70), and 8-bit operands of one signedness (s8*s8 or
   u8*u8) with an s32 or u32 accumulator (`wmma.mma ... .s32.s8.s8.s32`, sm_72); mixed-sign 8-bit,
-  bf16, saturating and other shapes are refused as on CUDA/C. The generated code traps on a
-  misaligned address or stride, as CUDA/C does. `Cuda_coopmat.support_for ~lowering:Ptx` is the
+  bf16, saturating and other shapes are refused as on CUDA/C. `Cuda_coopmat.support_for ~lowering:Ptx` is the
   probe the CUDA/PTX plugin now reports (compute capability 7.0 / 7.2 or later, 32-wide warps, never
   on ZLUDA, which rejects `wmma`). Kernels without cooperative matrices emit byte-identical PTX.
   Tests: `sarek/tests/unit/test_ptx_coopmat.ml` (snapshots, refusals, full parity grid with CUDA/C,
@@ -100,7 +99,11 @@
   reduces "every access is aligned" to a condition on the kernel's int32 parameters (for the GEMM,
   `k` and `n` multiples of 8), and `Execute` generates and runs the variant without check or buffer
   when the actual arguments satisfy it, the staged variant otherwise (one source per variant and block;
-  CUDA frameworks only). Test: `sarek/tests/e2e/test_coopmat_misalign_e2e.ml`.
+  CUDA frameworks only). Three variants follow: aligned (arguments satisfy the condition: no check,
+  no buffer), staged (the run-time test and the buffer for the accesses not proven), and checked (an
+  array argument whose device pointer is not 32-byte aligned: no static proof is used, every access is
+  tested and staged, so the result is still the interpreter's). Test:
+  `sarek/tests/e2e/test_coopmat_misalign_e2e.ml`.
   Not yet executed on NVIDIA hardware.
 
 ## 2026-10

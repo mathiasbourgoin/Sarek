@@ -46,56 +46,40 @@ let outcome_name = function
 
 let frameworks = ["CUDA/C"; "CUDA/PTX"]
 
+(* What is derived once per kernel. A slot of the kernel's {!Ir_memo} record, so
+   it lives as long as the kernel and no longer, and a hit costs the launch's
+   own one-per-domain IR lookup (nothing, when the kernel is the previous launch
+   of the domain). It must not refer to the kernel: a variant that is the kernel
+   itself is [None], and the aligned and checked kernels share only their
+   immutable fields with it. *)
 type entry = {
-  kernel : kernel;  (** compared physically *)
   applicable : bool;
   predicate : A.predicate option;
-  aligned : kernel;
-  checked : kernel;
+  aligned : kernel option;  (** [None]: the kernel itself *)
+  checked : kernel option;
   arrays : string list;  (** the array parameters its accesses touch *)
 }
 
-let lock = Mutex.create ()
-
-let entries : entry list ref = ref []
-
-let max_entries = 256
-
-(* The launch path asks for every kernel on a CUDA framework: the last entry
-   answers without the lock. *)
-let last : entry option Atomic.t = Atomic.make None
+let entry_key : entry Ir_memo.key = Ir_memo.new_key ()
 
 let entry_of (k : kernel) : entry =
-  match Atomic.get last with
-  | Some e when e.kernel == k -> e
-  | _ ->
+  let facts = Ir_memo.facts k in
+  match Ir_memo.find facts entry_key with
+  | Some e -> e
+  | None ->
+      let applicable = Sarek_ir_analysis.kernel_has_coopmat_op k in
+      let predicate = if applicable then A.derive k else None in
       let e =
-        Mutex.protect lock (fun () ->
-            match List.find_opt (fun e -> e.kernel == k) !entries with
-            | Some e -> e
-            | None ->
-                let applicable = Sarek_ir_analysis.kernel_has_coopmat_op k in
-                let predicate = if applicable then A.derive k else None in
-                let e =
-                  {
-                    kernel = k;
-                    applicable;
-                    predicate;
-                    aligned =
-                      (if predicate <> None then A.mark_aligned k else k);
-                    checked = (if applicable then A.mark_checked k else k);
-                    arrays = (if applicable then A.arrays_accessed k else []);
-                  }
-                in
-                let kept =
-                  if List.length !entries >= max_entries then
-                    List.filteri (fun i _ -> i < max_entries - 1) !entries
-                  else !entries
-                in
-                entries := e :: kept ;
-                e)
+        {
+          applicable;
+          predicate;
+          aligned =
+            (if predicate <> None then Some (A.mark_aligned k) else None);
+          checked = (if applicable then Some (A.mark_checked k) else None);
+          arrays = (if applicable then A.arrays_accessed k else []);
+        }
       in
-      Atomic.set last (Some e) ;
+      Ir_memo.set facts entry_key e ;
       e
 
 (** The alignment, in bytes, [wmma] needs of an address. *)
@@ -166,13 +150,13 @@ let choose_lazy ?(count = true) ~framework (k : kernel)
     if not e.applicable then (k, Not_applicable)
     else if not (bases_aligned k (bases ()) e.arrays) then begin
       if count then Atomic.incr checked_launches ;
-      (e.checked, Checked)
+      (Option.value e.checked ~default:k, Checked)
     end
     else
       match e.predicate with
       | Some p when A.holds p (scalars ()) ->
           if count then Atomic.incr aligned_launches ;
-          (e.aligned, Aligned)
+          (Option.value e.aligned ~default:k, Aligned)
       | Some _ | None ->
           if count then Atomic.incr staged_launches ;
           (k, Staged)
