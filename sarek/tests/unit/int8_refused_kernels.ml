@@ -40,6 +40,13 @@ let float_store_kernel =
     "int8_float_store"
     (K.store "b" (K.i32 0) (ECast (TFloat32, K.read "out" (K.i32 0))))
 
+let float_store_expr_kernel =
+  one_u8_buffer
+    "int8_float_store_expr"
+    (SAssign
+       ( LArrayElemExpr (EVar (K.var 0 "b" (TVec TUint8)), K.i32 0),
+         EConst (CFloat32 300.0) ))
+
 let atomic_kernel =
   one_u8_buffer
     "int8_atomic"
@@ -134,6 +141,7 @@ let all =
     (scalar_param_kernel, "is a uint8 parameter or loop variable");
     (float_cast_kernel, "a float value is cast or stored");
     (float_store_kernel, "a float value is cast or stored");
+    (float_store_expr_kernel, "a float value is cast or stored");
     (atomic_kernel, "on an 8-bit array");
     (expr_base_kernel, "given by an expression rather than a name");
     (ambiguous_kernel, "is bound both to an 8-bit and to another");

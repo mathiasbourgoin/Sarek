@@ -237,6 +237,10 @@ let expr_misuse arrays bytes = function
   | _ -> None
 
 let stmt_misuse arrays bytes = function
+  | SAssign (LArrayElemExpr (EVar v, _), x)
+    when Option.is_some (byte_elt_of_type v.var_type) && float_shaped arrays x
+    ->
+      float_refusal
   | SAssign (LArrayElemExpr (EVar _, _), _) -> None
   | SAssign (LArrayElemExpr _, _) -> base_refusal "a store into"
   | SAssign (LArrayElem (a, _), x)

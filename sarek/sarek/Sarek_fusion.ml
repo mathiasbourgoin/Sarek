@@ -622,6 +622,16 @@ let neither_uses_warp_ops a b =
   (not (Sarek_ir_analysis.kernel_uses_warp_ops a))
   && not (Sarek_ir_analysis.kernel_uses_warp_ops b)
 
+(** No 8-bit storage in either kernel. Every fusion substitutes the producer's
+    stored expression for the consumer's read, which drops the narrowing the
+    store performed: a producer storing 300 into a uint8 intermediate is read
+    back as 44, the substituted expression is 300. Before 8-bit arrays were
+    ordinary storage a uint8 buffer counted as a cooperative-matrix feature,
+    which [can_fuse] refused. Checked by all three fusion predicates. *)
+let neither_uses_int8 a b =
+  (not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int8 a))
+  && not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int8 b)
+
 (** Check if two kernels can be fused via an intermediate array.
 
     Vertical fusion eliminates intermediate arrays by inlining the producer's
@@ -691,16 +701,7 @@ let can_fuse (producer : kernel) (consumer : kernel) (intermediate : string) :
     && not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Coopmat consumer)
   in
 
-  (* No 8-bit storage in either. Substituting the producer's stored expression
-     for the consumer's read drops the narrowing the store performed: a
-     producer storing 300 into a uint8 intermediate is read back as 44, the
-     substituted expression is 300. Before 8-bit arrays were ordinary storage
-     this was covered by [no_coopmat] above, since a uint8 buffer counted as a
-     cooperative-matrix feature. *)
-  let no_int8 =
-    (not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int8 producer))
-    && not (Sarek_ir_analysis.kernel_uses Sarek_ir_analysis.Int8 consumer)
-  in
+  let no_int8 = neither_uses_int8 producer consumer in
 
   let no_warp_ops = neither_uses_warp_ops producer consumer in
 
@@ -983,6 +984,7 @@ let can_fuse_reduction (map_kernel : kernel) (reduce_kernel : kernel)
   && Option.is_some reduce_reads_inter
   && no_barriers && no_atomics
   && neither_uses_warp_ops map_kernel reduce_kernel
+  && neither_uses_int8 map_kernel reduce_kernel
   && not (length_of_intermediate_needed map_kernel reduce_kernel intermediate)
 
 (** Fuse a map kernel into a reduction kernel, eliminating intermediate array.
@@ -1155,6 +1157,7 @@ let can_fuse_stencil (producer : kernel) (consumer : kernel)
 
   prod_writes_inter && cons_stencil && no_barriers && no_atomics
   && neither_uses_warp_ops producer consumer
+  && neither_uses_int8 producer consumer
   && not (length_of_intermediate_needed producer consumer intermediate)
 
 (** Information about fused stencil *)
