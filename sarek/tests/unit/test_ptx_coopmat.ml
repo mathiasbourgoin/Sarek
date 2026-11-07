@@ -457,22 +457,27 @@ let test_parity () =
 
 (** {1 Kernels without cooperative matrices are unchanged} *)
 
-(* MD5 of the PTX of the f16 regression kernels, recorded from the generator
-   before this lowering existed (origin/main 1ad791d5). *)
+(* MD5 of the PTX of the f16 regression kernels. Recorded from the generator
+   before the wmma lowering existed (origin/main 1ad791d5), and re-recorded
+   deliberately when the global loads became [ld.global.nc] for the parameters a
+   kernel never writes and each global address one [mad.wide.u32]: those two
+   change the text of every kernel with a global access. The unrolling of
+   runtime-trip loops changes none of them (test_ptx_load_batching checks that
+   it is the identity on these kernels). *)
 let baseline_digests =
   [
-    ("f16_scale", "78598803fb925e3cc4b201bddbace1df");
-    ("f16_chain", "08fe3f98a98a6f17c0c023b61ced98f9");
-    ("f16_roundtrip", "d19a79111587c499b24ba208936ca4e7");
-    ("f16_local", "d553c156c6fe90bf670f2da7e444783e");
-    ("f16_shared", "2de97ee9ac17c726b4c8f2658bda3f7e");
-    ("f16_local_array", "a8e58ce1e433b2d6a7371b76efcb6f34");
-    ("f16_casts", "a2652c8259a520cade66f8ce8dd43aba");
-    ("f16_select", "60c76d9420e7e799477846bcfa4d8ccc");
-    ("f16_select_loads", "4280b98c78c653d2e4235c1aa5cd77c1");
-    ("f16_helper", "51e76a485b8637b1bf8731953b93161a");
-    ("f16_direct_trunc", "63c93e1b4355697a0ce251c7184fa870");
-    ("f16_direct_fromint", "d950ef58174c259126b31a1616795089");
+    ("f16_scale", "b4e558634ac84aab2952bfdc1f709f99");
+    ("f16_chain", "ee7599296b9d53e6243eb5f53589636a");
+    ("f16_roundtrip", "61e2440f65449e822d06ec7f298df11c");
+    ("f16_local", "ea2a41f7fe6cfaf8291c6ceba3e52154");
+    ("f16_shared", "9b1c2748f6f84ea245cbe14269426e68");
+    ("f16_local_array", "16e83234612deae26a60a13cebc34478");
+    ("f16_casts", "c200991a523b533e95c7368124b77534");
+    ("f16_select", "2baa4bc86eed7f9cc9294ac94a64c516");
+    ("f16_select_loads", "c18cf1e2b218baa041c8a2488b22ff57");
+    ("f16_helper", "d2aab675141d70900558358f928ebe80");
+    ("f16_direct_trunc", "ea0b65d2554d85e8fd89281921223246");
+    ("f16_direct_fromint", "45e520b9d59b3e1d5e2b97f13197112b");
   ]
 
 let test_unchanged () =
@@ -486,7 +491,7 @@ let test_unchanged () =
   let vadd = Sarek_ir_ptx.demo_vector_add_ptx () in
   Alcotest.(check string)
     "vector_add"
-    "488a54635ad61b356af3ca7cd1b47678"
+    "dca73ce555a14d8c612de34c5845dee6"
     (Digest.to_hex (Digest.string vadd)) ;
   Alcotest.(check bool) "no wmma" false (contains ~needle:"wmma" vadd)
 

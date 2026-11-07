@@ -526,3 +526,22 @@
   spoc_framework
   sarek_ir
   alcotest))
+
+; PTX memory-level parallelism: unrolled runtime-trip loops, ld.global.nc and
+; mad.wide addresses. CPU-only; the Interpreter is the oracle for the unroll.
+
+(test
+ (name test_ptx_load_batching)
+ (modules test_ptx_load_batching)
+ (libraries
+  sarek
+  sarek.interp
+  sarek.stdlib
+  sarek.codegen
+  sarek_ir
+  ptx_f16_kernels
+  alcotest)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33)))

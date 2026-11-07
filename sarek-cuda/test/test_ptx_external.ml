@@ -34,7 +34,7 @@ let vector_add_ptx =
 )
 {
     .reg .u32 %r<10>;
-    .reg .u64 %rd<12>;
+    .reg .u64 %rd<6>;
     .reg .f32 %f<3>;
     .reg .pred %p<2>;
 
@@ -54,19 +54,13 @@ let vector_add_ptx =
     selp.u32 %r9, 1, 0, %p0;
     setp.ne.u32 %p1, %r9, 0;
     @!%p1 bra L0;
-    cvt.u64.u32 %rd3, %r8;
-    shl.b64 %rd4, %rd3, 2;
-    add.u64 %rd5, %rd0, %rd4;
-    ld.global.f32 %f0, [%rd5];
-    cvt.u64.u32 %rd6, %r8;
-    shl.b64 %rd7, %rd6, 2;
-    add.u64 %rd8, %rd1, %rd7;
-    ld.global.f32 %f1, [%rd8];
+    mad.wide.u32 %rd3, %r8, 4, %rd0;
+    ld.global.nc.f32 %f0, [%rd3];
+    mad.wide.u32 %rd4, %r8, 4, %rd1;
+    ld.global.nc.f32 %f1, [%rd4];
     add.f32 %f2, %f0, %f1;
-    cvt.u64.u32 %rd9, %r8;
-    shl.b64 %rd10, %rd9, 2;
-    add.u64 %rd11, %rd2, %rd10;
-    st.global.f32 [%rd11], %f2;
+    mad.wide.u32 %rd5, %r8, 4, %rd2;
+    st.global.f32 [%rd5], %f2;
 L0:
     ret;
 }

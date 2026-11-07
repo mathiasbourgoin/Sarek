@@ -1,5 +1,26 @@
 ## 2026-11
 
+### Changed
+
+- CUDA/PTX keeps more global loads in flight, the property in which `ptxas` fell four times short
+  of NVVM on the CUDA/C of the same kernel for an accumulation loop with a runtime trip count and
+  several independent global loads per iteration. Three changes in the PTX generator:
+  (1) `Sarek_ir_ptx_unroll` unrolls innermost loops with a runtime trip count (a `for` with a
+  non-constant bound, or `while k < bound do ...; k := k + c done`) into a main loop of 2 to 16
+  copies of the body followed by the original loop for the remainder, the factor aiming at about
+  32 loads in flight; the body is copied unchanged and in order, so results are bit-identical, and
+  the remaining-iterations test is made in 64 bits. A kernel without such a loop is not touched by
+  it. `SAREK_OPT_DISABLE=unroll` turns it off.
+  (2) A global vector parameter that the kernel never writes (no store, atomic, helper call or
+  inline native code can reach it) is read with `ld.global.nc`, the same assumption the CUDA/C
+  generator already makes with `__restrict__` on every vector parameter: two vector parameters must
+  not overlap. (3) A global or local array address is one `mad.wide.u32` instead of
+  `cvt.u64.u32`/`shl.b64`/`add.u64`; the address is the same. (2) and (3) change the text of every
+  kernel that reads a global vector or indexes a local array; the PTX snapshots, digests and
+  goldens were updated for it. Not measured on an NVIDIA GPU: the metrics are `ptxas -v` and
+  `nvdisasm` on the generated PTX (`sarek/tests/unit/ptx_sass_batching`), and the unrolling is
+  checked against the Interpreter (`sarek/tests/unit/test_ptx_load_batching.ml`).
+
 ### Added
 
 - CUDA/PTX lowers `SCoopmat` to `wmma.load/mma/store` (tensor cores, PTX ISA 6.0, sm_70+), so the

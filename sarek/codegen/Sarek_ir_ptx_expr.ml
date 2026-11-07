@@ -561,6 +561,7 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
       let r_base = env_lookup env arr_name in
       let r_idx = emit_expr buf alloc env idx_expr in
       emit_array_read
+        ~nc:(Hashtbl.mem alloc.read_only arr_name)
         buf
         alloc
         r_base
@@ -584,7 +585,12 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
       let space =
         match arr_name_opt with Some n -> arr_space_of alloc n | None -> None
       in
-      emit_array_read buf alloc r_base r_idx elt_type ~space
+      let nc =
+        match arr_name_opt with
+        | Some n -> Hashtbl.mem alloc.read_only n
+        | None -> false
+      in
+      emit_array_read ~nc buf alloc r_base r_idx elt_type ~space
   | EIntrinsic (path, name, args) -> emit_intrinsic buf alloc env path name args
   | ECast (ty, e) ->
       let r_src = emit_expr buf alloc env e in
@@ -717,6 +723,10 @@ and bind_helper_param buf alloc env callee_env (p : var) (arg, arg_val) =
   | TVec elt | TArray (elt, _) ->
       let prev_elt = Hashtbl.find_opt alloc.arr_elt_types p.var_name in
       let prev_ms = arr_space_of alloc p.var_name in
+      let prev_ro = Hashtbl.mem alloc.read_only p.var_name in
+      (* The helper's parameter is a different array from a kernel parameter
+         that merely shares its name. *)
+      Hashtbl.remove alloc.read_only p.var_name ;
       Hashtbl.replace alloc.arr_elt_types p.var_name elt ;
       (match arg with
       | EVar a -> (
@@ -731,7 +741,7 @@ and bind_helper_param buf alloc env callee_env (p : var) (arg, arg_val) =
                 len_binding
           | None -> ())
       | _ -> Hashtbl.remove alloc.arr_memspaces p.var_name) ;
-      Some (p.var_name, prev_elt, prev_ms)
+      Some (p.var_name, prev_elt, prev_ms, prev_ro)
   | _ -> None
 
 (** Restore array metadata shadowed by helper parameter names. *)
@@ -739,7 +749,9 @@ and restore_helper_array_meta alloc saved =
   List.iter
     (function
       | None -> ()
-      | Some (name, prev_elt, prev_ms) -> (
+      | Some (name, prev_elt, prev_ms, prev_ro) -> (
+          if prev_ro then Hashtbl.replace alloc.read_only name ()
+          else Hashtbl.remove alloc.read_only name ;
           (match prev_elt with
           | Some e -> Hashtbl.replace alloc.arr_elt_types name e
           | None -> Hashtbl.remove alloc.arr_elt_types name) ;

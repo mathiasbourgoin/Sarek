@@ -615,7 +615,7 @@ let test_ptx_accepts_f16 () =
           label
           (Printexc.to_string e)
   in
-  each "vector-param" ~needle:"ld.global.b16" (f16_scale_kernel ()) ;
+  each "vector-param" ~needle:"ld.global.nc.b16" (f16_scale_kernel ()) ;
   each
     "untouched-param"
     ~needle:".param .u64 param_hin"
