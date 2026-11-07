@@ -1,3 +1,8 @@
+(******************************************************************************)
+(* SPDX-License-Identifier: CECILL-B                                          *)
+(* SPDX-FileCopyrightText: 2026 Mathias Bourgoin <mathias.bourgoin@gmail.com> *)
+(******************************************************************************)
+
 (* INVESTIGATION PROBE (not for merge): a matvec staging weights through shared
    memory in a loop of global loads. Compares what ptxas makes of the PTX SPOC
    emits with what it makes of the PTX NVRTC emits for the CUDA-C SPOC emits for
