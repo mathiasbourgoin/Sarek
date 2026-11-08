@@ -123,7 +123,7 @@ let proven_ops (body : stmt) : coopmat_op list =
           match stride with
           | EConst (CInt32 c) -> abs (Int32.to_int c) >= tile_edge
           | _ -> false)
-      | CM_load _ | CM_decl _ | CM_muladd _ -> true
+      | CM_load _ | CM_decl _ | CM_muladd _ | CM_scale_add _ -> true
     in
     let rec walk env = function
       | SCoopmat (CM_load {frag; index; stride; _} as op)
@@ -133,7 +133,7 @@ let proven_ops (body : stmt) : coopmat_op list =
             || (access_is_proven env ~frag ~index ~stride && stride_ok op stride)
           then found := op :: !found
           else refuted := op :: !refuted
-      | SCoopmat (CM_decl _ | CM_muladd _) -> ()
+      | SCoopmat (CM_decl _ | CM_muladd _ | CM_scale_add _) -> ()
       | SSeq ss -> List.iter (walk env) ss
       | SIf (_, a, b) ->
           walk env a ;
@@ -329,7 +329,7 @@ let derive (k : kernel) : predicate option =
                   (need ~params env index (want 32))
                   (need ~params env stride (want 16)))
                (at_least ~params env stride tile_edge))
-    | SCoopmat (CM_decl _ | CM_muladd _) -> ()
+    | SCoopmat (CM_decl _ | CM_muladd _ | CM_scale_add _) -> ()
     | SSeq ss -> List.iter (walk env) ss
     | SIf (_, a, b) ->
         walk env a ;
@@ -396,6 +396,6 @@ let arrays_accessed (k : kernel) : string list =
     (function
       | CM_load {src; _} -> note src
       | CM_store {dst; _} -> note dst
-      | CM_decl _ | CM_muladd _ -> ())
+      | CM_decl _ | CM_muladd _ | CM_scale_add _ -> ())
     (Sarek_ir_analysis.kernel_coopmat_ops k) ;
   List.rev !seen
