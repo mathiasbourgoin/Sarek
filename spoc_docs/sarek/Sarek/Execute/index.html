@@ -110,7 +110,18 @@
   <span><span class="label">shared_mem</span>:int <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">issue</span>:<span>(<span>unit <span class="arrow">&#45;&gt;</span></span> unit)</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><a href="#type-vector_arg">vector_arg</a> list</span> <span class="arrow">&#45;&gt;</span></span>
-  unit</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-run_jit"><a href="#val-run_jit" class="anchor"></a><code><span><span class="keyword">val</span> run_jit : 
+  unit</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-scalar_arguments"><a href="#val-scalar_arguments" class="anchor"></a><code><span><span class="keyword">val</span> scalar_arguments : 
+  <span><a href="../../../spoc/Sarek_ir_types/index.html#type-kernel">Sarek_ir_types.kernel</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="#type-vector_arg">vector_arg</a> list</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(string * int)</span> list</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-base_alignments"><a href="#val-base_alignments" class="anchor"></a><code><span><span class="keyword">val</span> base_alignments : 
+  <span><span class="label">device</span>:<a href="../../Spoc_core/Device/index.html#type-t">Spoc_core.Device.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../../../spoc/Sarek_ir_types/index.html#type-kernel">Sarek_ir_types.kernel</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="#type-vector_arg">vector_arg</a> list</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(string * int)</span> list</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-coopmat_variant"><a href="#val-coopmat_variant" class="anchor"></a><code><span><span class="keyword">val</span> coopmat_variant : 
+  <span><span class="label">device</span>:<a href="../../Spoc_core/Device/index.html#type-t">Spoc_core.Device.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../../../spoc/Sarek_ir_types/index.html#type-kernel">Sarek_ir_types.kernel</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><a href="#type-vector_arg">vector_arg</a> list</span> <span class="arrow">&#45;&gt;</span></span>
+  <a href="../../Sarek_execute/Coopmat_variant/index.html#type-outcome">Sarek_execute.Coopmat_variant.outcome</a></span></code></div><div class="spec-doc"><p>Which variant of a cooperative-matrix kernel a launch on <code>device</code> with <code>args</code> runs (<code>Coopmat_variant</code>); pure, counts nothing.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-run_jit"><a href="#val-run_jit" class="anchor"></a><code><span><span class="keyword">val</span> run_jit : 
   <span><span>(<span class="keyword">module</span> <a href="../../../spoc/Spoc_framework/Framework_sig/module-type-BACKEND/index.html">Spoc_framework.Framework_sig.BACKEND</a>)</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="optlabel">?stream</span>:<a href="../../Spoc_core/Transfer/index.html#type-stream">Spoc_core.Transfer.stream</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">device</span>:<a href="../../Spoc_core/Device/index.html#type-t">Spoc_core.Device.t</a> <span class="arrow">&#45;&gt;</span></span>
