@@ -36,6 +36,12 @@
   Error
   Advanced
   Ctypes_ops)
+ (foreign_stubs
+  (language c)
+  (names link_keepalive_stubs)
+  (flags
+   (:standard -O2)))
+ (c_library_flags (-lpthread))
  (preprocess no_preprocessing)
  (instrumentation
   (backend bisect_ppx)))

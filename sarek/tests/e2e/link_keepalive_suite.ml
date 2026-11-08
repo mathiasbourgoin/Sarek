@@ -61,6 +61,11 @@ let run_supported (dev : Device.t) =
   check
     "launches advance"
     (wait_for ~seconds:5.0 (fun () -> Keepalive.launches t >= 20)) ;
+  (* Absolute deadlines: at a period of 200 us, 300 ms is about 1500
+     launches; a loose floor keeps a loaded machine from failing it. *)
+  let before = Keepalive.launches t in
+  Unix.sleepf 0.3 ;
+  check "launch rate follows the period" (Keepalive.launches t - before >= 150) ;
   let t2 = Keepalive.start ~period_us:900 dev in
   check "start while Running returns the same handle" (t2 == t) ;
   Unix.sleepf 0.05 ;

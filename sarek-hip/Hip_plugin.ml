@@ -131,7 +131,8 @@ let registered_backend =
            (Hip_api.Device.get backend_id).Hip_api.Device.integrated) ;
        Framework_registry.register_backend
          ~priority:80
-         (module Backend : Framework_sig.BACKEND)
+         (module Backend : Framework_sig.BACKEND) ;
+       Hip_keepalive.register ()
      end
      else
        Spoc_core.Log.debug Spoc_core.Log.Device "Hip_plugin: HIP not available")

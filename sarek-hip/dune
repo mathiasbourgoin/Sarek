@@ -24,6 +24,7 @@
   Hip_api
   Hip_coopmat
   Hip_plugin_base
+  Hip_keepalive
   Hip_shared
   Hip_plugin)
  (preprocess no_preprocessing))

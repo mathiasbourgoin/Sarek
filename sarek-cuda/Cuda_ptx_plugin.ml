@@ -149,7 +149,8 @@ let registered_backend =
        Cuda_shared.install_shared_memory_query ~framework:"CUDA/PTX" ;
        Framework_registry.register_backend
          ~priority:100
-         (module Backend : Framework_sig.BACKEND)
+         (module Backend : Framework_sig.BACKEND) ;
+       Cuda_keepalive.register ()
      end
      else
        Spoc_core.Log.debug
