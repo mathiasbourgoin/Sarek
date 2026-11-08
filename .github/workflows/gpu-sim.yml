@@ -1,0 +1,88 @@
+name: CUDA tests (simulated H100)
+
+# Optional, non-required check. The hosted runners have no GPU, so this runs
+# the tests that use the CUDA backend (the direct PTX emitter and the driver
+# API bindings) on a simulated NVIDIA H100
+# (https://github.com/pantheongpu/pantheonsim). ci.yml only checks the
+# generated code with ptxas; here the kernels are also executed. A simulator
+# cannot reproduce hardware-specific behavior or timing, so it complements
+# real-GPU testing and does not replace it.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'sarek-cuda/**'
+      - 'sarek/**'
+      - 'spoc/**'
+      - 'dune-project'
+      - '*.opam'
+      - '.github/workflows/gpu-sim.yml'
+
+concurrency:
+  group: gpu-sim-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cuda-sim:
+    name: CUDA backend on a simulated H100
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up the simulated GPU and CUDA toolkit
+        uses: pantheongpu/setup-pantheonsim@ca87fe3143b29166822b923d6050945c5179408c # v0.1.5
+        with:
+          gpu: nvidia/h100
+          cuda-toolkit: "13.0"
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libffi-dev libgmp-dev pkg-config m4
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@ff66428f72b64472e749b22e0ad4dded4b2ddca6 # v3.9.1
+        with:
+          ocaml-compiler: 5.4.0
+
+      - name: Install OCaml dependencies
+        # bisect_ppx (a with-test dependency) has no release for OCaml 5.4,
+        # so the test libraries are installed by name, as ci.yml does.
+        run: |
+          opam install -y . --deps-only
+          opam install -y alcotest qcheck-core yojson astring
+
+      - name: Build the CUDA backend and its tests
+        run: opam exec -- dune build -j3 @sarek-cuda/all @sarek/tests/e2e/all
+
+      # dune is started under vgpu, so every test process inherits the
+      # simulated H100 (the CUDA backend loads libcuda through ctypes).
+      # dune keeps going after a failure; the run then fails only if a test
+      # outside this list failed, or if a listed test started to pass.
+      #
+      # test_device_buffers: its "spin" kernel loops 100M times on one thread
+      #   to keep a stream busy, which exceeds the simulator's default
+      #   per-thread budget of 1073741824 instructions (exec-limit error).
+      # test_blocking_ffi_releases_lock: needs a kernel that runs in the
+      #   background while another domain works. The simulator runs a kernel
+      #   inside the launch call, so the 200 ms wait it measures never happens.
+      # test_f16_host_path: its list of f16-capable frameworks says "CUDA", but
+      #   the backend reports "CUDA/PTX", so a working f16 kernel is reported as
+      #   "accepted by a slice-2 backend". The kernel itself runs.
+      - name: Test on a simulated H100
+        run: |
+          expected="test_blocking_ffi_releases_lock test_device_buffers test_f16_host_path"
+          vgpu run opam exec -- dune runtest -j1 sarek-cuda/test sarek/tests/e2e 2>&1 | tee test.log || true
+          sed -i 's/\x1b\[[0-9;]*m//g' test.log
+          failed=$(awk '/^File "/ {f=1} f && /&& \.\/[a-z0-9_]+\.exe/ {match($0, /\.\/[a-z0-9_]+\.exe/); print substr($0, RSTART+2, RLENGTH-6); f=0}' test.log | sort -u | tr '\n' ' ')
+          echo "failed tests: ${failed:-none}"
+          echo "expected failures: $expected"
+          [ "$(echo $failed)" = "$expected" ]
