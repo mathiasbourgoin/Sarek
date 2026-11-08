@@ -27,6 +27,7 @@
   Cuda_api
   Cuda_coopmat
   Cuda_plugin_base
+  Cuda_keepalive
   Cuda_shared
   Cuda_ptx_plugin
   Cuda_c_plugin
