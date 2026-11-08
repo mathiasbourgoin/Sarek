@@ -58,6 +58,8 @@ let support ~compute_capability:(major, minor) ~warp_size =
   let lowered = major = 11 && warp_size = 32 in
   (* CM_scale_add is lowered for the whole gfx11 family but has been executed
      only on gfx1100 (compute capability 11.0), so only 11.0 offers it.
+     Known gap: gfx1101 and gfx1102 also report 11.0 and are admitted; the
+     exact target (hipDeviceProp_t.gcnArchName) is not read by these bindings.
      docs/design/coopmat-scaled-accumulate.md §6. *)
   let scale_add = lowered && minor = 0 in
   let configs = if lowered then gfx11_configs else [] in

@@ -91,7 +91,8 @@ let rec map_stmt bytes s =
         (match op with
         | CM_decl _ | CM_muladd _ -> op
         | CM_load c -> CM_load {c with index = e c.index; stride = e c.stride}
-        | CM_store c -> CM_store {c with index = e c.index; stride = e c.stride})
+        | CM_store c -> CM_store {c with index = e c.index; stride = e c.stride}
+        | CM_scale_add _ -> Sarek_coopmat_scale.map_exprs e op)
 
 (** {1 8-bit local scalars}
 
@@ -207,7 +208,8 @@ let rec lower_stmt types s =
         (match op with
         | CM_decl _ | CM_muladd _ -> op
         | CM_load c -> CM_load {c with index = e c.index; stride = e c.stride}
-        | CM_store c -> CM_store {c with index = e c.index; stride = e c.stride})
+        | CM_store c -> CM_store {c with index = e c.index; stride = e c.stride}
+        | CM_scale_add _ -> Sarek_coopmat_scale.map_exprs e op)
 
 let lower_body keep stmt locals =
   let decls =

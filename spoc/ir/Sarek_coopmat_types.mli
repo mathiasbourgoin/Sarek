@@ -200,7 +200,13 @@ type device_support = {
           such a device: only the HIP probe sets it, on compute capability 11.0
           (gfx1100) with 32-wide wavefronts, the only chip it was executed on.
           Other gfx11 parts (gfx1150, gfx1151...) are lowered but not offered it
-          until they are run. It is a separate flag rather than a consequence of
+          until they are run. {b Known gap:} compute capability does not name
+          the exact target, and gfx1101 and gfx1102 (gfx11.0.x targets) report
+          11.0 too, so they are admitted although never executed. The exact
+          target is only in [hipDeviceProp_t.gcnArchName] (the
+          [hipDeviceAttribute*Arch*] attributes are unused in ROCm 7.2's
+          [hip_runtime_api.h]), which the HIP bindings do not read; keying on it
+          is a follow-up. It is a separate flag rather than a consequence of
           [ds_configs] because the statement has no producer to key on: a
           [CM_decl] or [CM_load] can create its source fragment without any
           multiply-add in the kernel. *)
