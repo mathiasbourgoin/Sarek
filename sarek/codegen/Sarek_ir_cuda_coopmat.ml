@@ -467,7 +467,7 @@ let cuda_mem_layout = function
     aligned and the staged one when not. Block unknown: [sarek_cm_require],
     which traps. *)
 let guarded ~(ctx : context) ~op ~buf ~(frag : C.fragment) ~ptr ~stride ~direct
-    ~staged =
+    ~staged ~store =
   let proven =
     List.mem buf ctx.globals && Sarek_ir_coopmat_align.is_proven ctx.proven op
   in
@@ -477,7 +477,8 @@ let guarded ~(ctx : context) ~op ~buf ~(frag : C.fragment) ~ptr ~stride ~direct
     match ctx.warps with
     | None ->
         Printf.sprintf
-          "sarek_cm_require(%s, (%s), %d); %s"
+          "%s(%s, (%s), %d); %s"
+          (if store then "sarek_cm_require_store" else "sarek_cm_require")
           ptr
           stride
           bytes
@@ -486,8 +487,9 @@ let guarded ~(ctx : context) ~op ~buf ~(frag : C.fragment) ~ptr ~stride ~direct
         ctx.tiles_used <- true ;
         let t = cuda_elt frag.C.frag_component in
         Printf.sprintf
-          "if (sarek_cm_misaligned(%s, (%s), %d)) { %s *sarek_cm_t = (%s \
-           *)sarek_cm_tile(); %s } else { %s }"
+          "if (%s(%s, (%s), %d)) { %s *sarek_cm_t = (%s *)sarek_cm_tile(); %s \
+           } else { %s }"
+          (if store then "sarek_cm_store_unsafe" else "sarek_cm_misaligned")
           ptr
           stride
           bytes
@@ -551,7 +553,8 @@ let gen_load ~ctx ~op ~indent ~buffers ~expr_str ~dst ~(frag : C.fragment) ~src
                 stride
                 dst
                 tile
-                mem_layout)))
+                mem_layout)
+            ~store:false))
 
 let gen_store ~ctx ~op ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst
     ~index ~stride ~layout =
@@ -592,13 +595,15 @@ let gen_store ~ctx ~op ~indent ~buffers ~expr_str ~src ~(frag : C.fragment) ~dst
          ~staged:(fun tile ->
            Printf.sprintf
              "nvcuda::wmma::store_matrix_sync(%s, %s, 16, %s); __syncwarp(); \
-              sarek_cm_stage_out(%s, %s, (%s)); __syncwarp();"
+              sarek_cm_stage_out(%s, %s, (%s), %d); __syncwarp();"
              tile
              src
              (cuda_mem_layout layout)
              ptr
              tile
-             stride))
+             stride
+             (match layout with C.Row_major -> 0 | C.Col_major -> 1))
+         ~store:true)
 
 let gen_muladd ~indent ~dst ~a ~b ~c (cfg : C.config) =
   check_config cfg ;

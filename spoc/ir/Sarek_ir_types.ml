@@ -275,10 +275,11 @@ and coopmat_op =
 
           {b Overlapping rows.} With a [stride] below the tile edge the rows
           (columns) of the tile overlap in memory, and a cell is then written
-          twice, with different values. WHICH write wins is not specified: the
-          interpreter keeps the last write of its loop (rows outer, columns
-          inner, whatever the layout), a matrix unit stores them in an order of
-          its own. A program must not depend on it. (A {!CM_load} with such a
+          twice, with different values. The LAST write of the interpreter's loop
+          wins (rows outer, columns inner, whatever the layout), and that is the
+          semantics: CUDA/C and CUDA/PTX write such a tile serially, in that
+          order, instead of leaving it to the matrix-unit store, which promises
+          no order; HIP agrees on gfx11 (tested). (A {!CM_load} with such a
           stride is well defined: it reads shared cells.) *)
   | CM_muladd of {
       dst : string;
