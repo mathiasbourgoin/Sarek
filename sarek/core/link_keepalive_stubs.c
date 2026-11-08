@@ -80,12 +80,34 @@ static int before(const struct timespec *a, const struct timespec *b) {
          (a->tv_sec == b->tv_sec && a->tv_nsec < b->tv_nsec);
 }
 
-/* Sleep until [next] (absolute, CLOCK_MONOTONIC), or until a stop or a pause is
-   requested: the thread then wakes at once instead of at the next period. */
+/* One timed wait on [k->cond] until [next] (absolute, CLOCK_MONOTONIC). Linux
+   has condition variables on that clock (pthread_condattr_setclock, see
+   [sarek_link_keepalive_start]); macOS has not, and offers a relative wait
+   instead, computed here from the same clock. Returns ETIMEDOUT at the
+   deadline. */
+static int cond_wait_until(struct keepalive *k, const struct timespec *next) {
+#ifdef __APPLE__
+  struct timespec now, rel;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  if (!before(&now, next)) return ETIMEDOUT;
+  rel.tv_sec = next->tv_sec - now.tv_sec;
+  rel.tv_nsec = next->tv_nsec - now.tv_nsec;
+  if (rel.tv_nsec < 0) {
+    rel.tv_nsec += 1000000000L;
+    rel.tv_sec -= 1;
+  }
+  return pthread_cond_timedwait_relative_np(&k->cond, &k->mutex, &rel);
+#else
+  return pthread_cond_timedwait(&k->cond, &k->mutex, next);
+#endif
+}
+
+/* Sleep until [next], or until a stop or a pause is requested: the thread then
+   wakes at once instead of at the next period. */
 static void wait_until(struct keepalive *k, const struct timespec *next) {
   pthread_mutex_lock(&k->mutex);
   while (!atomic_load(&k->stop) && !k->paused) {
-    if (pthread_cond_timedwait(&k->cond, &k->mutex, next) == ETIMEDOUT) break;
+    if (cond_wait_until(k, next) == ETIMEDOUT) break;
   }
   pthread_mutex_unlock(&k->mutex);
 }
@@ -163,13 +185,18 @@ CAMLprim value sarek_link_keepalive_start(value args, value period_ns) {
   atomic_init(&k->launches, 0);
   atomic_init(&k->state, STATE_STARTING);
   atomic_init(&k->rc, 0);
+  pthread_mutex_init(&k->mutex, NULL);
+#ifdef __APPLE__
+  pthread_cond_init(&k->cond, NULL);
+  pthread_cond_init(&k->ack, NULL);
+#else
   pthread_condattr_t attr;
   pthread_condattr_init(&attr);
   pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
-  pthread_mutex_init(&k->mutex, NULL);
   pthread_cond_init(&k->cond, &attr);
   pthread_cond_init(&k->ack, &attr);
   pthread_condattr_destroy(&attr);
+#endif
   if (pthread_create(&k->thread, NULL, run, k) != 0) {
     pthread_mutex_destroy(&k->mutex);
     pthread_cond_destroy(&k->cond);

@@ -130,4 +130,73 @@ let run_on (dev : Device.t) =
   Printf.printf "Link_keepalive on %s (%s)\n%!" dev.name dev.framework ;
   if Keepalive.supported dev then run_supported dev else run_unsupported dev
 
+(* A backend of libc calls, so the failure and race paths run without a GPU:
+   [isatty] on an invalid descriptor returns 0 (success) for any further
+   arguments and [getpid] returns a positive number (an error for a launch or a
+   device selection). *)
+let fake_provider ~launch_ok ~prep_ok ~releases : Device.t -> Keepalive.native =
+ fun _ ->
+  let sym symbol = Dl.dlsym ?handle:None ~symbol in
+  {
+    Keepalive.launch_fn = sym (if launch_ok then "isatty" else "getpid");
+    prep_fn = sym (if prep_ok then "isatty" else "getpid");
+    prep_arg = 99999n;
+    kernel = 99999n;
+    stream = 0n;
+    release = (fun () -> incr releases);
+  }
+
+let run_fake (template : Device.t) =
+  Printf.printf "Link_keepalive on a fake backend (libc calls)\n%!" ;
+  let releases = ref 0 in
+  let device id framework = {template with Device.id; framework} in
+  (* a launch that fails: Failed, and a new start replaces it without leaking *)
+  Keepalive.register_native
+    ~family:"FakeKA"
+    (fake_provider ~launch_ok:false ~prep_ok:true ~releases) ;
+  let dev = device 9001 "FakeKA" in
+  check "fake backend is supported" (Keepalive.supported dev) ;
+  let t = Keepalive.start dev in
+  check
+    "a failing launch is reported"
+    (wait_for ~seconds:5.0 (fun () ->
+         match Keepalive.status t with Keepalive.Failed _ -> true | _ -> false)) ;
+  let t' = Keepalive.start dev in
+  check "start after a failure makes a fresh one" (t' != t) ;
+  check "the failed one was torn down (stream released)" (!releases >= 1) ;
+  Keepalive.stop t ;
+  Keepalive.stop t' ;
+  Keepalive.stop t' ;
+  check "every stream released exactly once" (!releases = 2) ;
+  (* a device selection that fails is reported by start itself *)
+  releases := 0 ;
+  Keepalive.register_native
+    ~family:"FakeKA"
+    (fake_provider ~launch_ok:true ~prep_ok:false ~releases) ;
+  let bad = Keepalive.start dev in
+  check
+    "a failing device selection is reported"
+    (match Keepalive.status bad with Keepalive.Failed _ -> true | _ -> false) ;
+  check "its stream was released" (!releases = 1) ;
+  Keepalive.stop bad ;
+  (* start, suspend and stop from two domains at once: a resume must not touch
+     a handle that stop has freed *)
+  Keepalive.register_native
+    ~family:"FakeKA"
+    (fake_provider ~launch_ok:true ~prep_ok:true ~releases) ;
+  let hammer ~with_stop () =
+    for _ = 1 to 300 do
+      let k = Keepalive.start ~period_us:50 dev in
+      Keepalive.suspend k ;
+      if with_stop then Keepalive.stop k
+    done
+  in
+  let other = Domain.spawn (hammer ~with_stop:true) in
+  hammer ~with_stop:false () ;
+  Domain.join other ;
+  let last = Keepalive.start dev in
+  check "still usable after concurrent start/suspend/stop" (is_running last) ;
+  Keepalive.stop last ;
+  check "stopped" (Keepalive.status last = Stopped)
+
 let exit_code () = if !failures = 0 then 0 else 1

@@ -174,10 +174,14 @@ let stop_thread t =
     t.handle <- 0n
   end
 
-let stop (t : t) : unit =
+(* Join the thread and release the stream, whatever the status. *)
+let teardown t =
   Mutex.protect t.lock (fun () ->
       stop_thread t ;
-      release t) ;
+      release t)
+
+let stop (t : t) : unit =
+  teardown t ;
   Mutex.protect registry_lock (fun () ->
       match Hashtbl.find_opt registry t.device.id with
       | Some current when current == t -> Hashtbl.remove registry t.device.id
@@ -227,14 +231,31 @@ let stop_all () =
 
 let at_exit_installed = ref false
 
+(* Resume a suspended keep-alive. The handle is rechecked under the lock: a
+   concurrent [stop] may have joined and freed it since the caller looked. *)
+let resume t =
+  Mutex.protect t.lock (fun () ->
+      if
+        t.handle <> 0n
+        && Atomic.get t.failure = None
+        && stub_state t.handle <> state_failed
+        && stub_paused t.handle <> 0
+      then begin
+        stub_resume t.handle ;
+        true
+      end
+      else false)
+
 let start ?(period_us = default_period_us) (dev : Device.t) : t =
   Mutex.protect registry_lock (fun () ->
-      match Hashtbl.find_opt registry dev.id with
-      | Some existing when status existing = Running -> existing
-      | Some existing when status existing = Suspended ->
-          Mutex.protect existing.lock (fun () -> stub_resume existing.handle) ;
-          existing
+      let existing = Hashtbl.find_opt registry dev.id in
+      match existing with
+      | Some e when status e = Running -> e
+      | Some e when resume e -> e
       | _ ->
+          (* A leftover that failed (or is being stopped) is torn down before
+             it is replaced, so its thread and stream are not leaked. *)
+          Option.iter teardown existing ;
           let t = make dev ~period_us in
           (match provider_for dev with
           | None -> ()
