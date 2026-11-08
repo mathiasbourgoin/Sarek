@@ -46,6 +46,12 @@ module C = Sarek_coopmat_types
     matters". *)
 let unbounded = 1 lsl 30
 
+(** The edge of a cooperative-matrix tile: a store with a stride below it
+    overlaps its own rows (columns), and is written serially (the answer is the
+    last write of the interpreter's loop; a matrix-unit store does not promise
+    an order). *)
+let tile_edge = 16
+
 let lowest_bit n = if n = 0 then unbounded else min unbounded (n land -n)
 
 type env = (string * int) list
@@ -109,11 +115,23 @@ let proven_ops (body : stmt) : coopmat_op list =
   let found = ref [] and refuted = ref [] in
   if is_checked body then []
   else begin
+    (* a store is provable only with a constant stride of at least the tile
+       edge: below it its rows overlap and it is written serially *)
+    let stride_ok op stride =
+      match op with
+      | CM_store _ -> (
+          match stride with
+          | EConst (CInt32 c) -> abs (Int32.to_int c) >= tile_edge
+          | _ -> false)
+      | CM_load _ | CM_decl _ | CM_muladd _ -> true
+    in
     let rec walk env = function
       | SCoopmat (CM_load {frag; index; stride; _} as op)
       | SCoopmat (CM_store {frag; index; stride; _} as op) ->
-          if assume || access_is_proven env ~frag ~index ~stride then
-            found := op :: !found
+          if
+            assume
+            || (access_is_proven env ~frag ~index ~stride && stride_ok op stride)
+          then found := op :: !found
           else refuted := op :: !refuted
       | SCoopmat (CM_decl _ | CM_muladd _) -> ()
       | SSeq ss -> List.iter (walk env) ss
@@ -167,7 +185,11 @@ let is_proven proven op = List.exists (fun p -> p == op) proven
     [(name, n)]; anything the rules cannot reduce makes the condition [false]
     and {!derive} answer [None] (the kernel always takes the staged variant). *)
 
-type atom = string * int
+type atom =
+  | Multiple of string * int  (** the parameter is a multiple of [n] *)
+  | At_least of string * int
+      (** [|parameter| >= n]: a store whose stride is below the tile edge
+          overlaps its own rows, and is not left to the matrix unit *)
 
 (** Disjunction of conjunctions; [[[]]] is true, [[]] false. *)
 type predicate = atom list list
@@ -179,7 +201,11 @@ let p_false : predicate = []
 let max_terms = 64
 
 (* An atom [(p, a)] implies [(p, b)] when [a] is a multiple of [b]. *)
-let implies (p1, a) (p2, b) = String.equal p1 p2 && a mod b = 0
+let implies a b =
+  match (a, b) with
+  | Multiple (p1, x), Multiple (p2, y) -> String.equal p1 p2 && x mod y = 0
+  | At_least (p1, x), At_least (p2, y) -> String.equal p1 p2 && x >= y
+  | Multiple _, At_least _ | At_least _, Multiple _ -> false
 
 (* Drop an atom another atom of the conjunction implies. *)
 let reduce_conj c =
@@ -230,7 +256,8 @@ let rec need ~(params : string list) (env : symbolic_env) (e : expr) (n : int) :
         | Some (Bound (def, def_env)) -> need ~params def_env def n
         | Some Opaque -> p_false
         | None ->
-            if List.mem v.var_name params then [[(v.var_name, n)]] else p_false)
+            if List.mem v.var_name params then [[Multiple (v.var_name, n)]]
+            else p_false)
     | EBinop ((Add | Sub), a, b) ->
         p_and (need ~params env a n) (need ~params env b n)
     | EBinop (Mul, a, b) ->
@@ -249,6 +276,23 @@ let rec need ~(params : string list) (env : symbolic_env) (e : expr) (n : int) :
         if m >= n then p_true else need ~params env a (n / m)
     | _ -> p_false
 
+(** The condition under which [|e| >= n]: a constant, a parameter (or a [let]
+    bound to one), nothing else (anything the rules cannot reduce is [false]).
+*)
+let rec at_least ~(params : string list) (env : symbolic_env) (e : expr)
+    (n : int) : predicate =
+  match e with
+  | EConst (CInt32 c) -> if abs (Int32.to_int c) >= n then p_true else p_false
+  | EVar v when v.var_mutable -> p_false
+  | EVar v -> (
+      match List.assoc_opt v.var_name env with
+      | Some (Bound (def, def_env)) -> at_least ~params def_env def n
+      | Some Opaque -> p_false
+      | None ->
+          if List.mem v.var_name params then [[At_least (v.var_name, n)]]
+          else p_false)
+  | _ -> p_false
+
 (** The scalar int32 parameters of a kernel. *)
 let scalar_params (k : kernel) =
   List.filter_map
@@ -265,8 +309,7 @@ let derive (k : kernel) : predicate option =
   let params = scalar_params k in
   let acc = ref p_true in
   let rec walk (env : symbolic_env) = function
-    | SCoopmat (CM_load {frag; index; stride; _})
-    | SCoopmat (CM_store {frag; index; stride; _}) ->
+    | SCoopmat (CM_load {frag; index; stride; _}) ->
         let bytes = element_bytes frag in
         let want n = max 1 (n / bytes) in
         acc :=
@@ -275,6 +318,17 @@ let derive (k : kernel) : predicate option =
             (p_and
                (need ~params env index (want 32))
                (need ~params env stride (want 16)))
+    | SCoopmat (CM_store {frag; index; stride; _}) ->
+        let bytes = element_bytes frag in
+        let want n = max 1 (n / bytes) in
+        acc :=
+          p_and
+            !acc
+            (p_and
+               (p_and
+                  (need ~params env index (want 32))
+                  (need ~params env stride (want 16)))
+               (at_least ~params env stride tile_edge))
     | SCoopmat (CM_decl _ | CM_muladd _) -> ()
     | SSeq ss -> List.iter (walk env) ss
     | SIf (_, a, b) ->
@@ -313,10 +367,14 @@ let derive (k : kernel) : predicate option =
     parameter without a value makes its atom false. *)
 let holds (p : predicate) (args : (string * int) list) =
   List.exists
-    (List.for_all (fun (name, n) ->
+    (List.for_all (fun atom ->
+         let name = match atom with Multiple (p, _) | At_least (p, _) -> p in
          match List.assoc_opt name args with
-         | Some v -> v mod n = 0
-         | None -> false))
+         | None -> false
+         | Some v -> (
+             match atom with
+             | Multiple (_, n) -> v mod n = 0
+             | At_least (_, n) -> abs v >= n)))
     p
 
 (** The aligned variant of [k]: the same kernel with its body marked. *)

@@ -235,15 +235,24 @@ let test_alignment () =
        __syncwarp(); nvcuda::wmma::load_matrix_sync(fa, sarek_cm_t, 16);";
       "nvcuda::wmma::store_matrix_sync(sarek_cm_t, fc, 16, \
        nvcuda::wmma::mem_row_major); __syncwarp(); sarek_cm_stage_out(((float \
-       *)(d) + (1)), sarek_cm_t, (17)); __syncwarp();";
+       *)(d) + (1)), sarek_cm_t, (17), 0); __syncwarp();";
       "__shared__ __align__(32) unsigned char sarek_cm_tiles[2048];";
       "#if !defined(__HIP_PLATFORM_AMD__)";
       "return sarek_cm_tiles + w * 1024;";
     ] ;
   lacks staged "sarek_cm_require(((" ;
+  (* a store is staged on misalignment AND on overlapping rows (|stride| < 16) *)
+  check_has
+    staged
+    ["if (sarek_cm_store_unsafe(((float *)(d) + (1)), (17), 4)) {"] ;
   (* without a block no buffer can be sized: the trap, no buffer *)
   let trap = gen (tile ~index:1 ~stride:17 f16) in
-  check_has trap ["sarek_cm_require(((const __half *)(a) + (1)), (17), 2);"] ;
+  check_has
+    trap
+    [
+      "sarek_cm_require(((const __half *)(a) + (1)), (17), 2);";
+      "sarek_cm_require_store(((float *)(d) + (1)), (17), 4);";
+    ] ;
   lacks trap "sarek_cm_tiles[" ;
   (* the 8-bit and column-major forms *)
   let u8 =

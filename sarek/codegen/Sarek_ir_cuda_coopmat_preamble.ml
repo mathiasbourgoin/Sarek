@@ -161,6 +161,15 @@ __device__ __forceinline__ bool sarek_cm_misaligned(const void *p, long long s, 
 __device__ __forceinline__ void sarek_cm_require(const void *p, long long s, int bytes) {
   if (sarek_cm_misaligned(p, s, bytes)) __trap();
 }
+/* A STORE leaves the bare instruction when it is misaligned or when its rows
+   overlap in memory (|stride| < 16): the answer is then the last write of the
+   interpreter's loop, which a matrix-unit store does not promise. */
+__device__ __forceinline__ bool sarek_cm_store_unsafe(const void *p, long long s, int bytes) {
+  return sarek_cm_misaligned(p, s, bytes) || (s > -16 && s < 16);
+}
+__device__ __forceinline__ void sarek_cm_require_store(const void *p, long long s, int bytes) {
+  if (sarek_cm_store_unsafe(p, s, bytes)) __trap();
+}
 /* A misaligned access (not proven aligned at code generation, block known) copies
    the 16x16 tile element by element through a 32-byte aligned per-warp buffer
    in shared memory (sarek_cm_tiles, declared by the generator) and runs wmma on
@@ -176,8 +185,19 @@ __device__ __forceinline__ void sarek_cm_stage_in(T *tile, const T *src, long lo
   }
 }
 template <typename T>
-__device__ __forceinline__ void sarek_cm_stage_out(T *dst, const T *tile, long long stride) {
+__device__ __forceinline__ void sarek_cm_stage_out(T *dst, const T *tile, long long stride, int col) {
   unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
+  /* Rows (columns) closer than 16 elements overlap in memory: the answer is the
+     LAST write of the interpreter's loop (rows outer, columns inner), so lane 0
+     writes them in that order instead of racing. */
+  if (stride > -16 && stride < 16) {
+    if (lane == 0)
+      for (int r = 0; r < 16; ++r)
+        for (int c = 0; c < 16; ++c)
+          dst[col ? (long long)c * stride + r : (long long)r * stride + c] =
+              tile[col ? c * 16 + r : r * 16 + c];
+    return;
+  }
   for (int j = 0; j < 8; ++j) {
     unsigned t = lane + 32u * j;
     dst[(long long)(t >> 4) * stride + (t & 15u)] = tile[t];

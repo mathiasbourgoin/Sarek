@@ -755,16 +755,25 @@ let test_derive () =
   (* f16 GEMM: A and B are f16 (index multiple of 16, stride multiple of 8
      elements), C and D f32 (8 and 4); k and n are the strides *)
   let gemm = atoms (Align.derive (Sarek_gemm.Coopmat.ir ())) in
-  Alcotest.(check (list (pair string int)))
-    "GEMM: k and n multiples of 8"
-    [("k", 8); ("n", 8)]
-    gemm ;
+  Alcotest.(check bool)
+    "GEMM: k and n multiples of 8, and n (the store's stride) at least 16"
+    true
+    (gemm
+    = [
+        Align.Multiple ("k", 8);
+        Align.Multiple ("n", 8);
+        Align.At_least ("n", 16);
+      ]) ;
   let p = Option.get (Align.derive (Sarek_gemm.Coopmat.ir ())) in
   let holds k n = Align.holds p [("k", k); ("n", n); ("m", 64)] in
   Alcotest.(check bool) "k = n = 64" true (holds 64 64) ;
   Alcotest.(check bool) "k = 24, n = 40" true (holds 24 40) ;
   Alcotest.(check bool) "k = 12" false (holds 12 64) ;
   Alcotest.(check bool) "n = 20" false (holds 64 20) ;
+  Alcotest.(check bool)
+    "n = 8: a multiple of 8, but the D store would overlap its rows"
+    false
+    (holds 64 8) ;
   Alcotest.(check bool) "a missing argument" false (Align.holds p [("k", 64)]) ;
   (* a tile whose index and stride are parameters *)
   let tp = Option.get (Align.derive (tile_with_params f16_cfg)) in
@@ -775,6 +784,8 @@ let test_derive () =
   Alcotest.(check bool) "off 8 (f16: 16 bytes)" false (ok 8 16) ;
   Alcotest.(check bool) "ld 17" false (ok 0 17) ;
   Alcotest.(check bool) "ld 4 (f16: 8 bytes)" false (ok 0 4) ;
+  Alcotest.(check bool) "ld 8: aligned, but the store overlaps" false (ok 0 8) ;
+  Alcotest.(check bool) "ld 0: aligned, but the store overlaps" false (ok 0 0) ;
   (* 8-bit: off multiple of 32, ld multiple of 16 *)
   let u8p = Option.get (Align.derive (tile_with_params u8_cfg)) in
   Alcotest.(check bool)
@@ -906,6 +917,107 @@ let test_checked_variant () =
     "arrays accessed"
     ["a"; "b"; "c"; "d"]
     (List.sort compare (Align.arrays_accessed k))
+
+(* A STORE whose stride is below the tile edge overlaps its own rows (columns)
+   in memory, and the answer is the last write of the interpreter's loop (rows
+   outer, columns inner), which a matrix-unit store does not promise. Such a
+   store leaves the bare instruction even when its address is aligned: it is
+   not provable, the aligned variant needs |stride| >= 16, and a staged store
+   writes the tile serially (lane 0, the interpreter's order) instead of racing.
+   Loads are unaffected. *)
+let store_kernel ?(index = 0) ~stride () =
+  let frag =
+    {
+      C.frag_use = C.Accumulator;
+      frag_shape = shape16;
+      frag_component = C.Float32;
+      frag_scope = C.Subgroup;
+    }
+  in
+  {
+    default_kernel with
+    kern_name = "store_only";
+    kern_params = [param "d" TFloat32];
+    kern_body =
+      SSeq
+        [
+          SCoopmat (CM_decl {name = "f"; frag});
+          SCoopmat
+            (CM_store
+               {
+                 src = "f";
+                 frag;
+                 dst = "d";
+                 index = k_int index;
+                 stride = k_int stride;
+                 layout = row;
+               });
+        ];
+  }
+
+let test_overlapping_store () =
+  (* f32, index 0 and stride 12 (48 bytes) are aligned for the instruction *)
+  let overlapping = store_kernel ~stride:12 () in
+  Alcotest.(check bool)
+    "stride 12: not proven although aligned"
+    true
+    (Align.proven_ops overlapping.kern_body = []) ;
+  Alcotest.(check bool)
+    "stride 16: proven"
+    false
+    (Align.proven_ops (store_kernel ~stride:16 ()).kern_body = []) ;
+  Alcotest.(check bool)
+    "stride -16: proven (rows do not overlap)"
+    false
+    (Align.proven_ops (store_kernel ~index:64 ~stride:(-16) ()).kern_body = []) ;
+  (* a LOAD of the same stride stays proven *)
+  Alcotest.(check bool)
+    "load of stride 12 (f32): proven"
+    false
+    (Align.proven_ops
+       (accessed_at ~index:(k_int 0) ~stride:(k_int 12) (fun l -> l))
+    = []) ;
+  (* generated code, with a block: the guard and the serial block *)
+  let src = ptx ~block:(32, 1, 1) overlapping in
+  check_has
+    "stride 12, PTX"
+    src
+    ["abs.s32"; "setp.lt.s32"; "bra L"; "wmma.store.d.sync.aligned"] ;
+  check_has
+    "stride 12, PTX: serial block"
+    (slow_blocks src)
+    ["setp.ne.u32 %p"; "mad.lo.u32"; "bar.warp.sync"; "st.global.b32"] ;
+  (* without a block: the trap *)
+  check_has "stride 12, PTX, no block" (ptx overlapping) [" trap;"] ;
+  (* no overlap possible: byte for byte the code of an unguarded store *)
+  check_lacks
+    "stride 16, PTX"
+    (ptx ~block:(32, 1, 1) (store_kernel ~stride:16 ()))
+    ["abs.s32"; "sarek_cm_tiles"; "bra L"] ;
+  (* CUDA/C: the store test, the serial helper; the load test unchanged *)
+  let cu =
+    Sarek_ir_cuda.generate_with_types ~block:(32, 1, 1) ~types:[] overlapping
+  in
+  check_has
+    "stride 12, CUDA/C"
+    cu
+    [
+      "if (sarek_cm_store_unsafe(((float *)(d) + (0)), (12), 4))";
+      "sarek_cm_stage_out(";
+    ] ;
+  check_lacks
+    "stride 16, CUDA/C"
+    (Sarek_ir_cuda.generate_with_types
+       ~block:(32, 1, 1)
+       ~types:[]
+       (store_kernel ~stride:16 ()))
+    ["if (sarek_cm_store_unsafe(((float *)(d)"; "sarek_cm_tiles["] ;
+  (* the aligned variant of a parameter-driven store needs |stride| >= 16 *)
+  let tp = tile_with_params f16_cfg in
+  Alcotest.(check bool)
+    "the aligned variant is not offered for ld 8"
+    false
+    (Align.holds (Option.get (Align.derive tp)) [("off", 0); ("ld", 8)])
 
 (** {1 Kernels without cooperative matrices are unchanged} *)
 
@@ -1082,6 +1194,7 @@ let () =
           Alcotest.test_case "derived predicate" `Quick test_derive;
           Alcotest.test_case "review findings" `Quick test_review_findings;
           Alcotest.test_case "checked variant" `Quick test_checked_variant;
+          Alcotest.test_case "overlapping store" `Quick test_overlapping_store;
           Alcotest.test_case
             "aligned variant: no buffer"
             `Quick

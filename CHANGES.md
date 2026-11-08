@@ -102,10 +102,11 @@
   CUDA frameworks only). Three variants follow: aligned (arguments satisfy the condition: no check,
   no buffer), staged (the run-time test and the buffer for the accesses not proven), and checked (an
   array argument whose device pointer is not 32-byte aligned: no static proof is used, every access is
-  tested and staged, so the result is still the interpreter's). A store whose stride is below 16
-  overlaps its own rows and writes some cells twice: which write wins is unspecified (the interpreter keeps
-  the last of its loop, a matrix unit stores in an order of its own), now stated in `CM_store`; loads
-  with such a stride are well defined and exact. Test:
+  tested and staged, so the result is still the interpreter's). A store whose stride is below 16 overlaps its own rows and writes some cells twice: the last write of the
+  interpreter's loop (rows outer, columns inner) wins, now stated in `CM_store`, and CUDA/C and CUDA/PTX write
+  such a tile serially in that order, even when its address is aligned (a matrix-unit store promises no
+  order); the aligned variant needs `|stride| >= 16` for every store (`n >= 16` for the GEMM, always true
+  for its shapes). Test:
   `sarek/tests/e2e/test_coopmat_misalign_e2e.ml`.
   Not yet executed on NVIDIA hardware.
 
