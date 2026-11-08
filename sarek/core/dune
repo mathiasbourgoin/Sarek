@@ -28,6 +28,7 @@
   Gpu_memory
   Host_async
   Staging_ring
+  Link_keepalive
   Transfer
   Mapped_registration
   Host_ptr_buffer

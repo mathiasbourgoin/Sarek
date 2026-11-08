@@ -2631,3 +2631,22 @@
  (alias runtest)
  (action
   (run %{dep:test_ptx_f16_e2e.exe})))
+
+;; Link_keepalive lifecycle (periodic empty kernel on a side stream). On the
+;; CPU backends it is a documented no-op; GPU devices are exercised only when
+;; named on the command line (sarek-hip/test runs it on HIP hardware).
+
+(library
+ (name link_keepalive_suite)
+ (modules link_keepalive_suite)
+ (libraries spoc_core unix))
+
+(executable
+ (name test_link_keepalive)
+ (modules test_link_keepalive)
+ (libraries link_keepalive_suite test_helpers spoc_core))
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_link_keepalive.exe} Native Interpreter)))
