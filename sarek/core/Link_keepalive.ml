@@ -80,45 +80,60 @@ let fail t where exn =
   Log.debugf Log.Device "Link_keepalive: %s" reason ;
   Atomic.set t.failure (Some reason)
 
-(* The periodic loop, over closures built once so that it allocates nothing. *)
-let run_loop (t : t) ~(launch : unit -> unit) ~(sync : unit -> unit) : unit =
+(* The periodic loop, over closures built once so that it allocates nothing.
+   It never blocks on the device: every [launches_per_sync] launches it records
+   a marker, and once the marker has completed (polled, one test per period) it
+   synchronises, which is then immediate and lets the backend release the
+   argument blocks it retains per launch. A device that cannot run the empty
+   kernels for a while (the side stream is stuck behind other work) only makes
+   the retained blocks accumulate for that long; the loop keeps launching and
+   [stop] is noticed within one period. *)
+let run_loop (t : t) ~(launch : unit -> unit) ~(mark : unit -> unit)
+    ~(marker_done : unit -> bool) ~(sync : unit -> unit) : unit =
   let delay = float_of_int t.period_us *. 1e-6 in
-  let rec loop since_sync =
+  let rec loop since_mark awaiting =
     if not (Atomic.get t.stop_requested) then begin
       launch () ;
       Atomic.incr t.launches ;
-      if since_sync >= launches_per_sync then begin
+      if awaiting && marker_done () then begin
         sync () ;
-        loop 0
+        pause 0 false
       end
-      else begin
-        Unix.sleepf delay ;
-        loop (since_sync + 1)
+      else if (not awaiting) && since_mark >= launches_per_sync then begin
+        mark () ;
+        pause 0 true
       end
+      else pause (since_mark + 1) awaiting
     end
+  and pause since_mark awaiting =
+    Unix.sleepf delay ;
+    loop since_mark awaiting
   in
-  loop 0
+  loop 0 false
 
-(* Worker body, run in its own domain. Everything that binds to the device
-   (current device, module, stream) is created here, so the calling domain's
-   current device is never touched. *)
+(* Worker body, run in its own domain. The module and the stream are created
+   here; the backends set the domain's current device themselves (compile and
+   stream creation), and the plugin-level current device, shared by all
+   domains, is deliberately not touched. *)
 let worker_body (t : t) (module B : Framework_sig.BACKEND) : unit =
   match
     let dev = B.Device.get t.device.backend_id in
-    B.Device.set_current dev ;
     let kernel =
       B.Kernel.compile_cached dev ~name:kernel_name ~source:kernel_source
     in
     (kernel, B.Stream.create_non_blocking dev)
   with
   | exception exn -> fail t "set-up" exn
-  | kernel, stream -> (
-      let args = B.Kernel.create_args () in
-      let grid = Framework_sig.dims_1d 1 in
-      let block = Framework_sig.dims_1d 32 in
-      let some_stream = Some stream in
-      Atomic.set t.ready true ;
+  | kernel, stream ->
+      let event = ref None in
       (try
+         let args = B.Kernel.create_args () in
+         let grid = Framework_sig.dims_1d 1 in
+         let block = Framework_sig.dims_1d 32 in
+         let some_stream = Some stream in
+         let marker = B.Event.create () in
+         event := Some marker ;
+         Atomic.set t.ready true ;
          run_loop
            t
            ~launch:(fun () ->
@@ -129,20 +144,32 @@ let worker_body (t : t) (module B : Framework_sig.BACKEND) : unit =
                ~block
                ~shared_mem:0
                ~stream:some_stream)
+           ~mark:(fun () -> B.Event.record marker stream)
+           ~marker_done:(fun () -> B.Async.event_query marker)
            ~sync:(fun () -> B.Stream.synchronize stream)
        with exn -> fail t "launch" exn) ;
-      (* Draining the side stream also releases what the backend retained for
-         its launches. *)
-      try
-        B.Stream.synchronize stream ;
-        B.Stream.destroy stream
-      with exn -> fail t "clean-up" exn)
+      (* Each release is attempted whatever the others do. Draining the stream
+         also releases what the backend retained for its launches; this wait
+         lasts as long as the device takes to run the empty kernels still
+         queued. *)
+      let attempt where f = try f () with exn -> fail t where exn in
+      attempt "drain" (fun () -> B.Stream.synchronize stream) ;
+      Option.iter
+        (fun e -> attempt "event" (fun () -> B.Event.destroy e))
+        !event ;
+      attempt "destroy" (fun () -> B.Stream.destroy stream)
 
+(* Whatever happens in the body, [ready] is set, so [start] never waits for a
+   worker that is gone. *)
 let worker (t : t) () : unit =
-  (match Framework_registry.find_backend t.device.framework with
-  | None -> Atomic.set t.failure (Some "backend not registered")
-  | Some backend -> worker_body t backend) ;
-  Atomic.set t.ready true
+  Fun.protect
+    ~finally:(fun () -> Atomic.set t.ready true)
+    (fun () ->
+      try
+        match Framework_registry.find_backend t.device.framework with
+        | None -> Atomic.set t.failure (Some "backend not registered")
+        | Some backend -> worker_body t backend
+      with exn -> fail t "worker" exn)
 
 let make dev ~period_us =
   {
@@ -177,7 +204,7 @@ let stop (t : t) : unit =
       match t.worker with
       | None -> ()
       | Some domain ->
-          Domain.join domain ;
+          (try Domain.join domain with exn -> fail t "join" exn) ;
           t.worker <- None) ;
   Mutex.protect registry_lock (fun () ->
       match Hashtbl.find_opt registry t.device.id with
