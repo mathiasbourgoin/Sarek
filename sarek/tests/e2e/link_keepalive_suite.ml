@@ -24,6 +24,7 @@ let check name cond =
 
 let status_string = function
   | Keepalive.Running -> "Running"
+  | Suspended -> "Suspended"
   | Stopped -> "Stopped"
   | Unsupported -> "Unsupported"
   | Failed reason -> "Failed " ^ reason
@@ -66,12 +67,33 @@ let run_supported (dev : Device.t) =
   let before = Keepalive.launches t in
   Unix.sleepf 0.3 ;
   check "launch rate follows the period" (Keepalive.launches t - before >= 150) ;
+  Keepalive.suspend t ;
+  check "suspend parks it" (Keepalive.status t = Suspended) ;
+  let parked = Keepalive.launches t in
+  Unix.sleepf 0.05 ;
+  check "no launch while suspended" (Keepalive.launches t = parked) ;
+  Keepalive.suspend t ;
+  check "suspend is idempotent" (Keepalive.status t = Suspended) ;
+  let resumed = Keepalive.start ~period_us:900 dev in
+  check "start resumes the same handle" (resumed == t && is_running t) ;
+  check
+    "launches advance after resume"
+    (wait_for ~seconds:5.0 (fun () -> Keepalive.launches t > parked + 5)) ;
+  let cycles_ok = ref true in
+  for _ = 1 to 500 do
+    Keepalive.suspend t ;
+    if Keepalive.status t <> Suspended then cycles_ok := false ;
+    ignore (Keepalive.start dev) ;
+    if not (is_running t) then cycles_ok := false
+  done ;
+  check "500 suspend/resume cycles" !cycles_ok ;
   let t2 = Keepalive.start ~period_us:900 dev in
   check "start while Running returns the same handle" (t2 == t) ;
   Unix.sleepf 0.05 ;
   check "still running after 50 ms" (is_running t) ;
+  Keepalive.suspend t ;
   Keepalive.stop t ;
-  check "stopped" (Keepalive.status t = Stopped) ;
+  check "stopped (from suspended)" (Keepalive.status t = Stopped) ;
   let after = Keepalive.launches t in
   Unix.sleepf 0.05 ;
   check "no launch after stop" (Keepalive.launches t = after) ;

@@ -47,6 +47,14 @@ struct keepalive {
   void *stream;
   long period_ns;
   atomic_int stop;
+  /* [paused] and [parked] are guarded by [mutex]; [cond] wakes the thread
+     (stop, pause, resume, end of a wait), [ack] wakes a caller waiting for the
+     thread to park. */
+  int paused;
+  int parked;
+  pthread_mutex_t mutex;
+  pthread_cond_t cond;
+  pthread_cond_t ack;
   atomic_long launches;
   atomic_int state;
   atomic_int rc;
@@ -72,6 +80,32 @@ static int before(const struct timespec *a, const struct timespec *b) {
          (a->tv_sec == b->tv_sec && a->tv_nsec < b->tv_nsec);
 }
 
+/* Sleep until [next] (absolute, CLOCK_MONOTONIC), or until a stop or a pause is
+   requested: the thread then wakes at once instead of at the next period. */
+static void wait_until(struct keepalive *k, const struct timespec *next) {
+  pthread_mutex_lock(&k->mutex);
+  while (!atomic_load(&k->stop) && !k->paused) {
+    if (pthread_cond_timedwait(&k->cond, &k->mutex, next) == ETIMEDOUT) break;
+  }
+  pthread_mutex_unlock(&k->mutex);
+}
+
+/* While paused, park: no launch, no wake-up but the ones that matter. Returns
+   with the deadline to restart from if the thread was parked. */
+static int park_while_paused(struct keepalive *k) {
+  int was_parked = 0;
+  pthread_mutex_lock(&k->mutex);
+  while (k->paused && !atomic_load(&k->stop)) {
+    was_parked = 1;
+    k->parked = 1;
+    pthread_cond_broadcast(&k->ack);
+    pthread_cond_wait(&k->cond, &k->mutex);
+  }
+  k->parked = 0;
+  pthread_mutex_unlock(&k->mutex);
+  return was_parked;
+}
+
 static void fail(struct keepalive *k, int rc) {
   atomic_store(&k->rc, rc);
   atomic_store(&k->state, STATE_FAILED);
@@ -91,6 +125,10 @@ static void *run(void *arg) {
   struct timespec next, now;
   clock_gettime(CLOCK_MONOTONIC, &next);
   while (!atomic_load(&k->stop)) {
+    if (park_while_paused(k)) {
+      clock_gettime(CLOCK_MONOTONIC, &next);
+      continue;
+    }
     rc = k->launch(k->kernel, 1, 1, 1, 32, 1, 1, 0, k->stream, no_params, NULL);
     if (rc != 0) {
       fail(k, rc);
@@ -103,8 +141,7 @@ static void *run(void *arg) {
       next = now;
       add_ns(&next, k->period_ns);
     }
-    while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, NULL) == EINTR)
-      ;
+    wait_until(k, &next);
   }
   atomic_store(&k->state, STATE_EXITED);
   return NULL;
@@ -126,7 +163,17 @@ CAMLprim value sarek_link_keepalive_start(value args, value period_ns) {
   atomic_init(&k->launches, 0);
   atomic_init(&k->state, STATE_STARTING);
   atomic_init(&k->rc, 0);
+  pthread_condattr_t attr;
+  pthread_condattr_init(&attr);
+  pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+  pthread_mutex_init(&k->mutex, NULL);
+  pthread_cond_init(&k->cond, &attr);
+  pthread_cond_init(&k->ack, &attr);
+  pthread_condattr_destroy(&attr);
   if (pthread_create(&k->thread, NULL, run, k) != 0) {
+    pthread_mutex_destroy(&k->mutex);
+    pthread_cond_destroy(&k->cond);
+    pthread_cond_destroy(&k->ack);
     free(k);
     CAMLreturn(caml_copy_nativeint(0));
   }
@@ -153,7 +200,10 @@ CAMLprim value sarek_link_keepalive_launches(value handle) {
    period; the runtime lock is released while waiting. Idempotent. */
 CAMLprim value sarek_link_keepalive_stop(value handle) {
   struct keepalive *k = (struct keepalive *)Nativeint_val(handle);
+  pthread_mutex_lock(&k->mutex);
   atomic_store(&k->stop, 1);
+  pthread_cond_broadcast(&k->cond);
+  pthread_mutex_unlock(&k->mutex);
   if (k->created && !k->joined) {
     k->joined = 1;
     caml_enter_blocking_section();
@@ -166,6 +216,41 @@ CAMLprim value sarek_link_keepalive_stop(value handle) {
 /* Only after [stop]. */
 CAMLprim value sarek_link_keepalive_free(value handle) {
   struct keepalive *k = (struct keepalive *)Nativeint_val(handle);
+  pthread_mutex_destroy(&k->mutex);
+  pthread_cond_destroy(&k->cond);
+  pthread_cond_destroy(&k->ack);
   free(k);
   return Val_unit;
+}
+
+/* Stop launching and return once the thread is parked: no launch is made after
+   this returns, until [resume]. The thread, the stream and the kernel stay.
+   Idempotent. A thread that has failed or exited is never waited for. */
+CAMLprim value sarek_link_keepalive_suspend(value handle) {
+  struct keepalive *k = (struct keepalive *)Nativeint_val(handle);
+  pthread_mutex_lock(&k->mutex);
+  k->paused = 1;
+  pthread_cond_broadcast(&k->cond);
+  while (!k->parked && atomic_load(&k->state) == STATE_RUNNING &&
+         !atomic_load(&k->stop))
+    pthread_cond_wait(&k->ack, &k->mutex);
+  pthread_mutex_unlock(&k->mutex);
+  return Val_unit;
+}
+
+CAMLprim value sarek_link_keepalive_resume(value handle) {
+  struct keepalive *k = (struct keepalive *)Nativeint_val(handle);
+  pthread_mutex_lock(&k->mutex);
+  k->paused = 0;
+  pthread_cond_broadcast(&k->cond);
+  pthread_mutex_unlock(&k->mutex);
+  return Val_unit;
+}
+
+CAMLprim value sarek_link_keepalive_paused(value handle) {
+  struct keepalive *k = (struct keepalive *)Nativeint_val(handle);
+  pthread_mutex_lock(&k->mutex);
+  int p = k->paused;
+  pthread_mutex_unlock(&k->mutex);
+  return Val_int(p);
 }
