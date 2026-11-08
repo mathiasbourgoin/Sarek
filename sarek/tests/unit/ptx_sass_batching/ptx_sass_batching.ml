@@ -257,6 +257,11 @@ let compile label ptx =
     run_capture (Printf.sprintf "nvdisasm -c %s" (Filename.quote cubin))
   in
   List.iter (fun f -> try Sys.remove f with Sys_error _ -> ()) [ptx_f; cubin] ;
+  (* an empty disassembly would count as one line and pass a size check *)
+  if not (List.exists (fun l -> opcode l <> None) (lines sass)) then begin
+    Printf.printf "nvdisasm produced no instructions for %s:\n%s\n" label sass ;
+    exit 1
+  end ;
   (analyse_sass sass (registers_of info), sass)
 
 (* Opcode histogram of a SASS text: where the instructions of a kernel go. *)
@@ -323,6 +328,7 @@ let () =
         Printf.printf "######## %s\n" name ;
         let m_spoc, sass_spoc = compile (name ^ " SPOC PTX") spoc in
         print_row "SPOC PTX" m_spoc ;
+        print_histogram "SPOC" sass_spoc ;
         if nvrtc then begin
           let cuda =
             Sarek_codegen.Sarek_ir_cuda.generate_with_types
@@ -338,7 +344,6 @@ let () =
           in
           let m_nvrtc, sass_nvrtc = compile (name ^ " NVRTC PTX") ptx in
           print_row "NVRTC PTX of the CUDA-C" m_nvrtc ;
-          print_histogram "SPOC" sass_spoc ;
           print_histogram "NVRTC" sass_nvrtc ;
           (* The fused staged matvec: SASS size and registers stay close to what
              NVRTC gets for the CUDA-C of the same IR (generous margins: this is
