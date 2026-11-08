@@ -34,7 +34,8 @@
   destroying it costs about 2.6 ms) and `Link_keepalive.stop` joins it and destroys the stream. HIP and CUDA only (a backend registers a
   provider with `Link_keepalive.register_native`); on the other backends `start` is a no-op
   returning an `Unsupported` handle. Idempotent start and stop, never raises (a failed set-up or
-  launch is reported by `status`), nothing changes for code that does not call it. Tests:
+  launch is reported by `status`), nothing changes for code that does not call it. Stop every
+  keep-alive before `Kernel.clear_cache` or destroying its device: the thread uses a cached module. Tests:
   `sarek/tests/e2e/test_link_keepalive` (CPU backends, no-op) and
   `sarek-hip/test/test_hip_link_keepalive` (lifecycle and launch rate on hardware). Not run on CUDA
   hardware.

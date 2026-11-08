@@ -2639,7 +2639,7 @@
 (library
  (name link_keepalive_suite)
  (modules link_keepalive_suite)
- (libraries spoc_core unix))
+ (libraries spoc_core unix ctypes ctypes.foreign))
 
 (executable
  (name test_link_keepalive)

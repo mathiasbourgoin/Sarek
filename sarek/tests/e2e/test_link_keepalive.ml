@@ -30,4 +30,7 @@ let () =
   Test_helpers.Benchmarks.init_backends () ;
   let devices = Array.to_list (Device.init ()) in
   List.iter Link_keepalive_suite.run_on (selected devices) ;
+  (match devices with
+  | template :: _ -> Link_keepalive_suite.run_fake template
+  | [] -> ()) ;
   exit (Link_keepalive_suite.exit_code ())
