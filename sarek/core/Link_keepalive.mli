@@ -34,7 +34,16 @@
 
     {b Failure.} A keep-alive is a performance hint, so it never raises: if
     set-up or a launch fails (no NVRTC/hiprtc, out of resources, no domain
-    available) the worker stops and {!status} reports [Failed reason]. *)
+    available) the worker stops and {!status} reports [Failed reason]. On CUDA
+    the empty kernel is compiled with NVRTC, so a CUDA/PTX install without NVRTC
+    reports [Failed].
+
+    Known limitation, in the backends: [Device.synchronize] releases the
+    arguments the backend retains for every launch on the device, including
+    those of a launch the keep-alive made after the synchronisation began. The
+    empty kernel has no arguments, so nothing is read from them, but calling it
+    while a keep-alive runs is not advised until the backends track this per
+    launch. *)
 
 (** State of a keep-alive. *)
 type status =
@@ -47,7 +56,7 @@ type t
 
 (** Smallest and largest accepted period, in microseconds. {!start} clamps its
     argument to this range, so it is total. The upper bound also bounds the
-    latency of {!stop}. *)
+    interval at which a running worker notices {!stop}. *)
 val min_period_us : int
 
 val max_period_us : int
@@ -62,11 +71,12 @@ val supported : Device.t -> bool
     worker has finished set-up.
 
     Idempotent per device: while a keep-alive is [Running] on [dev], [start]
-    returns it (the new [period_us] is ignored). After {!stop} (or a failure) a
-    new call starts a fresh one; repeated start/stop cycles are supported and
-    leak neither domains, streams nor kernel modules (the module is compiled
-    once per device and cached). On an unsupported backend it returns an
-    [Unsupported] handle without side effects.
+    returns it (the new [period_us] is ignored); the handle is shared, so a
+    {!stop} from any holder stops it for all. After {!stop} (or a failure) a new
+    call starts a fresh one; repeated start/stop cycles are supported and leak
+    neither domains, streams nor kernel modules (the module is compiled once per
+    device and cached). On an unsupported backend it returns an [Unsupported]
+    handle without side effects.
 
     Thread-safe. A keep-alive still running at exit is stopped by an [at_exit]
     handler. *)
@@ -74,7 +84,13 @@ val start : ?period_us:int -> Device.t -> t
 
 (** Stop the keep-alive, wait for its domain to exit, drain and destroy its
     stream. Idempotent, and safe on any status. When it returns the worker no
-    longer touches the device. *)
+    longer touches the device. The worker notices the request within one period;
+    the final drain lasts as long as the device takes to run the few empty
+    kernels still queued, which is longer only if the device cannot schedule
+    them (the side stream is stuck behind other work).
+
+    Stop every keep-alive before [Kernel.clear_cache] or destroying the device:
+    the worker holds a cached compiled module. *)
 val stop : t -> unit
 
 (** Current state. *)
