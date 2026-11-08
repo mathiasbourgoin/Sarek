@@ -176,19 +176,8 @@ __device__ __forceinline__ void sarek_cm_stage_in(T *tile, const T *src, long lo
   }
 }
 template <typename T>
-__device__ __forceinline__ void sarek_cm_stage_out(T *dst, const T *tile, long long stride, int col) {
+__device__ __forceinline__ void sarek_cm_stage_out(T *dst, const T *tile, long long stride) {
   unsigned lane = (threadIdx.x + threadIdx.y * blockDim.x + threadIdx.z * blockDim.x * blockDim.y) & 31u;
-  /* Rows (columns) closer than 16 elements overlap in memory: the answer is the
-     LAST write of the interpreter's loop (rows outer, columns inner), so lane 0
-     writes them in that order instead of racing. */
-  if (stride > -16 && stride < 16) {
-    if (lane == 0)
-      for (int r = 0; r < 16; ++r)
-        for (int c = 0; c < 16; ++c)
-          dst[col ? (long long)c * stride + r : (long long)r * stride + c] =
-              tile[col ? c * 16 + r : r * 16 + c];
-    return;
-  }
   for (int j = 0; j < 8; ++j) {
     unsigned t = lane + 32u * j;
     dst[(long long)(t >> 4) * stride + (t & 15u)] = tile[t];

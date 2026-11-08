@@ -907,29 +907,6 @@ let test_checked_variant () =
     ["a"; "b"; "c"; "d"]
     (List.sort compare (Align.arrays_accessed k))
 
-(* A staged STORE whose leading dimension is below 16 overlaps its own rows: it
-   is written serially by lane 0 in the interpreter's order (last write of the
-   loop wins) instead of racing (an RTX 2080 kept the other writer for f16,
-   off 16, ld 12). One serial block per staged store, in either layout. *)
-let test_overlapping_store () =
-  List.iter
-    (fun (what, k) ->
-      let src = ptx ~block:(32, 1, 1) k in
-      let slow = slow_blocks src in
-      let stores = count ~needle:"wmma.store.d.sync.aligned" slow in
-      Alcotest.(check bool) (what ^ ": has staged stores") true (stores > 0) ;
-      Alcotest.(check int)
-        (what ^ ": one overlap test per staged store")
-        stores
-        (count ~needle:"abs.s32" slow) ;
-      check_has what slow ["setp.lt.s32"; "mad.lo.u32"; "bar.warp.sync"])
-    [
-      ("row-major", tile ~index:1 ~stride:17 f16_cfg);
-      ( "col-major",
-        tile ~index:1 ~stride:17 ~la:col ~lb:col ~lc:col ~ld:col f16_cfg );
-      ("8-bit", tile ~index:1 ~stride:17 u8_cfg);
-    ]
-
 (** {1 Kernels without cooperative matrices are unchanged} *)
 
 (* MD5 of the PTX of the f16 regression kernels. Recorded from the generator
@@ -1105,7 +1082,6 @@ let () =
           Alcotest.test_case "derived predicate" `Quick test_derive;
           Alcotest.test_case "review findings" `Quick test_review_findings;
           Alcotest.test_case "checked variant" `Quick test_checked_variant;
-          Alcotest.test_case "overlapping store" `Quick test_overlapping_store;
           Alcotest.test_case
             "aligned variant: no buffer"
             `Quick

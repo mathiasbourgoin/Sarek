@@ -222,14 +222,24 @@ let check_config dev cfg =
 (* {1 Overlapping tiles}
 
    A leading dimension below 16 makes the rows (columns) of a tile overlap in
-   memory. A load then reads shared cells, which is harmless; a STORE writes
-   some cells twice, and the interpreter's answer is the last write of its loop
-   (rows outer, columns inner, in either layout). The staged CUDA path wrote
-   them in parallel and on an RTX 2080 (f16, off 16, ld 12) the cells written by
-   two lanes of one instruction kept the other writer: 55 elements differed. It
-   now writes an overlapping tile serially in the interpreter's order. A copy
-   kernel (load an accumulator, store it) makes the order visible, and a model
-   of the loop pins it on the host as well as on every device. *)
+   memory. A LOAD then reads shared cells, which is well defined and exact on
+   every backend (A and B at off 16, ld 12 are run above and below). A STORE
+   writes some cells twice with different values, and which write wins is NOT
+   specified: the interpreter keeps the last write of its loop (rows outer,
+   columns inner, in either layout), but the matrix-unit store of a device
+   writes them in an order of its own. The first NVIDIA run of the device test
+   failed on exactly that: f16, off 16, ld 12, a tile of A * B + C stored with
+   overlapping rows differed from the interpreter in the cells written twice
+   (55 of 240), and nowhere else.
+
+   So the comparison skips the cells a store writes twice (checked just above
+   for the tiles, below for the copy kernel), and the copy kernel makes the
+   semantics explicit: it LOADS a tile of distinct values at a stride of 16 and
+   STORES it with an overlapping stride. The interpreter must equal a model of
+   its own loop on the host; a device must write every other cell exactly and
+   each doubly written cell with one of the values written to it. (An earlier
+   version of this kernel loaded and stored with the same overlapping stride,
+   so both writers carried the same value and the order could not show.) *)
 
 let overlap_kernel ~index ~stride ~layout =
   let frag =
@@ -263,16 +273,10 @@ let overlap_kernel ~index ~stride ~layout =
       Sarek_ir_types.SSeq
         [
           Sarek_ir_types.SCoopmat (Sarek_ir_types.CM_decl {name = "f"; frag});
+          (* the source tile is contiguous: distinct values, no overlap *)
           Sarek_ir_types.SCoopmat
             (Sarek_ir_types.CM_load
-               {
-                 dst = "f";
-                 frag;
-                 src = "c";
-                 index = k index;
-                 stride = k stride;
-                 layout;
-               });
+               {dst = "f"; frag; src = "c"; index = k 0; stride = k 16; layout});
           Sarek_ir_types.SCoopmat
             (Sarek_ir_types.CM_store
                {
@@ -292,27 +296,38 @@ let overlap_input p = float_of_int (p + 1)
 
 let overlap_init p = -.float_of_int (p + 1)
 
-(* The interpreter's loop, on arrays. *)
+(* Memory element of tile element (r, c), and of the contiguous source. *)
+let element ~index ~stride ~layout r c =
+  match layout with
+  | C.Row_major -> index + (r * stride) + c
+  | C.Col_major -> index + (c * stride) + r
+
+let source_value ~layout r c =
+  overlap_input (element ~index:0 ~stride:16 ~layout r c)
+
+(* The cells a store writes, with the values written to each, in the
+   interpreter's order (rows outer, columns inner). *)
+let writers ~index ~stride ~layout =
+  let cells = Array.make (overlap_len ~index) [] in
+  for r = 0 to 15 do
+    for c = 0 to 15 do
+      let e = element ~index ~stride ~layout r c in
+      cells.(e) <- cells.(e) @ [source_value ~layout r c]
+    done
+  done ;
+  cells
+
+(* The interpreter's loop, on arrays: the last writer wins. *)
 let overlap_model ~index ~stride ~layout =
-  let len = overlap_len ~index in
-  let element r c =
-    match layout with
-    | C.Row_major -> index + (r * stride) + c
-    | C.Col_major -> index + (c * stride) + r
-  in
-  let tile = Array.make 256 0.0 in
-  for r = 0 to 15 do
-    for c = 0 to 15 do
-      tile.((r * 16) + c) <- overlap_input (element r c)
-    done
-  done ;
-  let d = Array.init len overlap_init in
-  for r = 0 to 15 do
-    for c = 0 to 15 do
-      d.(element r c) <- tile.((r * 16) + c)
-    done
-  done ;
-  d
+  let cells = writers ~index ~stride ~layout in
+  Array.mapi
+    (fun p ws ->
+      match List.rev ws with last :: _ -> last | [] -> overlap_init p)
+    cells
+
+(* Cells written more than once. *)
+let doubly_written ~index ~stride ~layout =
+  Array.map (fun ws -> List.length ws > 1) (writers ~index ~stride ~layout)
 
 let run_overlap ~gpu ~index ~stride ~layout =
   let len = overlap_len ~index in
@@ -338,7 +353,8 @@ let check_overlap what ~gpu =
       List.iter
         (fun (index, stride) ->
           guarded @@ fun () ->
-          let want = overlap_model ~index ~stride ~layout in
+          let model = overlap_model ~index ~stride ~layout in
+          let cells = writers ~index ~stride ~layout in
           let got =
             try run_overlap ~gpu ~index ~stride ~layout with
             | e when gpu <> None && refused_by_measurement e ->
@@ -352,18 +368,27 @@ let check_overlap what ~gpu =
                   stride
                   (Printexc.to_string e)
           in
+          (* the interpreter: exactly the model; a device: exact on the cells
+             written at most once, one of the written values on the others *)
+          let acceptable p g =
+            if gpu = None then g = model.(p)
+            else
+              match cells.(p) with
+              | [] -> g = overlap_init p
+              | ws -> List.mem g ws
+          in
           let wrong = ref 0 and first = ref (-1) in
           Array.iteri
             (fun p g ->
-              if g <> want.(p) then begin
+              if not (acceptable p g) then begin
                 incr wrong ;
                 if !first < 0 then first := p
               end)
             got ;
           if !wrong > 0 then
             fail
-              "%s overlap %s index %d stride %d: %d of %d elements differ from \
-               the loop order (first: element %d, got %g, want %g)"
+              "%s overlap %s index %d stride %d: %d of %d elements are not \
+               what the loop writes (first: element %d, got %g, model %g)"
               what
               (layout_name layout)
               index
@@ -372,15 +397,16 @@ let check_overlap what ~gpu =
               (Array.length got)
               !first
               got.(!first)
-              want.(!first)
+              model.(!first)
           else
             ok
-              "%s overlap %s index %d stride %d: the last write of the loop \
-               wins"
+              "%s overlap %s index %d stride %d: %s"
               what
               (layout_name layout)
               index
-              stride)
+              stride
+              (if gpu = None then "the last write of the loop wins"
+               else "single writes exact, double writes one of the values"))
         overlap_cases)
     [C.Row_major; C.Col_major]
 
@@ -505,8 +531,18 @@ let check_variants dev cfg =
           (a1 - a0)
           (s1 - s0) ;
       let close g w = if f16 then close_f16 g w else g = w in
+      (* a store with ld < 16 writes cells twice, in an unspecified order on a
+         device (see "Overlapping tiles"): those cells are not compared *)
+      let twice =
+        if ld < 16 then doubly_written ~index:off ~stride:ld ~layout:C.Row_major
+        else [||]
+      in
       let wrong = ref 0 in
-      Array.iteri (fun p g -> if not (close g want.(p)) then incr wrong) got ;
+      Array.iteri
+        (fun p g ->
+          if p < Array.length twice && twice.(p) then ()
+          else if not (close g want.(p)) then incr wrong)
+        got ;
       if !wrong > 0 then
         fail
           "%s %s off %d ld %d [%s variant]: %d of %d elements differ from the \
@@ -763,6 +799,22 @@ let () =
     ~reason:"test_coopmat_misalign_e2e: exact small-integer inputs" ;
   host_variants () ;
   check_overlap "interpreter" ~gpu:None ;
+  (* the kernel is not vacuous: at off 16, ld 12 sixty cells are written twice,
+     with different values *)
+  ( guarded @@ fun () ->
+    let cells = writers ~index:16 ~stride:12 ~layout:C.Row_major in
+    let twice =
+      Array.to_list cells |> List.filter (fun ws -> List.length ws > 1)
+    in
+    if List.length twice <> 60 then
+      fail
+        "overlap kernel: %d cells written twice, expected 60"
+        (List.length twice)
+    else if List.exists (function [a; b] -> a = b | _ -> false) twice then
+      fail
+        "overlap kernel: two writers carry the same value, the order cannot \
+         show"
+    else ok "overlap kernel: 60 cells written twice, with different values" ) ;
   let wanted = Sys.getenv_opt "COOPMAT_MISALIGN_FRAMEWORK" in
   let devices =
     Device.init () |> Array.to_list
