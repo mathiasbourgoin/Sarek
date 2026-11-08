@@ -23,6 +23,18 @@
 
 ### Added
 
+- `Link_keepalive` (`sarek/core`), an opt-in way to keep the host-device link out of power-saving
+  states during long submissions. On platforms where the link (for example PCIe ASPM) sleeps while
+  the device runs one long kernel, the next kernel starts late by the wake-up latency;
+  `Link_keepalive.start ?period_us dev` spawns a domain that owns a non-blocking stream and an
+  empty kernel and enqueues it every `period_us` (default 500, clamped to 50-10000), and
+  `Link_keepalive.stop` joins it and destroys the stream. A separate domain, not a systhread, so a
+  main domain busy in OCaml code cannot delay the launches. HIP and CUDA only; on the other
+  backends `start` is a no-op returning an `Unsupported` handle. Idempotent start and stop, never
+  raises (a failed set-up is reported by `status`), nothing changes for code that does not call
+  it. Tests: `sarek/tests/e2e/test_link_keepalive` (CPU backends, no-op) and
+  `sarek-hip/test/test_hip_link_keepalive` (lifecycle on hardware). Not run on CUDA hardware.
+
 - `CM_scale_add`, a cooperative-matrix statement that adds a per-row and per-column scaled copy of
   an s32 or f32 accumulator fragment into an f32 accumulator, with an optional subtracted
   `p[i] * q[j]` offset and an optional overwrite (docs/design/coopmat-scaled-accumulate.md). It is

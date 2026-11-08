@@ -217,6 +217,18 @@
  (action
   (run %{dep:test_hip_nonblocking.exe})))
 
+; Link_keepalive on the first HIP device.
+
+(executable
+ (name test_hip_link_keepalive)
+ (modules test_hip_link_keepalive)
+ (libraries link_keepalive_suite spoc_core sarek_hip))
+
+(rule
+ (alias e2e-hip)
+ (action
+  (run %{dep:test_hip_link_keepalive.exe})))
+
 ; Pinned vs pageable host->device bandwidth, 256 MiB. Information only.
 
 (executable
