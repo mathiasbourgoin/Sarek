@@ -585,6 +585,75 @@ let test_rebound_atom_is_not_folded () =
     false
     (contains ptx "+4]")
 
+let ir_var name ty =
+  {var_name = name; var_id = 0; var_type = ty; var_mutable = false}
+
+let float_out_param () =
+  DParam
+    ( ir_var "o" (TVec TFloat32),
+      Some {arr_elttype = TFloat32; arr_memspace = Global} )
+
+(* A match arm whose pattern variable is named like an earlier literal [let]:
+   inside the arm the index is the payload, not the literal 3. *)
+let test_match_binder_hides_literal () =
+  let i = ir_var "i" TInt32 and n = ir_var "n" TInt32 in
+  let k =
+    {
+      default_kernel with
+      kern_name = "match_binder";
+      kern_params = [float_out_param (); DParam (n, None)];
+      kern_variants = [("opt", [("Some", [TInt32]); ("None", [])])];
+      kern_body =
+        SLet
+          ( i,
+            EConst (CInt32 3l),
+            SMatch
+              ( EVariant ("opt", "Some", [EVar n]),
+                [
+                  ( PConstr ("Some", ["i"]),
+                    SAssign (LArrayElem ("o", EVar i), EConst (CFloat32 1.0)) );
+                  (PConstr ("None", []), SEmpty);
+                ] ) );
+    }
+  in
+  Alcotest.(check bool)
+    "the arm's i is the payload: the literal 3 (offset 12) is not folded"
+    false
+    (contains (ptx_of k) "+12]")
+
+(* [a] is an intrinsic cast of a mutable variable: its register is the
+   variable's own, so [b = a + 1] must not be read through it after [m] moves. *)
+let test_cast_alias_is_not_stable () =
+  let m = {(ir_var "m" TInt32) with var_mutable = true} in
+  let a = ir_var "a" TInt32 and b = ir_var "b" TInt32 in
+  let k =
+    {
+      default_kernel with
+      kern_name = "cast_alias";
+      kern_params = [float_out_param ()];
+      kern_body =
+        SLetMut
+          ( m,
+            EIntrinsic (["Sarek_stdlib"; "Gpu"], "thread_idx_x", []),
+            SLet
+              ( a,
+                EIntrinsic ([], "to_int32", [EVar m]),
+                SLet
+                  ( b,
+                    EBinop (Add, EVar a, EConst (CInt32 1l)),
+                    SSeq
+                      [
+                        SAssign
+                          (LVar m, EBinop (Add, EVar m, EConst (CInt32 8l)));
+                        SAssign (LArrayElem ("o", EVar b), EConst (CFloat32 0.0));
+                      ] ) ) );
+    }
+  in
+  Alcotest.(check bool)
+    "b keeps its own register: no +1 element offset on a's register"
+    false
+    (contains (ptx_of k) "+4]")
+
 (******************************************************************************
  * Which loops are unrolled
  ******************************************************************************)
@@ -886,6 +955,14 @@ let () =
           Alcotest.test_case "mul.wide addresses" `Quick test_mad_wide_addresses;
           Alcotest.test_case "read-only analysis" `Quick test_readonly_analysis;
           Alcotest.test_case "literal offsets fold" `Quick test_offsets_fold;
+          Alcotest.test_case
+            "a match binder hides a literal"
+            `Quick
+            test_match_binder_hides_literal;
+          Alcotest.test_case
+            "a cast alias is not stable"
+            `Quick
+            test_cast_alias_is_not_stable;
           Alcotest.test_case
             "a rebound atom is not folded"
             `Quick
