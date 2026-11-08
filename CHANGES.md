@@ -30,7 +30,8 @@
   starts a native thread (`link_keepalive_stubs.c`) that calls the driver's launch function
   directly every `period_us` (default 500, clamped to 50-10000) on absolute deadlines, never
   entering the OCaml runtime (no allocation, no runtime lock, no stop-the-world participation);
-  `Link_keepalive.stop` joins it and destroys the stream. HIP and CUDA only (a backend registers a
+  `Link_keepalive.suspend` parks the thread (the next `start` resumes it in microseconds; creating and
+  destroying it costs about 2.6 ms) and `Link_keepalive.stop` joins it and destroys the stream. HIP and CUDA only (a backend registers a
   provider with `Link_keepalive.register_native`); on the other backends `start` is a no-op
   returning an `Unsupported` handle. Idempotent start and stop, never raises (a failed set-up or
   launch is reported by `status`), nothing changes for code that does not call it. Tests:

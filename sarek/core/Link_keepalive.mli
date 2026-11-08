@@ -46,7 +46,8 @@
 
 (** State of a keep-alive. *)
 type status =
-  | Running  (** The domain is launching the empty kernel periodically. *)
+  | Running  (** The thread is launching the empty kernel periodically. *)
+  | Suspended  (** Parked by {!suspend}: no launch, resources kept. *)
   | Stopped  (** Started and then stopped; the stream is destroyed. *)
   | Unsupported  (** This device's backend has no keep-alive: a no-op. *)
   | Failed of string  (** Set-up or a launch failed; the worker has exited. *)
@@ -71,16 +72,25 @@ val supported : Device.t -> bool
     worker has finished set-up.
 
     Idempotent per device: while a keep-alive is [Running] on [dev], [start]
-    returns it (the new [period_us] is ignored); the handle is shared, so a
-    {!stop} from any holder stops it for all. After {!stop} (or a failure) a new
-    call starts a fresh one; repeated start/stop cycles are supported and leak
-    neither domains, streams nor kernel modules (the module is compiled once per
-    device and cached). On an unsupported backend it returns an [Unsupported]
-    handle without side effects.
+    returns it, and a [Suspended] one is resumed (the new [period_us] is ignored
+    in both cases); the handle is shared, so a {!stop} from any holder stops it
+    for all. After {!stop} (or a failure) a new call starts a fresh one;
+    repeated start/stop cycles are supported and leak neither domains, streams
+    nor kernel modules (the module is compiled once per device and cached). On
+    an unsupported backend it returns an [Unsupported] handle without side
+    effects.
 
     Thread-safe. A keep-alive still running at exit is stopped by an [at_exit]
     handler. *)
 val start : ?period_us:int -> Device.t -> t
+
+(** Stop launching and return once the thread is parked: no launch is made after
+    [suspend] returns, until {!start} resumes it. The thread, stream and kernel
+    are kept, so the next {!start} costs microseconds instead of the
+    milliseconds of creating them (about 1-2 ms of set-up and 1 ms of tear-down
+    were measured on HIP, which is what a short prompt would pay on every call).
+    Idempotent; a no-op on a handle that is not [Running]. *)
+val suspend : t -> unit
 
 (** Stop the keep-alive, wait for its thread to exit, drain and destroy its
     stream. Idempotent, and safe on any status. When it returns the thread no

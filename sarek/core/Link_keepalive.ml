@@ -17,7 +17,7 @@
  * current device is never touched.
  ******************************************************************************)
 
-type status = Running | Stopped | Unsupported | Failed of string
+type status = Running | Suspended | Stopped | Unsupported | Failed of string
 
 type native = {
   launch_fn : nativeint;
@@ -40,6 +40,12 @@ external stub_launches : nativeint -> int = "sarek_link_keepalive_launches"
 [@@noalloc]
 
 external stub_stop : nativeint -> unit = "sarek_link_keepalive_stop"
+
+external stub_suspend : nativeint -> unit = "sarek_link_keepalive_suspend"
+
+external stub_resume : nativeint -> unit = "sarek_link_keepalive_resume"
+
+external stub_paused : nativeint -> int = "sarek_link_keepalive_paused"
 
 external stub_free : nativeint -> unit = "sarek_link_keepalive_free" [@@noalloc]
 
@@ -113,6 +119,7 @@ let status (t : t) : status =
             if t.handle = 0n then Stopped
             else if stub_state t.handle = state_failed then
               Failed (Printf.sprintf "launch returned %d" (stub_rc t.handle))
+            else if stub_paused t.handle <> 0 then Suspended
             else Running)
 
 let device t = t.device
@@ -208,6 +215,9 @@ let launch_thread t provider =
                 release t)
           end)
 
+let suspend (t : t) : unit =
+  Mutex.protect t.lock (fun () -> if t.handle <> 0n then stub_suspend t.handle)
+
 let stop_all () =
   let all =
     Mutex.protect registry_lock (fun () ->
@@ -221,6 +231,9 @@ let start ?(period_us = default_period_us) (dev : Device.t) : t =
   Mutex.protect registry_lock (fun () ->
       match Hashtbl.find_opt registry dev.id with
       | Some existing when status existing = Running -> existing
+      | Some existing when status existing = Suspended ->
+          Mutex.protect existing.lock (fun () -> stub_resume existing.handle) ;
+          existing
       | _ ->
           let t = make dev ~period_us in
           (match provider_for dev with
