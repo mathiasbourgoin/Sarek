@@ -43,6 +43,15 @@ dune runtest
 _build/default/sarek-cuda/test/test_cuda_error.exe
 ```
 
+### CI workflows
+
+These rules apply to every workflow in `.github/workflows/`.
+
+- **Minimal permissions.** Each workflow declares a top-level `permissions:` block, read-only by default (`contents: read`). A job that really needs more (publishing a package, posting a comment, pushing to a deployment branch) raises it in its own job-level `permissions:` block, with only the scopes it uses.
+- **Pinned actions.** Every third-party action is pinned to a full commit SHA, with the version in a trailing comment: `uses: owner/action@<40-hex-sha> # v1.2.3`. Resolve the SHA of the tag you want (dereferencing annotated tags to their commit) instead of copying a floating tag such as `@v4`.
+- **Untrusted toolchains and tools.** A workflow that builds or executes third-party toolchains or tools (package managers, compilers, language runtimes, installers) triggers on `pull_request` only. It does not trigger on `push` to the default branch or on `workflow_dispatch`, and it never uses `pull_request_target`.
+- **No secrets in such workflows.** They run with no `secrets.*` and with the token restricted to `contents: read`.
+
 ### Documentation
 
 - Document public APIs
