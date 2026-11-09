@@ -19,8 +19,9 @@ jobs:
           ref: gh-pages
       
       - name: Remove preview directory
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
           PREVIEW_DIR="preview/pr-${PR_NUMBER}"
           
           if [ -d "$PREVIEW_DIR" ]; then

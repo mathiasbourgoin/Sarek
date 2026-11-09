@@ -14,7 +14,9 @@ jobs:
   block:
     runs-on: ubuntu-latest
     steps:
-      - run: |
+      - env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
           echo "::error::This PR targets 'master', a stale legacy branch. The default branch is 'main'."
-          echo "::error::Retarget with: gh pr edit ${{ github.event.pull_request.number }} --base main (or the 'Edit' button next to the base branch)."
+          echo "::error::Retarget with: gh pr edit ${PR_NUMBER} --base main (or the 'Edit' button next to the base branch)."
           exit 1

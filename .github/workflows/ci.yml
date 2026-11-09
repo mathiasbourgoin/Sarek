@@ -201,7 +201,9 @@ jobs:
         if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/check-review-finding-tests.js "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}"
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: node scripts/check-review-finding-tests.js "${PR_NUMBER}" --repo "${REPOSITORY}"
 
       # backlog-168b. scripts/check-no-machine-identifiers.test.sh, in the block
       # below, runs BOTH statements of the machine-label shape -- the gate's
@@ -758,6 +760,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       # Unpinned on purpose: whatever the runner's distribution ships is the
       # thing being measured. Pinning a version would answer a question nobody
