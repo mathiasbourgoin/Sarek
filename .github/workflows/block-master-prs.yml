@@ -6,6 +6,10 @@ name: Block PRs targeting master
 on:
   pull_request:
     branches: [master]
+
+permissions:
+  contents: read
+
 jobs:
   block:
     runs-on: ubuntu-latest

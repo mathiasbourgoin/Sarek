@@ -11,22 +11,24 @@ on:
       - 'benchmarks/dune'
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   deploy-preview:
     runs-on: ubuntu-22.04  # Use 22.04 where darcs is available
     # Only run for PRs from the main repository (not forks) to prevent malicious gh-pages content
     if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write # deploys the preview to gh-pages
+      pull-requests: write # comments the preview URL
     steps:
       - name: Checkout PR
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       
       - name: Set up OCaml
-        uses: ocaml/setup-ocaml@v2
+        uses: ocaml/setup-ocaml@8cc6339f55862749298d198ef84788b8d6acdacc # v2.2.10
         with:
           ocaml-compiler: 5.4.x
           dune-cache: true
@@ -63,7 +65,7 @@ jobs:
           echo "✅ Updated _config.yml baseurl for preview"
       
       - name: Setup Ruby for Jekyll
-        uses: ruby/setup-ruby@v1
+        uses: ruby/setup-ruby@b3aaceaef7e0ee231b499e7b5f49c03fc1d32199 # v1.338.0
         with:
           ruby-version: '3.1'
           bundler-cache: false
@@ -88,7 +90,7 @@ jobs:
           cp -r _build/default/_doc/_html/* gh-pages/_site/spoc_docs/
 
       - name: Deploy preview to gh-pages
-        uses: JamesIves/github-pages-deploy-action@v4
+        uses: JamesIves/github-pages-deploy-action@fa24774553152dd7873cd16ebd8d959b010c5445 # v4.9.0
         with:
           folder: gh-pages/_site
           target-folder: preview/pr-${{ github.event.pull_request.number }}
@@ -96,7 +98,7 @@ jobs:
           commit-message: "Deploy preview for PR #${{ github.event.pull_request.number }}"
       
       - name: Comment preview URL on PR
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const prNumber = context.issue.number;
