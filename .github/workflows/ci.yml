@@ -6,6 +6,9 @@ on:
   push:
     branches: [master, main]
 
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -34,7 +37,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
           # backlog-152. Load-bearing, not a convenience. The default is
@@ -417,13 +420,13 @@ jobs:
           echo "OK: no Admitted/admit/Axiom in formal/ .v files"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Cache key
         run: echo "CACHE_WEEK=$(date +%G-%V)" >> $GITHUB_ENV
 
       - name: Build CI image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           file: ci/Dockerfile
@@ -450,7 +453,7 @@ jobs:
             bash -lc './ci/assert-toolchain.sh'
 
       - name: Cache opam root
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .opam-ci
           key: opam-${{ runner.os }}-${{ matrix.ocaml-compiler }}-${{ hashFiles('*.opam') }}
@@ -697,7 +700,7 @@ jobs:
 
       - name: Upload coverage report
         if: success() || failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-report
           path: _coverage/unit-report
@@ -754,7 +757,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Unpinned on purpose: whatever the runner's distribution ships is the
       # thing being measured. Pinning a version would answer a question nobody
@@ -793,7 +796,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
@@ -848,18 +851,18 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Cache key
         run: echo "CACHE_WEEK=$(date +%G-%V)" >> $GITHUB_ENV
 
       - name: Build CI image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           file: ci/Dockerfile
@@ -871,7 +874,7 @@ jobs:
           cache-to: type=gha,scope=spoc-ci-${{ hashFiles('ci/Dockerfile') }},mode=max
 
       - name: Cache opam root
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: .opam-ci
           key: opam-${{ runner.os }}-5.4.0-${{ hashFiles('*.opam') }}
