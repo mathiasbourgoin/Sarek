@@ -26,12 +26,13 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
       
       - name: Set up OCaml
         uses: ocaml/setup-ocaml@8cc6339f55862749298d198ef84788b8d6acdacc # v2.2.10
         with:
           ocaml-compiler: 5.4.x
-          dune-cache: true
+          dune-cache: false
       
       - name: Install dependencies
         run: |
@@ -59,9 +60,11 @@ jobs:
           fi
       
       - name: Update _config.yml for preview
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           # Update baseurl in _config.yml to match preview path
-          sed -i 's|baseurl: /Sarek|baseurl: /Sarek/preview/pr-${{ github.event.pull_request.number }}|' gh-pages/_config.yml
+          sed -i 's|baseurl: /Sarek|baseurl: /Sarek/preview/pr-'"${PR_NUMBER}"'|' gh-pages/_config.yml
           echo "✅ Updated _config.yml baseurl for preview"
       
       - name: Setup Ruby for Jekyll
