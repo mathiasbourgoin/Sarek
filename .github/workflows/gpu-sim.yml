@@ -9,7 +9,6 @@ name: CUDA tests (simulated H100)
 # real-GPU testing and does not replace it.
 
 on:
-  workflow_dispatch:
   pull_request:
     paths:
       - 'sarek-cuda/**'
@@ -65,8 +64,13 @@ jobs:
 
       # dune is started under vgpu, so every test process inherits the
       # simulated H100 (the CUDA backend loads libcuda through ctypes).
-      # dune keeps going after a failure; the run then fails only if a test
-      # outside this list failed, or if a listed test started to pass.
+      - name: Test the CUDA backend on a simulated H100
+        run: vgpu run opam exec -- dune runtest -j1 sarek-cuda/test
+
+      # dune keeps going after a failure. All the known failures are in
+      # sarek/tests/e2e, so the run fails if a test outside this list failed,
+      # if a listed test started to pass, or if dune failed but no failing
+      # test name could be read from the log.
       #
       # test_device_buffers: its "spin" kernel loops 100M times on one thread
       #   to keep a stream busy, which exceeds the simulator's default
@@ -77,12 +81,20 @@ jobs:
       # test_f16_host_path: its list of f16-capable frameworks says "CUDA", but
       #   the backend reports "CUDA/PTX", so a working f16 kernel is reported as
       #   "accepted by a slice-2 backend". The kernel itself runs.
-      - name: Test on a simulated H100
+      - name: Test the end-to-end tests on a simulated H100
         run: |
           expected="test_blocking_ffi_releases_lock test_device_buffers test_f16_host_path"
-          vgpu run opam exec -- dune runtest -j1 sarek-cuda/test sarek/tests/e2e 2>&1 | tee test.log || true
+          set +e
+          vgpu run opam exec -- dune runtest -j1 sarek/tests/e2e 2>&1 | tee test.log
+          status=${PIPESTATUS[0]}
+          set -e
           sed -i 's/\x1b\[[0-9;]*m//g' test.log
           failed=$(awk '/^File "/ {f=1} f && /&& \.\/[a-z0-9_]+\.exe/ {match($0, /\.\/[a-z0-9_]+\.exe/); print substr($0, RSTART+2, RLENGTH-6); f=0}' test.log | sort -u | tr '\n' ' ')
+          echo "dune exit status: $status"
           echo "failed tests: ${failed:-none}"
           echo "expected failures: $expected"
+          if [ "$status" -ne 0 ] && [ -z "$(echo $failed)" ]; then
+            echo "dune failed but no failing test name could be read from the log"
+            exit 1
+          fi
           [ "$(echo $failed)" = "$expected" ]
