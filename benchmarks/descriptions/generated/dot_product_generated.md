@@ -10,7 +10,7 @@ extern "C" {
 __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __restrict__ b, int sarek_b_length, float* __restrict__ output, int sarek_output_length, int n) {
   __shared__ float sdata[256];
   int tid = ((int)threadIdx.x);
-  int gid = (((int)threadIdx.x) + (((int)blockDim.x) * ((int)blockIdx.x)));
+  int gid = ((int)((unsigned int)((int)threadIdx.x) + ((unsigned int)((int)blockDim.x) * (unsigned int)((int)blockIdx.x))));
   {
     if ((gid < n)) {
       sdata[tid] = (a[gid] * b[gid]);
@@ -80,7 +80,7 @@ __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __r
 __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __global float* restrict b, int sarek_b_length, __global float* restrict output, int sarek_output_length, int n) {
   __local float sdata[256];
   int tid = ((int)get_local_id(0));
-  int gid = (((int)get_local_id(0)) + (((int)get_local_size(0)) * ((int)get_group_id(0))));
+  int gid = ((int)((uint)((int)get_local_id(0)) + ((uint)((int)get_local_size(0)) * (uint)((int)get_group_id(0)))));
   {
     if ((gid < n)) {
       sdata[tid] = (a[gid] * b[gid]);
@@ -255,7 +255,7 @@ uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   threadgroup float sdata[256];
   int tid = ((int)__metal_tid.x);
-  int gid = (((int)__metal_tid.x) + (((int)__metal_tpg.x) * ((int)__metal_bid.x)));
+  int gid = ((int)((uint)((int)__metal_tid.x) + ((uint)((int)__metal_tpg.x) * (uint)((int)__metal_bid.x))));
   {
     if ((gid < n)) {
       sdata[tid] = (a[gid] * b[gid]);

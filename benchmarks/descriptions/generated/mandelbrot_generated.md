@@ -20,7 +20,7 @@ __global__ void sarek_kern(int* __restrict__ output, int sarek_output_length, in
       float xtemp = (((x * x) - (y * y)) + x0);
       y = (((2.0f * x) * y) + y0);
       x = xtemp;
-      iter = (iter + 1);
+      iter = ((int)((unsigned int)iter + 1u));
     }
     output[((py * width) + px)] = iter;
   }
@@ -44,7 +44,7 @@ __kernel void sarek_kern(__global int* restrict output, int sarek_output_length,
       float xtemp = (((x * x) - (y * y)) + x0);
       y = (((2.0f * x) * y) + y0);
       x = xtemp;
-      iter = (iter + 1);
+      iter = ((int)((uint)iter + 1u));
     }
     output[((py * width) + px)] = iter;
   }
@@ -119,7 +119,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
       float xtemp = (((x * x) - (y * y)) + x0);
       y = (((2.0f * x) * y) + y0);
       x = xtemp;
-      iter = (iter + 1);
+      iter = ((int)((uint)iter + 1u));
     }
     output[((py * width) + px)] = iter;
   }
