@@ -148,8 +148,12 @@ let ir_of (_, kirc) =
 
 (* Frameworks that lower f16 device-side. Everything else must raise its own
    slice-2 diagnostic. Metal joined with package H3: scalar f16 is [half] with
-   a plain narrowing, measured strict (test_metal_f16_narrowing_e2e). *)
-let f16_capable = ["HIP"; "CUDA"; "Metal"; "Native"; "Interpreter"]
+   a plain narrowing, measured strict (test_metal_f16_narrowing_e2e). The CUDA
+   backends register as "CUDA/PTX" and "CUDA/C", so CUDA is matched as a family
+   by [Device.is_cuda_framework], not by the bare name. *)
+let f16_capable fw =
+  Device.is_cuda_framework fw
+  || List.mem fw ["HIP"; "Metal"; "Native"; "Interpreter"]
 
 (* The kernels compute [f16 (f32 x * 2.0)]: the doubling is exact in binary32,
    so the reference is the binary16 rounding of twice the stored sample (an
@@ -184,7 +188,7 @@ let test_kernel ?(shape = f16_scale) ?(suffix = "") dev =
     Transfer.flush dev
   with
   | () ->
-      if List.mem fw f16_capable then begin
+      if f16_capable fw then begin
         match wrong_values out with
         | [] -> report label true " (ran, values equal the binary16 model)"
         | (i, g, e) :: _ as bad ->
@@ -211,7 +215,7 @@ let test_kernel ?(shape = f16_scale) ?(suffix = "") dev =
            " — RAW CTYPES FAILURE instead of the slice-2 diagnostic (MF2): %s"
            (Printexc.to_string e))
   | exception e ->
-      if List.mem fw f16_capable then
+      if f16_capable fw then
         report label false (Printf.sprintf " — %s" (Printexc.to_string e))
       else begin
         (* Must be a proper backend diagnostic mentioning float16. *)
