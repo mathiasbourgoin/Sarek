@@ -1,5 +1,17 @@
 ## 2026-11
 
+### Fixed
+
+- An `int64` literal in a kernel whose two top bits differ (for example `0x4000000000000000L`,
+  `0x7fffffffffffffffL` or `0x8000000000000000L`) lost bit 63 on every backend: the PPX quoted
+  int64 constants as `Int64.of_int` of a 63-bit OCaml `int`, both in the IR given to the device
+  backends and the Interpreter and in the OCaml code generated for Native. The PPX now emits an
+  int64 literal (issue #550). The C-family generators (CUDA C, OpenCL C, Metal) and GLSL spell
+  `Int64.min_int` as `(-9223372036854775807L - 1L)` (`LL` on CUDA), which stays signed, instead of
+  `-9223372036854775808L`, which those languages read as unary minus on an unsigned literal; PTX
+  spells it `0x8000000000000000`. Tests: `sarek/tests/unit/test_int64_literals.ml` and the int64
+  cases of `test_quote.ml` and `test_quote_ir.ml`.
+
 ### Changed
 
 - CUDA/PTX keeps more global loads in flight, the property in which `ptxas` fell four times short

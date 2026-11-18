@@ -352,6 +352,44 @@ let test_quote_sarek_expr_var () =
   | Pexp_record _ -> ()
   | _ -> Alcotest.fail "expected extension or record"
 
+(* The integer constants written in a quoted expression. *)
+let integer_constants e =
+  let collect =
+    object
+      inherit [(string * char option) list] Ast_traverse.fold as super
+
+      method! constant c acc =
+        match c with
+        | Pconst_integer (s, suffix) -> (s, suffix) :: super#constant c acc
+        | _ -> super#constant c acc
+    end
+  in
+  collect#expression e []
+
+(* Issue #550: an int64 constant must be quoted as an int64 literal, not through
+   a 63-bit [int] that drops bit 63. *)
+let test_quote_sarek_expr_int64 () =
+  List.iter
+    (fun v ->
+      let expr = Sarek_ast.{e = EInt64 v; expr_loc = dummy_sarek_loc} in
+      let e = Sarek_quote.quote_sarek_expr ~loc:dummy_loc expr in
+      let int64_literals =
+        List.filter_map
+          (function s, Some 'L' -> Some (Int64.of_string s) | _ -> None)
+          (integer_constants e)
+      in
+      Alcotest.(check (list int64))
+        (Printf.sprintf "0x%016Lx quoted as an int64 literal" v)
+        [v]
+        int64_literals)
+    [
+      0x4000000000000000L;
+      0x7fffffffffffffffL;
+      0x8000000000000000L;
+      0xbfffffffffffffffL;
+      -1L;
+    ]
+
 (* Test: expr_of_intrinsic_ref_opt generates STDLIB intrinsic references *)
 let test_expr_of_intrinsic_ref_module () =
   let ref = Sarek_env.IntrinsicRef (["Float32"], "sin") in
@@ -504,6 +542,10 @@ let () =
             "quote_sarek_expr var"
             `Quick
             test_quote_sarek_expr_var;
+          Alcotest.test_case
+            "quote_sarek_expr int64"
+            `Quick
+            test_quote_sarek_expr_int64;
         ] );
       ( "intrinsic_refs",
         [

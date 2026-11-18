@@ -493,6 +493,12 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
       let r = new_u32 alloc in
       emit buf "mov.u32 %s, %ld;" r n ;
       r
+  | EConst (CInt64 n) when n = Int64.min_int ->
+      (* [-9223372036854775808] negates a literal that does not fit .s64 (so
+         is .u64); spell the bit pattern instead. *)
+      let r = new_u64 alloc in
+      emit buf "mov.u64 %s, 0x8000000000000000;" r ;
+      r
   | EConst (CInt64 n) ->
       let r = new_u64 alloc in
       emit buf "mov.u64 %s, %Ld;" r n ;

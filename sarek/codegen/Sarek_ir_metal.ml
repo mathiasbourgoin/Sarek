@@ -199,7 +199,8 @@ let metal_thread_intrinsic = function
 
 let rec gen_expr st buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Dispatch.c_int32_literal n)
-  | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "L")
+  | EConst (CInt64 n) ->
+      Buffer.add_string buf (Dispatch.c_int64_literal ~suffix:"L" n)
   | EConst (CFloat32 f) ->
       let s = Printf.sprintf "%.17g" f in
       (* Ensure decimal point for Metal compatibility *)

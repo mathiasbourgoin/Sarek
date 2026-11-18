@@ -174,6 +174,17 @@ let full_name path name =
 let c_int32_literal n =
   if n = Int32.min_int then "(-2147483647 - 1)" else Int32.to_string n
 
+(** An int64 literal in C, CUDA C, OpenCL C, MSL or GLSL source, with the
+    language's 64-bit [suffix] ([LL] or [L]). [-9223372036854775808LL] is unary
+    minus applied to [9223372036854775808LL], which does not fit a signed 64-bit
+    type and is read as unsigned, so [Int64.min_int] would make comparisons and
+    divisions involving it unsigned; [(-9223372036854775807LL - 1LL)] is a
+    signed 64-bit value. *)
+let c_int64_literal ~suffix n =
+  if n = Int64.min_int then
+    Printf.sprintf "(-9223372036854775807%s - 1%s)" suffix suffix
+  else Int64.to_string n ^ suffix
+
 (** The module paths under which the core warp primitives are reached. *)
 let is_gpu_or_std_path = function
   | ["Gpu"] | ["Std"] | ["Sarek_stdlib"; "Gpu"] | ["Sarek_stdlib"; "Std"] ->

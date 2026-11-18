@@ -19,8 +19,9 @@ let quote_int ~loc i = Ast_builder.Default.eint ~loc i
 let quote_int32 ~loc i =
   [%expr Int32.of_int [%e Ast_builder.Default.eint ~loc (Int32.to_int i)]]
 
-let quote_int64 ~loc i =
-  [%expr Int64.of_int [%e Ast_builder.Default.eint ~loc (Int64.to_int i)]]
+(* An int64 literal ([0x...L]), not [Int64.of_int]: an OCaml [int] has 63 bits
+   and would drop bit 63 of the constant. *)
+let quote_int64 ~loc i = Ast_builder.Default.eint64 ~loc i
 
 let quote_float ~loc f =
   Ast_builder.Default.efloat ~loc (Sarek_float_literal.to_source f)
