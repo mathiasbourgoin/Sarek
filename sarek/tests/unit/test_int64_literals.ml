@@ -174,15 +174,20 @@ let source_values =
     0xbfffffffffffffffL;
   ]
 
-(* The spelling each backend must emit for [source_values], in order. *)
+(* The spelling each backend must emit for [source_values], in order. Each
+   C-family spelling is the whole right-hand side of its store ([= ...;]): the
+   min_int spelling contains [9223372036854775807L], so a bare substring would
+   not tell a wrong max_int from a right min_int. *)
 let backends : (string * (kernel -> string) * string list) list =
   let c suffix =
-    [
-      "4611686018427387904" ^ suffix;
-      "9223372036854775807" ^ suffix;
-      Printf.sprintf "(-9223372036854775807%s - 1%s)" suffix suffix;
-      "-4611686018427387905" ^ suffix;
-    ]
+    List.map
+      (fun lit -> "= " ^ lit ^ ";")
+      [
+        "4611686018427387904" ^ suffix;
+        "9223372036854775807" ^ suffix;
+        Printf.sprintf "(-9223372036854775807%s - 1%s)" suffix suffix;
+        "-4611686018427387905" ^ suffix;
+      ]
   in
   [
     ("CUDA", Sarek_ir_cuda.generate, c "LL");

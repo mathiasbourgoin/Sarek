@@ -494,8 +494,9 @@ let rec emit_expr buf alloc (env : env) (expr : expr) : string =
       emit buf "mov.u32 %s, %ld;" r n ;
       r
   | EConst (CInt64 n) when n = Int64.min_int ->
-      (* [-9223372036854775808] negates a literal that does not fit .s64 (so
-         is .u64); spell the bit pattern instead. *)
+      (* [-9223372036854775808] also loads this bit pattern (the decimal does
+         not fit .s64, so it is a .u64 and its negation wraps to the same
+         bits); the hex form only says so plainly. *)
       let r = new_u64 alloc in
       emit buf "mov.u64 %s, 0x8000000000000000;" r ;
       r
