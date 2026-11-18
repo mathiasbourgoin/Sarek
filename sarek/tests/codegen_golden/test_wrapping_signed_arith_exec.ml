@@ -61,35 +61,57 @@ let cuda_prelude =
    struct sarek_dim3 { unsigned int x, y, z; };\n\
    extern __device__ const sarek_dim3 threadIdx, blockIdx, blockDim, gridDim;\n"
 
+(* The targets, each with a probe kernel. A target is checked only when its
+   probe compiles (a POSITIVE control, as in Opencl_clang): a clang built
+   without the AMDGPU or NVPTX backend, or without OpenCL headers, is on PATH
+   and useless for that target, and says so instead of failing the test. *)
+let targets =
+  let cl std =
+    ( "OpenCL " ^ std,
+      ".cl",
+      "-x cl -cl-std=" ^ std ^ " -Xclang -finclude-default-header",
+      "__kernel void probe(__global int *o) { o[get_global_id(0)] = 1; }\n",
+      Sarek_ir_opencl.generate )
+  in
+  let cu name flags =
+    ( name,
+      (if name = "HIP" then ".hip" else ".cu"),
+      flags,
+      cuda_prelude ^ "__global__ void probe(int *o) { o[threadIdx.x] = 1; }\n",
+      fun k -> cuda_prelude ^ Sarek_ir_cuda.generate k )
+  in
+  [
+    cl "CL1.2";
+    cl "CL2.0";
+    cu
+      "CUDA"
+      "-x cuda --cuda-device-only -nocudainc -nocudalib --cuda-gpu-arch=sm_70";
+    cu
+      "HIP"
+      "-x hip --cuda-device-only -nogpuinc -nogpulib --offload-arch=gfx1100";
+  ]
+
 let test_clang_compile () =
   if not (Lazy.force has_clang) then Alcotest.skip () ;
   let kernels = [arith_kernel (); typed_kernel ()] in
-  List.iter
-    (fun k ->
-      let cl = Sarek_ir_opencl.generate k in
-      List.iter
-        (fun std ->
-          check_compiles
-            ("OpenCL " ^ std)
-            ~ext:".cl"
-            ~flags:("-x cl -cl-std=" ^ std ^ " -Xclang -finclude-default-header")
-            cl)
-        ["CL1.2"; "CL2.0"] ;
-      let cu = cuda_prelude ^ Sarek_ir_cuda.generate k in
-      check_compiles
-        "CUDA"
-        ~ext:".cu"
-        ~flags:
-          "-x cuda --cuda-device-only -nocudainc -nocudalib \
-           --cuda-gpu-arch=sm_70"
-        cu ;
-      check_compiles
-        "HIP"
-        ~ext:".hip"
-        ~flags:
-          "-x hip --cuda-device-only -nogpuinc -nogpulib --offload-arch=gfx1100"
-        cu)
-    kernels
+  let checked =
+    List.filter
+      (fun (label, ext, flags, probe, gen) ->
+        match compile ~ext ~flags probe with
+        | Error log ->
+            Printf.printf
+              "  %s: SKIP (this clang cannot compile the probe)\n%s"
+              label
+              log ;
+            false
+        | Ok () ->
+            List.iter
+              (fun k -> check_compiles label ~ext ~flags (gen k))
+              kernels ;
+            true)
+      targets
+  in
+  if checked = [] then Alcotest.skip ()
 
 (* ---- 4. execution under UBSan ---- *)
 
