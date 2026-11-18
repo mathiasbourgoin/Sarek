@@ -57,8 +57,11 @@ type state = {
 }
 
 (** The state for emitting [k]. *)
-let state (k : kernel) : state =
-  {variants = k.kern_variants; arith = Sarek_ir_c_arith.env_of_kernel k}
+let state ?records (k : kernel) : state =
+  {
+    variants = k.kern_variants;
+    arith = Sarek_ir_c_arith.env_of_kernel ?records k;
+  }
 
 (** {1 Type Mapping} *)
 
@@ -230,7 +233,7 @@ let rec gen_expr st buf = function
         buf
         e1
         e2
-  | EBinop (op, e1, e2) ->
+  | EBinop (op, _, _) as e ->
       (* Signed int +, -, * and lsl wrap as in OCaml (Sarek_ir_c_arith). *)
       C_arith.emit_binop_arm
         st.arith
@@ -238,17 +241,14 @@ let rec gen_expr st buf = function
         ~gen_expr:(gen_expr st)
         ~operator_text:(gen_binop op)
         buf
-        op
-        e1
-        e2
-  | EUnop (op, e) ->
+        e
+  | EUnop (op, _) as e ->
       C_arith.emit_unop_arm
         st.arith
         C_arith.metal
         ~gen_expr:(gen_expr st)
         ~operator_text:(gen_unop op)
         buf
-        op
         e
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf arr ;
@@ -1115,6 +1115,7 @@ let gen_local st buf indent atomic_vars = function
 
 (** Generate a helper function (Metal device function) *)
 let gen_helper_func st buf (hf : helper_func) =
+  let st = {st with arith = C_arith.for_helper st.arith hf} in
   (* In Metal, helper functions don't need any special decoration *)
   Buffer.add_string buf (metal_type_of_elttype hf.hf_ret_type) ;
   Buffer.add_char buf ' ' ;
@@ -1291,7 +1292,7 @@ let generate_with_types ?block
      for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_for_bound.hoist k in
   let k = Sarek_ir_unroll.annotate ~generator:"metal" k in
-  let st = state k in
+  let st = state ~records:types k in
   let buf = Buffer.create 4096 in
 
   (* Collect variables used with atomic operations *)

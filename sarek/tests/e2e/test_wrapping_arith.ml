@@ -230,8 +230,10 @@ let run64 dev ir =
 let is_host (dev : Device.t) =
   dev.Device.framework = "Native" || dev.Device.framework = "Interpreter"
 
-(* WebGPU has no 64-bit integers and refuses the kernel at code generation. *)
-let supports_int64 (dev : Device.t) = dev.Device.framework <> "WebGPU"
+(* A device runs the int64 case when it advertises 64-bit integers (WebGPU
+   and a Vulkan device without shaderInt64 do not); the host backends always
+   must. *)
+let supports_int64 (dev : Device.t) = is_host dev || Device.allows_int64 dev
 
 let ir_of kern name =
   let _, kirc = kern in
@@ -275,7 +277,8 @@ let () =
     failed := true
   end ;
   let devs = Device.init () in
-  let host_ran = ref false in
+  (* every host case that completed: both host frameworks, both widths *)
+  let host_done = ref [] in
   let report (dev : Device.t) label status detail =
     Printf.printf
       "  %-11s %-34s %-6s %s %s\n%!"
@@ -300,7 +303,8 @@ let () =
                   (if bad = 0 then "PASS" else "FAIL")
                   (Printf.sprintf "(%d/%d ok)" (total - bad) total) ;
                 if bad <> 0 then failed := true ;
-                if host then host_ran := true
+                if host then
+                  host_done := (dev.Device.framework, label) :: !host_done
             | exception e ->
                 let regression =
                   host || Test_helpers.Backend_failure.verdict e = `Fail
@@ -313,9 +317,19 @@ let () =
                 if regression then failed := true)
         cases)
     devs ;
-  if not !host_ran then begin
-    print_endline
-      "test_wrapping_arith: FAILED - no native/interpreter device ran" ;
+  let missing =
+    List.concat_map
+      (fun fw ->
+        List.filter_map
+          (fun w ->
+            if List.mem (fw, w) !host_done then None else Some (fw ^ " " ^ w))
+          ["int32"; "int64"])
+      ["Native"; "Interpreter"]
+  in
+  if missing <> [] then begin
+    Printf.printf
+      "test_wrapping_arith: FAILED - host cases did not run: %s\n"
+      (String.concat ", " missing) ;
     exit 1
   end ;
   if !failed then begin

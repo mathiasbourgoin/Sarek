@@ -46,23 +46,23 @@ __kernel void sarek_kern(__global float* restrict input, int sarek_input_length,
   int tile_size = 16;
   int tx = ((int)get_local_id(0));
   int ty = ((int)get_local_id(1));
-  int block_col = ((int)((uint)((int)get_group_id(0)) * (uint)tile_size));
-  int block_row = ((int)((uint)((int)get_group_id(1)) * (uint)tile_size));
-  int read_col = ((int)((uint)block_col + (uint)tx));
-  int read_row = ((int)((uint)block_row + (uint)ty));
+  int block_col = as_int(((uint)((int)get_group_id(0)) * (uint)tile_size));
+  int block_row = as_int(((uint)((int)get_group_id(1)) * (uint)tile_size));
+  int read_col = as_int(((uint)block_col + (uint)tx));
+  int read_row = as_int(((uint)block_row + (uint)ty));
   {
     if (((read_col < width) ? (read_row < height) : 0)) {
       int read_idx = ((read_row * width) + read_col);
-      int tile_idx = ((int)(((uint)ty * 17u) + (uint)tx));
+      int tile_idx = as_int((((uint)ty * 17u) + (uint)tx));
       tile[tile_idx] = input[read_idx];
     }
   }
   barrier(CLK_LOCAL_MEM_FENCE);
-  int write_col = ((int)((uint)block_row + (uint)tx));
-  int write_row = ((int)((uint)block_col + (uint)ty));
+  int write_col = as_int(((uint)block_row + (uint)tx));
+  int write_row = as_int(((uint)block_col + (uint)ty));
   {
     if (((write_col < height) ? (write_row < width) : 0)) {
-      int tile_idx = ((int)(((uint)tx * 17u) + (uint)ty));
+      int tile_idx = as_int((((uint)tx * 17u) + (uint)ty));
       int write_idx = ((write_row * height) + write_col);
       output[write_idx] = tile[tile_idx];
     }
@@ -146,23 +146,23 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   int tile_size = 16;
   int tx = ((int)__metal_tid.x);
   int ty = ((int)__metal_tid.y);
-  int block_col = ((int)((uint)((int)__metal_bid.x) * (uint)tile_size));
-  int block_row = ((int)((uint)((int)__metal_bid.y) * (uint)tile_size));
-  int read_col = ((int)((uint)block_col + (uint)tx));
-  int read_row = ((int)((uint)block_row + (uint)ty));
+  int block_col = as_type<int>(((uint)((int)__metal_bid.x) * (uint)tile_size));
+  int block_row = as_type<int>(((uint)((int)__metal_bid.y) * (uint)tile_size));
+  int read_col = as_type<int>(((uint)block_col + (uint)tx));
+  int read_row = as_type<int>(((uint)block_row + (uint)ty));
   {
     if (((read_col < width) ? (read_row < height) : 0)) {
       int read_idx = ((read_row * width) + read_col);
-      int tile_idx = ((int)(((uint)ty * 17u) + (uint)tx));
+      int tile_idx = as_type<int>((((uint)ty * 17u) + (uint)tx));
       tile[tile_idx] = input[read_idx];
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
-  int write_col = ((int)((uint)block_row + (uint)tx));
-  int write_row = ((int)((uint)block_col + (uint)ty));
+  int write_col = as_type<int>(((uint)block_row + (uint)tx));
+  int write_row = as_type<int>(((uint)block_col + (uint)ty));
   {
     if (((write_col < height) ? (write_row < width) : 0)) {
-      int tile_idx = ((int)(((uint)tx * 17u) + (uint)ty));
+      int tile_idx = as_type<int>((((uint)tx * 17u) + (uint)ty));
       int write_idx = ((write_row * height) + write_col);
       output[write_idx] = tile[tile_idx];
     }

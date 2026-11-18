@@ -61,57 +61,69 @@ let cuda_prelude =
    struct sarek_dim3 { unsigned int x, y, z; };\n\
    extern __device__ const sarek_dim3 threadIdx, blockIdx, blockDim, gridDim;\n"
 
-(* The targets, each with a probe kernel. A target is checked only when its
-   probe compiles (a POSITIVE control, as in Opencl_clang): a clang built
-   without the AMDGPU or NVPTX backend, or without OpenCL headers, is on PATH
-   and useless for that target, and says so instead of failing the test. *)
+(* One compile check per target, each a case of its own so a skip is visible.
+   OpenCL C is the C-family gate every clang provides ([-x cl], the same
+   compiler Opencl_clang relies on): it never skips once clang is present.
+   The CUDA and HIP modes need clang's NVPTX/AMDGPU backends, which a clang
+   build may lack (CI's rejects [--offload-arch=gfx1100]); each is checked only
+   when a probe kernel compiles with the same flags (a POSITIVE control), and
+   is reported as SKIP otherwise. *)
+type target = {
+  label : string;
+  ext : string;
+  flags : string;
+  probe : string;
+  optional : bool;
+  gen : kernel -> string;
+}
+
+let opencl_target std =
+  {
+    label = "OpenCL " ^ std;
+    ext = ".cl";
+    flags = "-x cl -cl-std=" ^ std ^ " -Xclang -finclude-default-header";
+    probe =
+      "__kernel void probe(__global int *o) { o[get_global_id(0)] = 1; }\n";
+    optional = false;
+    gen = Sarek_ir_opencl.generate;
+  }
+
+let cuda_target label ext flags =
+  {
+    label;
+    ext;
+    flags;
+    probe =
+      cuda_prelude ^ "__global__ void probe(int *o) { o[threadIdx.x] = 1; }\n";
+    optional = true;
+    gen = (fun k -> cuda_prelude ^ Sarek_ir_cuda.generate k);
+  }
+
 let targets =
-  let cl std =
-    ( "OpenCL " ^ std,
-      ".cl",
-      "-x cl -cl-std=" ^ std ^ " -Xclang -finclude-default-header",
-      "__kernel void probe(__global int *o) { o[get_global_id(0)] = 1; }\n",
-      Sarek_ir_opencl.generate )
-  in
-  let cu name flags =
-    ( name,
-      (if name = "HIP" then ".hip" else ".cu"),
-      flags,
-      cuda_prelude ^ "__global__ void probe(int *o) { o[threadIdx.x] = 1; }\n",
-      fun k -> cuda_prelude ^ Sarek_ir_cuda.generate k )
-  in
   [
-    cl "CL1.2";
-    cl "CL2.0";
-    cu
+    opencl_target "CL1.2";
+    opencl_target "CL2.0";
+    cuda_target
       "CUDA"
+      ".cu"
       "-x cuda --cuda-device-only -nocudainc -nocudalib --cuda-gpu-arch=sm_70";
-    cu
+    cuda_target
       "HIP"
+      ".hip"
       "-x hip --cuda-device-only -nogpuinc -nogpulib --offload-arch=gfx1100";
   ]
 
-let test_clang_compile () =
+let test_clang_compile t () =
   if not (Lazy.force has_clang) then Alcotest.skip () ;
-  let kernels = [arith_kernel (); typed_kernel ()] in
-  let checked =
-    List.filter
-      (fun (label, ext, flags, probe, gen) ->
-        match compile ~ext ~flags probe with
-        | Error log ->
-            Printf.printf
-              "  %s: SKIP (this clang cannot compile the probe)\n%s"
-              label
-              log ;
-            false
-        | Ok () ->
-            List.iter
-              (fun k -> check_compiles label ~ext ~flags (gen k))
-              kernels ;
-            true)
-      targets
-  in
-  if checked = [] then Alcotest.skip ()
+  (match compile ~ext:t.ext ~flags:t.flags t.probe with
+  | Ok () -> ()
+  | Error log when t.optional ->
+      Printf.printf "%s: this clang cannot compile the probe:\n%s" t.label log ;
+      Alcotest.skip ()
+  | Error log -> Alcotest.failf "%s: clang rejected the probe:\n%s" t.label log) ;
+  List.iter
+    (fun k -> check_compiles t.label ~ext:t.ext ~flags:t.flags (t.gen k))
+    [arith_kernel (); typed_kernel ()]
 
 (* ---- 4. execution under UBSan ---- *)
 
@@ -191,13 +203,24 @@ let calls buf ~ty ~prefix ~format ~count (a, b) =
   done ;
   Buffer.add_string buf "  }\n"
 
+(* OpenCL C and MSL type names and bit reinterpretations, for the host. *)
+let host_prelude =
+  "#include <cstdio>\n\
+   #include <cstring>\n\
+   typedef unsigned int uint;\n\
+   typedef unsigned long ulong;\n\
+   template <class T, class U> T as_type(U u) {\n\
+  \  static_assert(sizeof(T) == sizeof(U), \"size\");\n\
+  \  T t;\n\
+  \  std::memcpy(&t, &u, sizeof t);\n\
+  \  return t;\n\
+   }\n\
+   inline int as_int(uint u) { return as_type<int>(u); }\n\
+   inline long as_long(ulong u) { return as_type<long>(u); }\n"
+
 let program d =
   let buf = Buffer.create 4096 in
-  Buffer.add_string
-    buf
-    "#include <cstdio>\n\
-     typedef unsigned int uint;\n\
-     typedef unsigned long ulong;\n" ;
+  Buffer.add_string buf host_prelude ;
   functions d buf ;
   Buffer.add_string buf "int main() {\n" ;
   List.iter
@@ -236,67 +259,87 @@ let expected_output () =
 
 let ubsan = "-fsanitize=signed-integer-overflow,shift -fno-sanitize-recover=all"
 
-(* Compile [source] with UBSan and run it; [Ok stdout] when it exits 0. *)
+type run = Ran of string | Run_failed of string | Compile_failed of string
+
+(* Compile [source] with UBSan and run it. *)
 let run_ubsan source =
   let dir = Filename.temp_dir "sarek_wrap_ubsan_" "" in
   let src = Filename.concat dir "t.cpp" in
   let exe = Filename.concat dir "t" in
   let out = Filename.concat dir "out" in
   Out_channel.with_open_bin src (fun oc -> output_string oc source) ;
+  let sh fmt = Printf.ksprintf Unix.system fmt in
   let result =
     match
-      Unix.system
-        (Printf.sprintf
-           "clang++ -O2 %s %s -o %s >%s 2>&1"
-           ubsan
-           (Filename.quote src)
-           (Filename.quote exe)
-           (Filename.quote out))
+      sh
+        "clang++ -std=c++17 -O2 %s %s -o %s >%s 2>&1"
+        ubsan
+        (Filename.quote src)
+        (Filename.quote exe)
+        (Filename.quote out)
     with
     | Unix.WEXITED 0 -> (
-        match
-          Unix.system
-            (Printf.sprintf
-               "%s >%s 2>&1"
-               (Filename.quote exe)
-               (Filename.quote out))
-        with
-        | Unix.WEXITED 0 -> Ok (read_file out)
-        | _ -> Error ("run: " ^ read_file out))
-    | _ -> Error ("compile: " ^ read_file out)
+        match sh "%s >%s 2>&1" (Filename.quote exe) (Filename.quote out) with
+        | Unix.WEXITED 0 -> Ran (read_file out)
+        | _ -> Run_failed (read_file out))
+    | _ -> Compile_failed (read_file out)
   in
   ignore (Unix.system ("rm -r " ^ Filename.quote dir)) ;
   result
 
+let contains_sub s sub =
+  let n = String.length s and m = String.length sub in
+  let rec go i = i + m <= n && (String.sub s i m = sub || go (i + 1)) in
+  go 0
+
 (* The sanitizer must be able to fail: UBSan's runtime is a separate package
-   on some systems, and a missing one would make every run below vacuous. *)
+   on some systems, and a missing one would make every run below vacuous. The
+   positive control must compile, run and stop on UBSan's signed-overflow
+   report; a compile or launch failure proves nothing. *)
 let ubsan_works =
   lazy
     (Lazy.force has_clangxx
-    && run_ubsan "int main() { return 0; }\n" = Ok ""
+    && run_ubsan "int main() { return 0; }\n" = Ran ""
     &&
     match
       run_ubsan
         "volatile int a = 2147483647, b = 1;\nint main() { return a + b; }\n"
     with
-    | Error _ -> true
-    | Ok _ -> false)
+    | Run_failed log -> contains_sub log "signed integer overflow"
+    | Ran _ | Compile_failed _ -> false)
+
+(* OpenCL C and MSL [long] is 64 bits; a host whose [long] is narrower
+   (LLP64) cannot run their programs exactly, so those cases skip there. *)
+let lp64_host =
+  lazy
+    (match
+       run_ubsan
+         "static_assert(sizeof(long) == 8, \"\");\nint main() { return 0; }\n"
+     with
+    | Ran _ -> true
+    | Run_failed _ | Compile_failed _ -> false)
 
 let test_ubsan d () =
   if not (Lazy.force ubsan_works) then Alcotest.skip () ;
+  if d.s64 = "long" && not (Lazy.force lp64_host) then Alcotest.skip () ;
   match run_ubsan (program d) with
-  | Ok out ->
+  | Ran out ->
       Alcotest.(check string)
         (d.name ^ ": results equal OCaml's, no UB report")
         (expected_output ())
         out
-  | Error e -> Alcotest.failf "%s: %s\n%s" d.name e (program d)
+  | Run_failed e -> Alcotest.failf "%s: run: %s\n%s" d.name e (program d)
+  | Compile_failed e ->
+      Alcotest.failf "%s: compile: %s\n%s" d.name e (program d)
 
 let () =
   Alcotest.run
     "wrapping_signed_arith_exec"
     [
-      ("clang", [Alcotest.test_case "compile" `Quick test_clang_compile]);
+      ( "clang",
+        List.map
+          (fun t -> Alcotest.test_case t.label `Quick (test_clang_compile t))
+          targets );
       ( "ubsan",
         List.map
           (fun d ->

@@ -92,14 +92,14 @@ let proven_narrowing (k : kernel) =
   else Barrier_unless_exact (Sarek_ir_f16_narrowing.of_kernel k)
 
 (** The state for emitting [k]. *)
-let state ?block (k : kernel) : state =
+let state ?block ?records (k : kernel) : state =
   {
     variants = k.kern_variants;
     coopmat = Sarek_ir_cuda_coopmat.kernel_context ?block k;
     narrowing =
       (if single_rounding k then Single_rounding else proven_narrowing k);
     sites = {total = 0; proven = 0};
-    arith = Sarek_ir_c_arith.env_of_kernel k;
+    arith = Sarek_ir_c_arith.env_of_kernel ?records k;
   }
 
 (** The state for emitting helper [hf] of the kernel whose state is [st]. *)
@@ -266,7 +266,7 @@ let rec gen_expr st buf = function
         buf
         e1
         e2
-  | EBinop (op, e1, e2) ->
+  | EBinop (op, _, _) as e ->
       (* Signed int +, -, * and lsl wrap as in OCaml (Sarek_ir_c_arith). *)
       C_arith.emit_binop_arm
         st.arith
@@ -274,17 +274,14 @@ let rec gen_expr st buf = function
         ~gen_expr:(gen_expr st)
         ~operator_text:(gen_binop op)
         buf
-        op
-        e1
-        e2
-  | EUnop (op, e) ->
+        e
+  | EUnop (op, _) as e ->
       C_arith.emit_unop_arm
         st.arith
         C_arith.cuda
         ~gen_expr:(gen_expr st)
         ~operator_text:(gen_unop op)
         buf
-        op
         e
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf arr ;
@@ -896,6 +893,7 @@ let gen_local st buf indent = function
 
 (** Generate a device helper function *)
 let gen_helper_func st buf (hf : helper_func) =
+  let st = {st with arith = C_arith.for_helper st.arith hf} in
   (* __device__ ret_type name(params) { body } *)
   Buffer.add_string buf "__device__ " ;
   Buffer.add_string buf (cuda_type_of_elttype hf.hf_ret_type) ;
@@ -1184,7 +1182,7 @@ let generate_with_types ?block
      for small constant-trip loops (Sarek_ir_unroll). *)
   let k = Sarek_ir_for_bound.hoist k in
   let k = Sarek_ir_unroll.annotate ~generator:"cuda-c" k in
-  let st = state ?block k in
+  let st = state ?block ~records:types k in
   let buf = Buffer.create 4096 in
   (* The body as it is emitted, so the alignment proof names its own nodes. *)
   let body = Sarek_ir_codegen.fold_local_array_lengths k.kern_body in

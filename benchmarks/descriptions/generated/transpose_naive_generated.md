@@ -26,7 +26,7 @@ __global__ void sarek_kern(float* __restrict__ input, int sarek_input_length, fl
 ```opencl
 __kernel void sarek_kern(__global float* restrict input, int sarek_input_length, __global float* restrict output, int sarek_output_length, int width, int height) {
   int tid = ((int)get_global_id(0));
-  int n = ((int)((uint)width * (uint)height));
+  int n = as_int(((uint)width * (uint)height));
   if ((tid < n)) {
     int col = (tid % width);
     int row = (tid / width);
@@ -92,7 +92,7 @@ uint3 __metal_bid [[threadgroup_position_in_grid]],
 uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   int tid = ((int)__metal_gid.x);
-  int n = ((int)((uint)width * (uint)height));
+  int n = as_type<int>(((uint)width * (uint)height));
   if ((tid < n)) {
     int col = (tid % width);
     int row = (tid / width);

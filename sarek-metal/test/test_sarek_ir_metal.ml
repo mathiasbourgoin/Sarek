@@ -41,7 +41,8 @@ let test_basic_literals () =
   Sarek_ir_metal.gen_expr st buf (EConst (CBool false)) ;
   Alcotest.(check string) "bool false literal" "0" (Buffer.contents buf)
 
-(* Signed int arithmetic wraps through [uint] (Sarek_ir_c_arith). *)
+(* Signed int arithmetic wraps through [uint] and back with [as_type<int>]
+   (Sarek_ir_c_arith). *)
 let test_operations () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
@@ -49,21 +50,21 @@ let test_operations () =
   Sarek_ir_metal.gen_expr st buf (EBinop (Add, EVar x, EVar y)) ;
   Alcotest.(check string)
     "addition"
-    "((int)((uint)x + (uint)y))"
+    "as_type<int>(((uint)x + (uint)y))"
     (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
   Sarek_ir_metal.gen_expr st buf (EBinop (Sub, EVar x, EVar y)) ;
   Alcotest.(check string)
     "subtraction"
-    "((int)((uint)x - (uint)y))"
+    "as_type<int>(((uint)x - (uint)y))"
     (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
   Sarek_ir_metal.gen_expr st buf (EBinop (Mul, EVar x, EVar y)) ;
   Alcotest.(check string)
     "multiplication"
-    "((int)((uint)x * (uint)y))"
+    "as_type<int>(((uint)x * (uint)y))"
     (Buffer.contents buf)
 
 let test_basics () =

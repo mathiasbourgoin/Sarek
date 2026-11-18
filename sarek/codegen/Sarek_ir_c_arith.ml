@@ -7,358 +7,51 @@
    its scope are in the interface. *)
 
 open Sarek_ir_types
+module T = Sarek_ir_c_types
 
-type width = W32 | W64
+type width = T.width = W32 | W64
 
-(* Types memoised per IR node, by physical identity: the emitters ask for the
-   width of every operator they print, and without the table each question
-   would re-type the subtree below it (quadratic in the depth of a chain). *)
-module Memo = Hashtbl.Make (struct
-  type t = expr
+type env = T.env
 
-  let equal = ( == )
+let empty = T.empty
 
-  let hash = Hashtbl.hash_param 8 32
-end)
+let int_width = T.int_width
 
-type env = {
-  arrays : (string, elttype) Hashtbl.t;
-      (** element type of each array name; several bindings of one name (a
-          helper parameter and a kernel array) are all kept, and a read is typed
-          only when they agree *)
-  records : (string * (string * elttype) list) list;
-  helpers : (string * elttype) list;  (** helper name -> return type *)
-  memo : elttype option Memo.t;
-  index_lets : (string, unit) Hashtbl.t;
-      (** immutable [let]s whose every use is in index arithmetic *)
-}
+let binop_width = T.binop_width
 
-let create ~records ~helpers =
-  {
-    arrays = Hashtbl.create 16;
-    records;
-    helpers;
-    memo = Memo.create 64;
-    index_lets = Hashtbl.create 8;
-  }
+let typing_steps = T.steps
 
-let empty () = create ~records:[] ~helpers:[]
+let is_index_let (env : env) (v : var) = Hashtbl.mem env.T.index_lets v.var_name
 
-(* ---- environment ---- *)
-
-let array_elt = function TVec elt | TArray (elt, _) -> Some elt | _ -> None
-
-let add_array env name elt = Hashtbl.add env.arrays name elt
-
-let add_var_array env (v : var) =
-  Option.iter (add_array env v.var_name) (array_elt v.var_type)
-
-let on_decl env = function
-  | DParam (v, Some ai) -> add_array env v.var_name ai.arr_elttype
-  | DParam (v, None) -> add_var_array env v
-  | DLocal (v, Some (EArrayCreate (elt, _, _))) -> add_array env v.var_name elt
-  | DLocal (v, _) -> add_var_array env v
-  | DShared (name, elt, _) -> add_array env name elt
-
-let scan_body env body =
-  let on_stmt () = function
-    | SLet (v, EArrayCreate (elt, _, _), _)
-    | SLetMut (v, EArrayCreate (elt, _, _), _) ->
-        add_array env v.var_name elt
-    | SLet (v, _, _) | SLetMut (v, _, _) -> add_var_array env v
-    | _ -> ()
-  in
-  let folder =
-    {
-      Sarek_ir_analysis.fe = (fun () _ -> ());
-      ft = (fun () _ -> ());
-      fs = on_stmt;
-      fnative = (fun () -> ());
-      visit_lvalue = false;
-    }
-  in
-  Sarek_ir_analysis.stmt_fold folder () body
-
-(* ---- typing ---- *)
-
-let const_type = function
-  | CInt32 _ -> TInt32
-  | CInt64 _ -> TInt64
-  | CFloat32 _ -> TFloat32
-  | CFloat64 _ -> TFloat64
-  | CBool _ -> TBool
-  | CUnit -> TUnit
-
-(* The C type an operand of this Sarek type has after integer promotion. *)
-let width_of_type = function
-  | TInt32 | TBool | TUint8 | TInt8 -> Some W32
-  | TInt64 -> Some W64
-  | _ -> None
-
-let is_float = function TFloat16 | TFloat32 | TFloat64 -> true | _ -> false
-
-(* The usual arithmetic conversions of C on two operand types, when both are
-   known: a float operand makes the result a float, an int64 one a long. *)
-let arith a b =
-  match (a, b) with
-  | Some a, Some b when is_float a || is_float b ->
-      Some (if a = TFloat64 || b = TFloat64 then TFloat64 else TFloat32)
-  | Some a, Some b -> (
-      match (width_of_type a, width_of_type b) with
-      | Some W64, Some _ | Some _, Some W64 -> Some TInt64
-      | Some W32, Some W32 -> Some TInt32
-      | _ -> None)
-  | _ -> None
-
-let lookup_array env name =
-  match Hashtbl.find_all env.arrays name with
-  | [] -> None
-  | t :: rest -> if List.for_all (( = ) t) rest then Some t else None
-
-let field_type env ty field =
-  match ty with
-  | Some (TRecord (name, fields)) -> (
-      match List.assoc_opt field fields with
-      | Some t -> Some t
-      | None ->
-          Option.bind (List.assoc_opt name env.records) (List.assoc_opt field))
-  | _ -> None
-
-(* The Sarek type names of intrinsic signatures (Sarek_registry). *)
-let type_of_name = function
-  | "int32" | "int" -> Some TInt32
-  | "int64" -> Some TInt64
-  | "float32" | "float" -> Some TFloat32
-  | "float64" -> Some TFloat64
-  | "bool" -> Some TBool
-  | _ -> None
-
-let intrinsic_type path name =
-  if List.mem name Sarek_ir_intrinsic_dispatch.thread_intrinsic_names then
-    Some TInt32
-  else
-    match Sarek_registry.find_fun ~module_path:path name with
-    | Some fi -> type_of_name fi.Sarek_registry.fi_ret_type
-    | None -> None
-
-let rec type_of env e =
-  match Memo.find_opt env.memo e with
-  | Some t -> t
-  | None ->
-      let t = type_of_node env e in
-      Memo.add env.memo e t ;
-      t
-
-and type_of_node env = function
-  | EConst c -> Some (const_type c)
-  | EVar v -> Some v.var_type
-  | EBinop ((Eq | Ne | Lt | Le | Gt | Ge | And | Or), _, _) | EUnop (Not, _) ->
-      Some TBool
-  | EBinop (Lshr32, _, _) -> Some TInt32
-  | EBinop (Lshr64, _, _) -> Some TInt64
-  | EBinop ((Shl | Shr), a, _) | EUnop ((Neg | BitNot), a) ->
-      let t = type_of env a in
-      arith t t
-  | EBinop ((Add | Sub | Mul | Div | Mod | BitAnd | BitOr | BitXor), a, b) ->
-      arith (type_of env a) (type_of env b)
-  | EArrayRead (arr, _) -> lookup_array env arr
-  | EArrayReadExpr (base, _) -> Option.bind (type_of env base) array_elt
-  | ERecordField (e, field) -> field_type env (type_of env e) field
-  | EIntrinsic (path, name, _) -> intrinsic_type path name
-  | ECast (t, _) -> Some t
-  | EApp (EVar f, _) -> List.assoc_opt f.var_name env.helpers
-  | EArrayLen _ -> Some TInt32
-  | EIf (_, a, b) ->
-      let ta = type_of env a in
-      if ta = type_of env b then ta else None
-  | EMatch (_, (_, a) :: _) -> type_of env a
-  | EApp _ | ETuple _ | ERecord _ | EVariant _ | EArrayCreate _ | EMatch _ ->
-      None
-
-let int_width env e = Option.bind (type_of env e) width_of_type
-
-let binop_width env op a b =
-  match op with
-  | Add | Sub | Mul ->
-      Option.bind (arith (type_of env a) (type_of env b)) width_of_type
-  | Shl -> int_width env a
-  | Div | Mod | Eq | Ne | Lt | Le | Gt | Ge | And | Or | Shr | Lshr32 | Lshr64
-  | BitAnd | BitOr | BitXor ->
-      None
-
-(* ---- index lets ---- *)
-
-(* The uses of every variable, each classified as index arithmetic or not. A
-   use is index arithmetic when the variable is a leaf of the [+]/[-]/[*]/[lsl]
-   chain at the root of an index position: a subscript, a cooperative-matrix
-   offset or stride, a [for] bound, or the definition of a let in [lets]. *)
-let children = function
-  | EConst _ | EVar _ | EArrayLen _ -> []
-  | EBinop (_, a, b) | EArrayReadExpr (a, b) -> [a; b]
-  | EUnop (_, a) | ERecordField (a, _) | ECast (_, a) | EArrayRead (_, a) -> [a]
-  | EIntrinsic (_, _, l) | ETuple l | EVariant (_, _, l) -> l
-  | EApp (f, l) -> f :: l
-  | ERecord (_, fields) -> List.map snd fields
-  | EArrayCreate (_, size, _) -> [size]
-  | EIf (c, t, e) -> [c; t; e]
-  | EMatch (scrutinee, cases) -> scrutinee :: List.map snd cases
-
-let classify_uses env lets ~extra body_list =
-  let other = Hashtbl.create 32 in
-  let rec expr ~root e =
-    match e with
-    | EVar v -> if not root then Hashtbl.replace other v.var_name ()
-    | EBinop (((Add | Sub | Mul) as op), a, b)
-      when root && binop_width env op a b <> None ->
-        expr ~root a ;
-        expr ~root b
-    | EBinop (Shl, a, b) when root && binop_width env Shl a b <> None ->
-        expr ~root a ;
-        expr ~root:false b
-    | EArrayRead (_, i) -> expr ~root:true i
-    | EArrayReadExpr (base, i) ->
-        expr ~root:false base ;
-        expr ~root:true i
-    | _ -> List.iter (expr ~root:false) (children e)
-  in
-  let rec lvalue = function
-    | LVar _ -> ()
-    | LArrayElem (_, i) -> expr ~root:true i
-    | LArrayElemExpr (base, i) ->
-        expr ~root:false base ;
-        expr ~root:true i
-    | LRecordField (lv, _) -> lvalue lv
-  in
-  let rec stmt = function
-    | SAssign (lv, e) ->
-        lvalue lv ;
-        expr ~root:false e
-    | SSeq l -> List.iter stmt l
-    | SIf (c, t, f) ->
-        expr ~root:false c ;
-        stmt t ;
-        Option.iter stmt f
-    | SWhile (c, b) ->
-        expr ~root:false c ;
-        stmt b
-    | SFor (_, lo, hi, _, b) ->
-        expr ~root:true lo ;
-        expr ~root:true hi ;
-        stmt b
-    | SMatch (e, cases) ->
-        expr ~root:false e ;
-        List.iter (fun (_, s) -> stmt s) cases
-    | SReturn e | SExpr e -> expr ~root:false e
-    | SLet (v, e, b) ->
-        expr ~root:(Hashtbl.mem lets v.var_name) e ;
-        stmt b
-    | SLetMut (_, e, b) ->
-        expr ~root:false e ;
-        stmt b
-    | SPragma (_, b) | SBlock b -> stmt b
-    | SCoopmat (CM_load {index; stride; _} | CM_store {index; stride; _}) ->
-        expr ~root:true index ;
-        expr ~root:true stride
-    | SCoopmat (CM_scale_add _ as op) ->
-        Sarek_coopmat_scale.fold_exprs (fun () e -> expr ~root:true e) () op
-    | SCoopmat (CM_decl _ | CM_muladd _) -> ()
-    | SBarrier | SWarpBarrier | SEmpty | SMemFence | SNative _ -> ()
-  in
-  List.iter (expr ~root:false) extra ;
-  List.iter stmt body_list ;
-  other
-
-(* Every binder of every name, by kind: a name is an index let only when its
-   one binder is an immutable [let] (helpers and the kernel share a namespace
-   here, so a name bound twice anywhere is left alone). *)
-let let_candidates bodies params =
-  let binders = Hashtbl.create 32 in
-  let lets = Hashtbl.create 16 in
-  let bind name =
-    Hashtbl.replace
-      binders
-      name
-      (1 + Option.value ~default:0 (Hashtbl.find_opt binders name))
-  in
-  List.iter bind params ;
-  let on_stmt () = function
-    | SLet (v, e, _) -> (
-        bind v.var_name ;
-        match e with
-        | EArrayCreate _ -> ()
-        | _ ->
-            if width_of_type v.var_type <> None then
-              Hashtbl.replace lets v.var_name ())
-    | SLetMut (v, _, _) | SFor (v, _, _, _, _) -> bind v.var_name
-    | SMatch (_, cases) ->
-        List.iter
-          (function
-            | PConstr (_, names), _ -> List.iter bind names | PWild, _ -> ())
-          cases
-    | _ -> ()
-  in
-  let on_expr () = function
-    | EMatch (_, cases) ->
-        List.iter
-          (function
-            | PConstr (_, names), _ -> List.iter bind names | PWild, _ -> ())
-          cases
-    | _ -> ()
-  in
-  let folder =
-    {
-      Sarek_ir_analysis.fe = on_expr;
-      ft = (fun () _ -> ());
-      fs = on_stmt;
-      fnative = (fun () -> ());
-      visit_lvalue = false;
-    }
-  in
-  List.iter (Sarek_ir_analysis.stmt_fold folder ()) bodies ;
-  Hashtbl.filter_map_inplace
-    (fun name () -> if Hashtbl.find binders name = 1 then Some () else None)
-    lets ;
-  lets
-
-(* The greatest set of candidate lets all of whose uses are index arithmetic:
-   start from every candidate and drop, until stable, those with another use
-   (a dropped let's definition then stops being an index position). *)
-let compute_index_lets env ~extra bodies params =
-  let lets = let_candidates bodies params in
-  let rec fix () =
-    let other = classify_uses env lets ~extra bodies in
-    let dropped =
-      Hashtbl.fold
-        (fun name () acc -> if Hashtbl.mem other name then name :: acc else acc)
-        lets
-        []
-    in
-    if dropped <> [] then (
-      List.iter (Hashtbl.remove lets) dropped ;
-      fix ())
-  in
-  fix () ;
-  Hashtbl.iter (fun name () -> Hashtbl.replace env.index_lets name ()) lets
+(* ---- environments ---- *)
 
 let decl_name = function
   | DParam (v, _) | DLocal (v, _) -> v.var_name
   | DShared (name, _, _) -> name
 
-let env_of_kernel (k : kernel) =
+let helper_scope env (hf : helper_func) =
+  let scope = T.with_scope env in
+  List.iter (T.add_var_array scope) hf.hf_params ;
+  T.add_body scope hf.hf_body ;
+  scope
+
+let env_of_kernel ?records (k : kernel) =
+  let records =
+    match records with Some r -> r @ k.kern_types | None -> k.kern_types
+  in
   let env =
-    create
-      ~records:k.kern_types
+    T.create
+      ~records
+      ~variants:k.kern_variants
       ~helpers:(List.map (fun hf -> (hf.hf_name, hf.hf_ret_type)) k.kern_funcs)
   in
-  List.iter (on_decl env) k.kern_params ;
-  List.iter (on_decl env) k.kern_locals ;
-  scan_body env k.kern_body ;
-  List.iter
-    (fun hf ->
-      List.iter (add_var_array env) hf.hf_params ;
-      scan_body env hf.hf_body)
-    k.kern_funcs ;
-  let bodies = k.kern_body :: List.map (fun hf -> hf.hf_body) k.kern_funcs in
+  List.iter (T.add_decl env) k.kern_params ;
+  List.iter (T.add_decl env) k.kern_locals ;
+  T.add_body env k.kern_body ;
+  let scopes =
+    (k.kern_body, env)
+    :: List.map (fun hf -> (hf.hf_body, helper_scope env hf)) k.kern_funcs
+  in
   let params =
     List.map decl_name (k.kern_params @ k.kern_locals)
     @ List.concat_map
@@ -370,10 +63,10 @@ let env_of_kernel (k : kernel) =
       (function DLocal (_, Some e) -> Some e | _ -> None)
       k.kern_locals
   in
-  compute_index_lets env ~extra bodies params ;
+  Sarek_ir_c_index.compute env ~scopes ~extra ~params ;
   env
 
-let is_index_let env (v : var) = Hashtbl.mem env.index_lets v.var_name
+let for_helper = helper_scope
 
 (* ---- printing ---- *)
 
@@ -383,6 +76,8 @@ type spelling = {
   int64 : string;
   uint64 : string;
   uint64_suffix : string;
+  to_int32 : string;  (** applied to the unsigned result: a cast or a bitcast *)
+  to_int64 : string;
 }
 
 let cuda =
@@ -392,6 +87,8 @@ let cuda =
     int64 = "long long";
     uint64 = "unsigned long long";
     uint64_suffix = "ull";
+    to_int32 = "(int)";
+    to_int64 = "(long long)";
   }
 
 let opencl =
@@ -401,9 +98,11 @@ let opencl =
     int64 = "long";
     uint64 = "ulong";
     uint64_suffix = "ul";
+    to_int32 = "as_int";
+    to_int64 = "as_long";
   }
 
-let metal = opencl
+let metal = {opencl with to_int32 = "as_type<int>"; to_int64 = "as_type<long>"}
 
 let types sp = function
   | W32 -> (sp.int32, sp.uint32)
@@ -452,11 +151,6 @@ let is_atomic s =
      || (w > 0 && (s.[w] = '[' || s.[w] = '(') && closes_at_end s w)
      || (s.[0] = '(' && closes_at_end s 0))
 
-let render ~gen_expr e =
-  let b = Buffer.create 32 in
-  gen_expr b e ;
-  Buffer.contents b
-
 let add_operand buf s =
   if is_atomic s then Buffer.add_string buf s
   else (
@@ -464,28 +158,37 @@ let add_operand buf s =
     Buffer.add_string buf s ;
     Buffer.add_char buf ')')
 
+(* [e] (annotation [a]) printed by the emitter, which finds [a] again. *)
+let print_child env ~gen_expr buf e a =
+  T.with_pending env e a (fun () -> gen_expr buf e)
+
+let render_child env ~gen_expr e a =
+  let b = Buffer.create 32 in
+  print_child env ~gen_expr b e a ;
+  Buffer.contents b
+
 (* [e] as a value of the unsigned type of width [w]. A wrapping operator of the
    same width is printed in the unsigned domain directly, so a chain such as
    [i * 6 + 1] converts back to the signed type once, at its root: unsigned
    arithmetic is modular, so the low bits are those of every intermediate
    conversion. A non-negative literal takes the unsigned suffix. *)
-let rec emit_unsigned env sp w ~gen_expr buf e =
-  let unsigned = emit_unsigned env sp w ~gen_expr buf in
+let rec emit_unsigned env sp w ~gen_expr buf e (a : T.annot) =
+  let unsigned i x = emit_unsigned env sp w ~gen_expr buf x a.kids.(i) in
   match e with
-  | EBinop (op, a, b) when binop_width env op a b = Some w ->
+  | EBinop (op, x, y) when T.binop_width_a op a.kids.(0) a.kids.(1) = Some w ->
       Buffer.add_char buf '(' ;
-      unsigned a ;
+      unsigned 0 x ;
       Buffer.add_string buf (operator op) ;
       (match op with
-      | Shl -> add_operand buf (render ~gen_expr b)
-      | _ -> unsigned b) ;
+      | Shl -> add_operand buf (render_child env ~gen_expr y a.kids.(1))
+      | _ -> unsigned 1 y) ;
       Buffer.add_char buf ')'
-  | EUnop (Neg, a) when int_width env a = Some w -> (
-      match Sarek_ir_intrinsic_dispatch.int_negation_constant Neg a with
-      | Some c -> unsigned (EConst c)
+  | EUnop (Neg, x) when T.width_a a.kids.(0) = Some w -> (
+      match Sarek_ir_intrinsic_dispatch.int_negation_constant Neg x with
+      | Some c -> emit_unsigned env sp w ~gen_expr buf (EConst c) a
       | None ->
           Buffer.add_string buf "(-" ;
-          unsigned a ;
+          unsigned 0 x ;
           Buffer.add_char buf ')')
   | EConst (CInt32 n) when Int32.compare n 0l >= 0 ->
       Buffer.add_string buf (Int32.to_string n) ;
@@ -498,61 +201,72 @@ let rec emit_unsigned env sp w ~gen_expr buf e =
   | _ ->
       let _, unsigned_type = types sp w in
       Buffer.add_string buf ("(" ^ unsigned_type ^ ")") ;
-      add_operand buf (render ~gen_expr e)
+      add_operand buf (render_child env ~gen_expr e a)
 
-let emit_signed sp w buf emit =
-  let signed, _ = types sp w in
-  Buffer.add_string buf ("((" ^ signed ^ ")") ;
-  emit () ;
+(* The unsigned result back in the signed type: [((int)u)] in CUDA C, where
+   the conversion is modular on every compiler (normative since C++20);
+   [as_int(u)] / [as_type<int>(u)] in OpenCL C and MSL, a bit reinterpretation
+   that no implementation-defined conversion is involved in. *)
+let emit_wrapping env sp w ~gen_expr buf e a =
+  let conv = match w with W32 -> sp.to_int32 | W64 -> sp.to_int64 in
+  let cast = conv.[0] = '(' in
+  Buffer.add_string buf (if cast then "(" ^ conv else conv ^ "(") ;
+  emit_unsigned env sp w ~gen_expr buf e a ;
   Buffer.add_char buf ')'
 
-(* [((S)((U)a op (U)b))]; for a shift the count keeps its own type. *)
-let emit_binop env sp w ~gen_expr buf op a b =
-  emit_signed sp w buf (fun () ->
-      emit_unsigned env sp w ~gen_expr buf (EBinop (op, a, b)))
-
-(* [((S)(-(U)a))]: negation of an unsigned value is defined modulo 2^n. *)
-let emit_neg env sp w ~gen_expr buf a =
-  emit_signed sp w buf (fun () ->
-      emit_unsigned env sp w ~gen_expr buf (EUnop (Neg, a)))
-
 (* Index arithmetic, printed as plain C: a chain of [Add]/[Sub]/[Mul]/[Shl] on
-   signed integers at the root of a subscript, matrix offset or [for] bound.
-   Anything else (a load, a call, [land], [/], ...) ends the chain and is
-   printed by [gen_expr], wrapping included. *)
-let rec emit_index env ~gen_expr buf e =
+   signed integers at the root of a subscript, matrix offset, [for] bound or
+   index let. Anything else ends the chain and is printed by [gen_expr],
+   wrapping included. *)
+let rec emit_index_a env ~gen_expr buf e (a : T.annot) =
   match e with
-  | EBinop (((Add | Sub | Mul | Shl) as op), a, b)
-    when binop_width env op a b <> None ->
+  | EBinop (((Add | Sub | Mul | Shl) as op), x, y)
+    when T.binop_width_a op a.kids.(0) a.kids.(1) <> None ->
       Buffer.add_char buf '(' ;
-      emit_index env ~gen_expr buf a ;
+      emit_index_a env ~gen_expr buf x a.kids.(0) ;
       Buffer.add_string buf (operator op) ;
       (match op with
-      | Shl -> gen_expr buf b
-      | _ -> emit_index env ~gen_expr buf b) ;
+      | Shl -> print_child env ~gen_expr buf y a.kids.(1)
+      | _ -> emit_index_a env ~gen_expr buf y a.kids.(1)) ;
       Buffer.add_char buf ')'
-  | _ -> gen_expr buf e
+  | _ -> print_child env ~gen_expr buf e a
+
+let emit_index env ~gen_expr buf e =
+  emit_index_a env ~gen_expr buf e (T.annot_of env e)
 
 (* ---- the emitters' arms ---- *)
 
-let emit_binop_arm env sp ~gen_expr ~operator_text buf op a b =
-  match binop_width env op a b with
-  | Some w -> emit_binop env sp w ~gen_expr buf op a b
-  | None ->
-      Buffer.add_char buf '(' ;
-      gen_expr buf a ;
-      Buffer.add_string buf operator_text ;
-      gen_expr buf b ;
-      Buffer.add_char buf ')'
+let emit_binop_arm env sp ~gen_expr ~operator_text buf e =
+  let a = T.annot_of env e in
+  match e with
+  | EBinop (op, x, y) -> (
+      match T.binop_width_a op a.kids.(0) a.kids.(1) with
+      | Some w -> emit_wrapping env sp w ~gen_expr buf e a
+      | None ->
+          Buffer.add_char buf '(' ;
+          print_child env ~gen_expr buf x a.kids.(0) ;
+          Buffer.add_string buf operator_text ;
+          print_child env ~gen_expr buf y a.kids.(1) ;
+          Buffer.add_char buf ')')
+  | _ -> invalid_arg "Sarek_ir_c_arith.emit_binop_arm: not an EBinop"
 
-let emit_unop_arm env sp ~gen_expr ~operator_text buf op e =
-  match Sarek_ir_intrinsic_dispatch.int_negation_constant op e with
-  | Some c -> gen_expr buf (EConst c)
-  | None -> (
-      match (op, int_width env e) with
-      | Neg, Some w -> emit_neg env sp w ~gen_expr buf e
-      | _ -> Sarek_ir_intrinsic_dispatch.emit_unop ~gen_expr buf operator_text e
-      )
+let emit_unop_arm env sp ~gen_expr ~operator_text buf e =
+  match e with
+  | EUnop (op, x) -> (
+      match Sarek_ir_intrinsic_dispatch.int_negation_constant op x with
+      | Some c -> gen_expr buf (EConst c)
+      | None -> (
+          let a = T.annot_of env e in
+          match (op, T.width_a a.kids.(0)) with
+          | Neg, Some w -> emit_wrapping env sp w ~gen_expr buf e a
+          | _ ->
+              Sarek_ir_intrinsic_dispatch.emit_unop
+                ~gen_expr:(fun b x' ->
+                  print_child env ~gen_expr b x' a.kids.(0))
+                buf
+                operator_text
+                x))
+  | _ -> invalid_arg "Sarek_ir_c_arith.emit_unop_arm: not an EUnop"
 
 let emit_let_init env ~gen_expr buf v e =
   if is_index_let env v then emit_index env ~gen_expr buf e else gen_expr buf e

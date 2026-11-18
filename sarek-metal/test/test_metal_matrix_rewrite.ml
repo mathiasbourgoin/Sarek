@@ -306,11 +306,11 @@ let test_msl () =
     (contains ~needle:"16x16" src) ;
   (* Changed by the wrapping signed arithmetic (Sarek_ir_c_arith): the
      rewrite's int32 arithmetic outside index positions (values bound by
-     [let], conditions) is now printed through [uint]; the simdgroup
+     [let], conditions) is now printed through [uint] and [as_type<int>]; the simdgroup
      statements counted above are unchanged. *)
   Alcotest.(check string)
     "digest of the MSL"
-    "3389eb14a77be4f51d8a5bacc5cfc2f5"
+    "e66f4a4a3906e709c8fbfe32e26d0944"
     (Digest.to_hex (Digest.string src))
 
 let () =

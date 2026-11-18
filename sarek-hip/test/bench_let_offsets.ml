@@ -38,6 +38,13 @@ let samples = arg 2 10
 
 let batch = arg 3 10
 
+let () =
+  if rounds < 1 || samples < 1 || batch < 1 then begin
+    prerr_endline
+      "usage: bench_let_offsets.exe [rounds] [samples] [batch], each >= 1" ;
+    exit 2
+  end
+
 let rows_kernel =
   [%kernel
     fun (a : float32 vector) (out : float32 vector) (n : int32) (k : int32) ->
