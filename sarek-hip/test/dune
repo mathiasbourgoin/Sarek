@@ -357,6 +357,16 @@
  (action
   (run %{dep:bench_hip_coopmat_gemm.exe})))
 
+; Offsets bound by [let] inside loops (index lets, Sarek_ir_c_arith).
+; Information only.
+
+(executable
+ (name bench_let_offsets)
+ (modules bench_let_offsets)
+ (libraries sarek sarek.stdlib sarek_ir spoc_core sarek_hip unix)
+ (preprocess
+  (pps sarek_ppx)))
+
 ; The matrix-product rewrite against the naive kernel and the hand-written
 ; SCoopmat GEMM (specs/matrix-pattern-rewrite.md). Information only.
 
