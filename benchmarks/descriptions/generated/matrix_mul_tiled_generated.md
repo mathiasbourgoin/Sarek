@@ -12,14 +12,14 @@ __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __r
   __shared__ float tile_b[256];
   int tx = ((int)threadIdx.x);
   int ty = ((int)threadIdx.y);
-  int row = (ty + (((int)blockDim.y) * ((int)blockIdx.y)));
-  int col = (tx + (((int)blockDim.x) * ((int)blockIdx.x)));
+  int row = ((int)((unsigned int)ty + ((unsigned int)((int)blockDim.y) * (unsigned int)((int)blockIdx.y))));
+  int col = ((int)((unsigned int)tx + ((unsigned int)((int)blockDim.x) * (unsigned int)((int)blockIdx.x))));
   int tile_size = 16;
-  int num_tiles = (((k + tile_size) - 1) / tile_size);
+  int num_tiles = (((int)(((unsigned int)k + (unsigned int)tile_size) - 1u)) / tile_size);
   float sum = 0.0f;
   for (int t = 0; t <= (num_tiles - 1); t++) {
     {
-      int a_col = ((t * tile_size) + tx);
+      int a_col = ((int)(((unsigned int)t * (unsigned int)tile_size) + (unsigned int)tx));
       if (((row < m) ? (a_col < k) : 0)) {
         tile_a[((ty * tile_size) + tx)] = a[((row * k) + a_col)];
       } else {
@@ -28,7 +28,7 @@ __global__ void sarek_kern(float* __restrict__ a, int sarek_a_length, float* __r
     }
     __syncthreads();
     {
-      int b_row = ((t * tile_size) + ty);
+      int b_row = ((int)(((unsigned int)t * (unsigned int)tile_size) + (unsigned int)ty));
       if (((b_row < k) ? (col < n) : 0)) {
         tile_b[((ty * tile_size) + tx)] = b[((b_row * n) + col)];
       } else {
@@ -58,14 +58,14 @@ __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __globa
   __local float tile_b[256];
   int tx = ((int)get_local_id(0));
   int ty = ((int)get_local_id(1));
-  int row = (ty + (((int)get_local_size(1)) * ((int)get_group_id(1))));
-  int col = (tx + (((int)get_local_size(0)) * ((int)get_group_id(0))));
+  int row = ((int)((uint)ty + ((uint)((int)get_local_size(1)) * (uint)((int)get_group_id(1)))));
+  int col = ((int)((uint)tx + ((uint)((int)get_local_size(0)) * (uint)((int)get_group_id(0)))));
   int tile_size = 16;
-  int num_tiles = (((k + tile_size) - 1) / tile_size);
+  int num_tiles = (((int)(((uint)k + (uint)tile_size) - 1u)) / tile_size);
   float sum = 0.0f;
   for (int t = 0; t <= (num_tiles - 1); t++) {
     {
-      int a_col = ((t * tile_size) + tx);
+      int a_col = ((int)(((uint)t * (uint)tile_size) + (uint)tx));
       if (((row < m) ? (a_col < k) : 0)) {
         tile_a[((ty * tile_size) + tx)] = a[((row * k) + a_col)];
       } else {
@@ -74,7 +74,7 @@ __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __globa
     }
     barrier(CLK_LOCAL_MEM_FENCE);
     {
-      int b_row = ((t * tile_size) + ty);
+      int b_row = ((int)(((uint)t * (uint)tile_size) + (uint)ty));
       if (((b_row < k) ? (col < n) : 0)) {
         tile_b[((ty * tile_size) + tx)] = b[((b_row * n) + col)];
       } else {
@@ -189,14 +189,14 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   threadgroup float tile_b[256];
   int tx = ((int)__metal_tid.x);
   int ty = ((int)__metal_tid.y);
-  int row = (ty + (((int)__metal_tpg.y) * ((int)__metal_bid.y)));
-  int col = (tx + (((int)__metal_tpg.x) * ((int)__metal_bid.x)));
+  int row = ((int)((uint)ty + ((uint)((int)__metal_tpg.y) * (uint)((int)__metal_bid.y))));
+  int col = ((int)((uint)tx + ((uint)((int)__metal_tpg.x) * (uint)((int)__metal_bid.x))));
   int tile_size = 16;
-  int num_tiles = (((k + tile_size) - 1) / tile_size);
+  int num_tiles = (((int)(((uint)k + (uint)tile_size) - 1u)) / tile_size);
   float sum = 0.0f;
   for (int t = 0; t <= (num_tiles - 1); t++) {
     {
-      int a_col = ((t * tile_size) + tx);
+      int a_col = ((int)(((uint)t * (uint)tile_size) + (uint)tx));
       if (((row < m) ? (a_col < k) : 0)) {
         tile_a[((ty * tile_size) + tx)] = a[((row * k) + a_col)];
       } else {
@@ -205,7 +205,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     {
-      int b_row = ((t * tile_size) + ty);
+      int b_row = ((int)(((uint)t * (uint)tile_size) + (uint)ty));
       if (((b_row < k) ? (col < n) : 0)) {
         tile_b[((ty * tile_size) + tx)] = b[((b_row * n) + col)];
       } else {
