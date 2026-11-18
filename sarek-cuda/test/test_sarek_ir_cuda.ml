@@ -24,6 +24,7 @@ let st : Sarek_ir_cuda.state =
         Sarek_ir_types.default_kernel;
     narrowing = Barrier_unless_exact Sarek_codegen.Sarek_ir_f16_narrowing.empty;
     sites = {total = 0; proven = 0};
+    arith = Sarek_codegen.Sarek_ir_c_arith.empty;
   }
 
 (** Helper to generate code from an expression *)
@@ -65,13 +66,17 @@ let test_gen_expr_operations () =
   let e1 = EVar var in
   Alcotest.(check string) "Variable" "x" (gen_expr_str e1) ;
 
-  (* Test binary addition *)
+  (* Test binary addition: signed int arithmetic wraps through the unsigned
+     type (Sarek_ir_c_arith) *)
   let e2 = EBinop (Add, EConst (CInt32 1l), EConst (CInt32 2l)) in
-  Alcotest.(check string) "Addition" "(1 + 2)" (gen_expr_str e2) ;
+  Alcotest.(check string) "Addition" "((int)(1u + 2u))" (gen_expr_str e2) ;
 
   (* Test binary multiplication *)
   let e3 = EBinop (Mul, EVar var, EConst (CInt32 3l)) in
-  Alcotest.(check string) "Multiplication" "(x * 3)" (gen_expr_str e3)
+  Alcotest.(check string)
+    "Multiplication"
+    "((int)((unsigned int)x * 3u))"
+    (gen_expr_str e3)
 
 (** Test statement generation - empty and sequence *)
 let test_gen_stmt_basics () =

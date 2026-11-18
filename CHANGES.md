@@ -2,6 +2,33 @@
 
 ### Fixed
 
+- Signed integer `+`, `-`, `*`, unary `-` and `lsl` on `int32`/`int64` were printed as the plain C
+  operators by the CUDA C (also HIP), OpenCL C and Metal generators, where overflow on a signed type
+  is undefined behaviour (and `lsl` of a negative value too, before C++20), while the Interpreter and
+  Native wrap like OCaml (`Int32.add Int32.max_int 1l = Int32.min_int`). These generators now compute
+  them through the unsigned type of the same width and convert back, e.g.
+  `((int)((unsigned int)x + (unsigned int)y))`; a chain converts back once
+  (`((int)(((uint)x * 6u) + 1u))`). The rule covers every such node whose operand types are known,
+  including arithmetic built by compiler passes (fusion, matrix rewrite); operand types are
+  reconstructed from variables, literals, casts, array element types, record fields, helper return
+  types and intrinsic signatures, and an operator whose operand type cannot be determined keeps the
+  plain C form. Exception, index arithmetic: the `+`/`-`/`*`/`lsl` chain at the root of an array
+  subscript, of a cooperative-matrix offset or stride and of a `for` bound keeps C's signed
+  operators, because the no-overflow assumption is what lets the compiler fold addresses and compute
+  trip counts (wrapping them slowed a 3x3 convolution by 10 % and the WMMA GEMMs by about 25 % on the
+  RX 7900 XTX); a kernel whose index arithmetic overflows int32 is outside the contract, like a `for`
+  bound of `max_int`. The `Int32`/`Int64` stdlib intrinsics `add`, `sub`, `mul`, `neg` and `shift_left` use
+  the same forms. PTX, GLSL and WGSL already wrap and are unchanged. Not changed, and documented in
+  `sarek/codegen/Sarek_ir_c_arith.mli`: `/` and `mod` (`x / 0` raises in OCaml, `min_int / -1` stays
+  the device's result), shift counts outside `0 .. width-1` (unspecified in OCaml) and the `for`
+  counter increment. Tests: `sarek/tests/codegen_golden/test_wrapping_signed_arith.ml` (spelling per
+  printer, typing, clang compile of OpenCL C 1.2/2.0, CUDA and HIP, and the printed expressions run
+  under UBSan with OCaml's results) and `sarek/tests/e2e/test_wrapping_arith.ml` (overflowing
+  operands on every device).
+  Performance (RX 7900 XTX, HIP, ABBA x4 against the parent, machine shared, provisional): within
+  noise on the benchmark kernels and the matrix-rewrite/WMMA GEMMs; the two largest median deltas
+  (`transpose_tiled` +7.9 %, naive `matrix_mul` +5.3 %, ranges overlapping) compile to the same gfx1100
+  instructions before and after.
 - An `int64` literal in a kernel whose two top bits differ (for example `0x4000000000000000L`,
   `0x7fffffffffffffffL` or `0x8000000000000000L`) lost bit 63 on every backend: the PPX quoted
   int64 constants as `Int64.of_int` of a 63-bit OCaml `int`, both in the IR given to the device

@@ -25,6 +25,7 @@ module Codegen_error = Sarek_backend_error.Backend_error.Make (struct
 end)
 
 module Dispatch = Sarek_ir_intrinsic_dispatch
+module C_arith = Sarek_ir_c_arith
 
 (** Raise a located invalid-argument-count error (atomic-arity helper for the
     shared {!Dispatch.emit_atomic}). *)
@@ -61,6 +62,8 @@ type state = {
   sites : narrowing_sites;
       (** the narrowings met so far in this generation (kernel and helpers), for
           the explain report; shared by the states of its helpers *)
+  arith : Sarek_ir_c_arith.env;
+      (** operand types for wrapping signed arithmetic (Sarek_ir_c_arith) *)
 }
 
 (** [Barrier_unless_exact facts]: every narrowing keeps the barrier unless
@@ -96,6 +99,7 @@ let state ?block (k : kernel) : state =
     narrowing =
       (if single_rounding k then Single_rounding else proven_narrowing k);
     sites = {total = 0; proven = 0};
+    arith = Sarek_ir_c_arith.env_of_kernel k;
   }
 
 (** The state for emitting helper [hf] of the kernel whose state is [st]. *)
@@ -262,26 +266,50 @@ let rec gen_expr st buf = function
         buf
         e1
         e2
-  | EBinop (op, e1, e2) ->
-      Buffer.add_char buf '(' ;
-      gen_expr st buf e1 ;
-      Buffer.add_string buf (gen_binop op) ;
-      gen_expr st buf e2 ;
-      Buffer.add_char buf ')'
+  | EBinop (op, e1, e2) -> (
+      (* Signed int +, -, * and lsl wrap as in OCaml (Sarek_ir_c_arith). *)
+      match C_arith.binop_width st.arith op e1 e2 with
+      | Some w ->
+          C_arith.emit_binop
+            st.arith
+            C_arith.cuda
+            w
+            ~gen_expr:(gen_expr st)
+            buf
+            op
+            e1
+            e2
+      | None ->
+          Buffer.add_char buf '(' ;
+          gen_expr st buf e1 ;
+          Buffer.add_string buf (gen_binop op) ;
+          gen_expr st buf e2 ;
+          Buffer.add_char buf ')')
   | EUnop (op, e) -> (
       match Dispatch.int_negation_constant op e with
       | Some c -> gen_expr st buf (EConst c)
-      | None -> Dispatch.emit_unop ~gen_expr:(gen_expr st) buf (gen_unop op) e)
+      | None -> (
+          match (op, C_arith.int_width st.arith e) with
+          | Neg, Some w ->
+              C_arith.emit_neg
+                st.arith
+                C_arith.cuda
+                w
+                ~gen_expr:(gen_expr st)
+                buf
+                e
+          | _ -> Dispatch.emit_unop ~gen_expr:(gen_expr st) buf (gen_unop op) e)
+      )
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf arr ;
       Buffer.add_char buf '[' ;
-      gen_expr st buf idx ;
+      gen_index st buf idx ;
       Buffer.add_char buf ']'
   | EArrayReadExpr (base, idx) ->
       Buffer.add_char buf '(' ;
       gen_expr st buf base ;
       Buffer.add_string buf ")[" ;
-      gen_expr st buf idx ;
+      gen_index st buf idx ;
       Buffer.add_char buf ']'
   | ERecordField (e, field) ->
       gen_expr st buf e ;
@@ -444,6 +472,11 @@ let rec gen_expr st buf = function
       in
       gen_cases cases
 
+(* Index arithmetic (array subscripts, matrix offsets, [for] bounds) keeps C's
+   signed [+], [-], [*] and [<<] at its root (Sarek_ir_c_arith.emit_index). *)
+and gen_index st buf idx =
+  C_arith.emit_index st.arith ~gen_expr:(gen_expr st) buf idx
+
 and gen_binop = function
   | Add -> " + "
   | Sub -> " - "
@@ -570,7 +603,11 @@ and cuda_backend st =
 (** {1 L-value Generation} *)
 
 let gen_lvalue st buf lv =
-  Sarek_ir_codegen.gen_lvalue ~gen_expr:(gen_expr st) buf lv
+  Sarek_ir_codegen.gen_lvalue
+    ~gen_expr:(gen_expr st)
+    ~gen_index:(gen_index st)
+    buf
+    lv
 
 (** {1 Statement Generation} *)
 
@@ -622,11 +659,11 @@ let rec gen_stmt st buf indent = function
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
-      gen_expr st buf start ;
+      gen_index st buf start ;
       Buffer.add_string buf "; " ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf (" " ^ op ^ " ") ;
-      gen_expr st buf stop ;
+      gen_index st buf stop ;
       Buffer.add_string buf "; " ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf incr ;
@@ -718,9 +755,10 @@ let rec gen_stmt st buf indent = function
       Buffer.add_string buf indent ;
       Buffer.add_string buf "}\n"
   | SCoopmat op ->
+      (* index, stride and scale positions are element offsets: subscripts *)
       let expr_str e =
         let b = Buffer.create 32 in
-        gen_expr st b e ;
+        gen_index st b e ;
         Buffer.contents b
       in
       Buffer.add_string
