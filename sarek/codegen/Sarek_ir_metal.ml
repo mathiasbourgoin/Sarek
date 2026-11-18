@@ -231,10 +231,7 @@ let rec gen_expr st buf = function
       gen_expr st buf e2 ;
       Buffer.add_char buf ')'
   | EUnop (op, e) ->
-      Buffer.add_char buf '(' ;
-      Buffer.add_string buf (gen_unop op) ;
-      gen_expr st buf e ;
-      Buffer.add_char buf ')'
+      Dispatch.emit_unop ~gen_expr:(gen_expr st) buf (gen_unop op) e
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf arr ;
       Buffer.add_char buf '[' ;

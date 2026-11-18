@@ -219,6 +219,47 @@ let test_source (name, gen, spellings) () =
     false
     (contains src "-9223372036854775808")
 
+(* Unary minus on a negative literal: the operator and the literal's own sign
+   must not merge into [--], a decrement that C, OpenCL C, MSL, GLSL and WGSL
+   reject. [ty] is the element type of [out]; WGSL has no int64 literal, so it
+   is checked with an int32 one. *)
+let negated_kernel ty value : kernel =
+  {
+    (literal_kernel []) with
+    kern_name = "negated_literal";
+    kern_params =
+      [
+        DParam
+          (var "out" 0 (TVec ty), Some {arr_elttype = ty; arr_memspace = Global});
+      ];
+    kern_body =
+      SAssign (LArrayElem ("out", EConst (CInt32 0l)), EUnop (Neg, EConst value));
+  }
+
+let negation_cases : (string * (kernel -> string) * kernel * string) list =
+  let neg64 = negated_kernel TInt64 (CInt64 0xbfffffffffffffffL) in
+  [
+    ("CUDA", Sarek_ir_cuda.generate, neg64, "= (- -4611686018427387905LL);");
+    ("OpenCL", Sarek_ir_opencl.generate, neg64, "= (- -4611686018427387905L);");
+    ("Metal", Sarek_ir_metal.generate, neg64, "= (- -4611686018427387905L);");
+    ( "GLSL",
+      (fun k -> Sarek_ir_glsl.generate k),
+      neg64,
+      "= (- -4611686018427387905L);" );
+    ( "WGSL",
+      (fun k -> Sarek_ir_wgsl.generate k),
+      negated_kernel TInt32 (CInt32 (-5l)),
+      "(- -5i)" );
+  ]
+
+let test_negation (name, gen, k, spelling) () =
+  let src = gen k in
+  Alcotest.(check bool)
+    (Printf.sprintf "%s emits %s" name spelling)
+    true
+    (contains src spelling) ;
+  Alcotest.(check bool) (name ^ " emits no --") false (contains src "(--")
+
 let () =
   Alcotest.run
     "int64_literals"
@@ -234,4 +275,9 @@ let () =
           (fun ((name, _, _) as b) ->
             Alcotest.test_case name `Quick (test_source b))
           backends );
+      ( "negation",
+        List.map
+          (fun ((name, _, _, _) as c) ->
+            Alcotest.test_case name `Quick (test_negation c))
+          negation_cases );
     ]
