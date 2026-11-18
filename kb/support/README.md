@@ -40,7 +40,7 @@ Large third-party/static assets under `gh-pages/static/**`, `gh-pages/pres_resou
 
 ## Cross-Cutting Invariants
 
-- Support artifacts should not require GPU drivers for basic build/test paths; optional backends are selected or no-op stubs are used in `benchmarks/dune:25-42` and `tools/dune:15-34`.
+- Support artifacts should not require GPU drivers for basic build/test paths; optional backends are selected or no-op stubs are used in `benchmarks/dune:25-42` and `tools/dune:16-35`.
 - Benchmark result JSON must preserve `benchmark.name`, `benchmark.parameters.size`, `system.hostname`, and per-device `framework`/timing fields because the dashboard and converters depend on them (`benchmarks/output.ml:70-88`, `gh-pages/javascripts/benchmark-viewer.js:974-983`).
 - Generated benchmark descriptions should be deterministic; CI rebuilds `benchmarks/generate_backend_code.exe` and fails if `benchmarks/descriptions/generated/` changes (`.github/workflows/ci.yml:150-188`).
 - Repository checks should not unexpectedly modify source unless explicitly named as fixers.

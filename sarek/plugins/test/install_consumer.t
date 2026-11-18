@@ -19,17 +19,10 @@ project outside this repository can link them as reference backends.
   >   |> List.iter print_endline
   > ML
 
-The install tree is put on OCAMLPATH explicitly (third-party deps still come
-from the switch, where sarek is not installed), so this resolves the installed
-copies. Up to dune 3.24 every action inherited _build/install/<context>/lib on
-OCAMLPATH; dune 3.25 (ocaml/dune#14373) exposes only the packages an action
-declares with (deps (package ...)), and (package sarek) is not usable here (see
-the dune file). INSIDE_DUNE is the absolute path of the build context
-(_build/default), so its install tree is ../install/default/lib.
+Dune puts the install tree of the packages this test declares with
+(deps (package ...)) on OCAMLPATH (third-party deps still come from the
+switch, where sarek is not installed), so this resolves the installed copies.
 
-  $ SAREK_LIB="$INSIDE_DUNE/../install/default/lib"
-  $ test -f "$SAREK_LIB/sarek/META"
-  $ export OCAMLPATH="$SAREK_LIB${OCAMLPATH:+:$OCAMLPATH}"
   $ DUNE_CACHE=disabled dune build --root . ./consumer.exe 2>&1
   $ ./_build/default/consumer.exe
   Interpreter
