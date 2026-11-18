@@ -76,6 +76,33 @@ let test_is_cuda () =
   assert (Spoc_core.Device.is_cuda opencl_dev = false) ;
   print_endline "  is_cuda: OK"
 
+(* The CUDA backends register as "CUDA/PTX" and "CUDA/C": the family is the
+   bare name or the part before "/", never an arbitrary "CUDA" prefix. *)
+let test_is_cuda_framework () =
+  List.iter
+    (fun (framework, expected) ->
+      if Spoc_core.Device.is_cuda_framework framework <> expected then
+        failwith
+          (Printf.sprintf
+             "is_cuda_framework %S: expected %b"
+             framework
+             expected))
+    [
+      ("CUDA", true);
+      ("CUDA/PTX", true);
+      ("CUDA/C", true);
+      ("CUDAX", false);
+      ("cuda/ptx", false);
+      ("OpenCL", false);
+      ("HIP", false);
+      ("Vulkan", false);
+      ("Metal", false);
+      ("Native", false);
+      ("Interpreter", false);
+      ("", false);
+    ] ;
+  print_endline "  is_cuda_framework: OK"
+
 let test_is_opencl () =
   let cuda_dev = make_fake_device ~framework:"CUDA" () in
   let opencl_dev = make_fake_device ~framework:"OpenCL" () in
@@ -363,6 +390,7 @@ let () =
   test_capabilities_structure () ;
   (* Predicate tests *)
   test_is_cuda () ;
+  test_is_cuda_framework () ;
   test_is_opencl () ;
   test_is_native () ;
   test_is_gpu () ;
