@@ -149,8 +149,8 @@ let ir_of (_, kirc) =
 (* Frameworks that lower f16 device-side. Everything else must raise its own
    slice-2 diagnostic. Metal joined with package H3: scalar f16 is [half] with
    a plain narrowing, measured strict (test_metal_f16_narrowing_e2e). The CUDA
-   backends register as "CUDA/PTX" and "CUDA/C", so CUDA is matched as a family
-   by [Device.is_cuda_framework], not by the bare name. *)
+   backends register as "CUDA/PTX" and "CUDA/C", so CUDA goes through
+   [Device.is_cuda_framework], which accepts "CUDA" and "CUDA/<variant>". *)
 let f16_capable fw =
   Device.is_cuda_framework fw
   || List.mem fw ["HIP"; "Metal"; "Native"; "Interpreter"]
