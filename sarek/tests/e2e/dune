@@ -2035,6 +2035,7 @@
   bench_warp_shuffle
   test_blocking_ffi_releases_lock
   test_lsr_unroll
+  test_wrapping_arith
   test_coopmat_hip_e2e
   test_coopmat_scale_add_e2e
   test_ptx_coopmat_e2e
@@ -2067,6 +2068,7 @@
   bench_warp_shuffle
   test_blocking_ffi_releases_lock
   test_lsr_unroll
+  test_wrapping_arith
   test_coopmat_hip_e2e
   test_coopmat_scale_add_e2e
   test_ptx_coopmat_e2e
@@ -2178,6 +2180,16 @@
  (alias runtest)
  (action
   (run %{dep:test_lsr_unroll.exe})))
+
+; Signed int32/int64 +, -, *, unary - and lsl wrap like OCaml on every device
+; (Sarek_ir_c_arith). Native/Interpreter must run; a GPU backend that cannot
+; launch is reported, a wrong result from any device is a failure. Built by the
+; test_int32_bitcasts stanza above, which shares backend_hip.
+
+(rule
+ (alias runtest)
+ (action
+  (run %{dep:test_wrapping_arith.exe})))
 
 ; SCoopmat on HIP / RDNA3 WMMA (specs/coopmat-hip-wmma.md): codegen, the
 ; capability and policy refusals on every enumerated device (runs anywhere),

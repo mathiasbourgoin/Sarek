@@ -25,6 +25,7 @@ module Codegen_error = Sarek_backend_error.Backend_error.Make (struct
 end)
 
 module Dispatch = Sarek_ir_intrinsic_dispatch
+module C_arith = Sarek_ir_c_arith
 
 (** Raise a located invalid-argument-count error (atomic-arity helper for the
     shared {!Dispatch.emit_atomic}). *)
@@ -60,10 +61,15 @@ let format_float f = Printf.sprintf "%.17g" f
     name. The record survives the shrink deliberately — a one-field record is
     the honest shape for "one run's state", and the next thing that needs
     threading has somewhere to go. *)
-type state = {variants : (string * (string * elttype list) list) list}
+type state = {
+  variants : (string * (string * elttype list) list) list;
+  arith : Sarek_ir_c_arith.env;
+      (** operand types for wrapping signed arithmetic (Sarek_ir_c_arith) *)
+}
 
 (** The state for emitting [k]. *)
-let state (k : kernel) : state = {variants = k.kern_variants}
+let state (k : kernel) : state =
+  {variants = k.kern_variants; arith = Sarek_ir_c_arith.env_of_kernel k}
 
 (** {1 Type Mapping} *)
 
@@ -222,26 +228,50 @@ let rec gen_expr st buf = function
         buf
         e1
         e2
-  | EBinop (op, e1, e2) ->
-      Buffer.add_char buf '(' ;
-      gen_expr st buf e1 ;
-      Buffer.add_string buf (gen_binop op) ;
-      gen_expr st buf e2 ;
-      Buffer.add_char buf ')'
+  | EBinop (op, e1, e2) -> (
+      (* Signed int +, -, * and lsl wrap as in OCaml (Sarek_ir_c_arith). *)
+      match C_arith.binop_width st.arith op e1 e2 with
+      | Some w ->
+          C_arith.emit_binop
+            st.arith
+            C_arith.opencl
+            w
+            ~gen_expr:(gen_expr st)
+            buf
+            op
+            e1
+            e2
+      | None ->
+          Buffer.add_char buf '(' ;
+          gen_expr st buf e1 ;
+          Buffer.add_string buf (gen_binop op) ;
+          gen_expr st buf e2 ;
+          Buffer.add_char buf ')')
   | EUnop (op, e) -> (
       match Dispatch.int_negation_constant op e with
       | Some c -> gen_expr st buf (EConst c)
-      | None -> Dispatch.emit_unop ~gen_expr:(gen_expr st) buf (gen_unop op) e)
+      | None -> (
+          match (op, C_arith.int_width st.arith e) with
+          | Neg, Some w ->
+              C_arith.emit_neg
+                st.arith
+                C_arith.opencl
+                w
+                ~gen_expr:(gen_expr st)
+                buf
+                e
+          | _ -> Dispatch.emit_unop ~gen_expr:(gen_expr st) buf (gen_unop op) e)
+      )
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf arr ;
       Buffer.add_char buf '[' ;
-      gen_expr st buf idx ;
+      gen_index st buf idx ;
       Buffer.add_char buf ']'
   | EArrayReadExpr (base, idx) ->
       Buffer.add_char buf '(' ;
       gen_expr st buf base ;
       Buffer.add_string buf ")[" ;
-      gen_expr st buf idx ;
+      gen_index st buf idx ;
       Buffer.add_char buf ']'
   | ERecordField (e, field) ->
       gen_expr st buf e ;
@@ -378,6 +408,11 @@ let rec gen_expr st buf = function
       in
       gen_cases cases
 
+(* Index arithmetic (array subscripts, matrix offsets, [for] bounds) keeps C's
+   signed [+], [-], [*] and [<<] at its root (Sarek_ir_c_arith.emit_index). *)
+and gen_index st buf idx =
+  C_arith.emit_index st.arith ~gen_expr:(gen_expr st) buf idx
+
 and gen_binop = function
   | Add -> " + "
   | Sub -> " - "
@@ -506,7 +541,11 @@ and opencl_backend st =
 (** {1 L-value Generation} *)
 
 let gen_lvalue st buf lv =
-  Sarek_ir_codegen.gen_lvalue ~gen_expr:(gen_expr st) buf lv
+  Sarek_ir_codegen.gen_lvalue
+    ~gen_expr:(gen_expr st)
+    ~gen_index:(gen_index st)
+    buf
+    lv
 
 (** {1 Statement Generation} *)
 
@@ -553,11 +592,11 @@ let rec gen_stmt st buf indent = function
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
-      gen_expr st buf start ;
+      gen_index st buf start ;
       Buffer.add_string buf "; " ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf (" " ^ op ^ " ") ;
-      gen_expr st buf stop ;
+      gen_index st buf stop ;
       Buffer.add_string buf "; " ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf incr ;

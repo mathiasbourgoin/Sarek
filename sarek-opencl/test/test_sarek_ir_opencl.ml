@@ -14,7 +14,8 @@ open Sarek_ir_types
    and those now take the per-generation state as their first argument. None of
    them uses a variant pattern, so the empty state is what the old
    module-level ref held. *)
-let st : Sarek_ir_opencl.state = {variants = []}
+let st : Sarek_ir_opencl.state =
+  {variants = []; arith = Sarek_codegen.Sarek_ir_c_arith.empty}
 
 (** Helper: Create a variable record *)
 let make_var name ty =
@@ -46,21 +47,32 @@ let test_basic_literals () =
   Sarek_ir_opencl.gen_expr st buf (EConst (CBool false)) ;
   Alcotest.(check string) "bool false literal" "0" (Buffer.contents buf)
 
+(* Signed int arithmetic wraps through [uint] (Sarek_ir_c_arith). *)
+
 (** Test operations *)
 let test_operations () =
   let buf = Buffer.create 64 in
   let x = make_var "x" TInt32 in
   let y = make_var "y" TInt32 in
   Sarek_ir_opencl.gen_expr st buf (EBinop (Add, EVar x, EVar y)) ;
-  Alcotest.(check string) "addition" "(x + y)" (Buffer.contents buf) ;
+  Alcotest.(check string)
+    "addition"
+    "((int)((uint)x + (uint)y))"
+    (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
   Sarek_ir_opencl.gen_expr st buf (EBinop (Sub, EVar x, EVar y)) ;
-  Alcotest.(check string) "subtraction" "(x - y)" (Buffer.contents buf) ;
+  Alcotest.(check string)
+    "subtraction"
+    "((int)((uint)x - (uint)y))"
+    (Buffer.contents buf) ;
 
   let buf = Buffer.create 64 in
   Sarek_ir_opencl.gen_expr st buf (EBinop (Mul, EVar x, EVar y)) ;
-  Alcotest.(check string) "multiplication" "(x * y)" (Buffer.contents buf)
+  Alcotest.(check string)
+    "multiplication"
+    "((int)((uint)x * (uint)y))"
+    (Buffer.contents buf)
 
 (** Test basic statements *)
 let test_basics () =

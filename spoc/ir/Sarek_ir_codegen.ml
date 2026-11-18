@@ -763,20 +763,20 @@ let is_vec_type (t : Sarek_ir_types.elttype) =
 (** Emit an l-value (assignment target / read path). Identical across the
     C-family backends; [gen_expr] (used for array-index subexpressions) is the
     only backend-specific input. *)
-let gen_lvalue ~gen_expr buf lv =
+let gen_lvalue ~gen_expr ?(gen_index = gen_expr) buf lv =
   let open Sarek_ir_types in
   let rec go = function
     | LVar v -> Buffer.add_string buf v.var_name
     | LArrayElem (arr, idx) ->
         Buffer.add_string buf arr ;
         Buffer.add_char buf '[' ;
-        gen_expr buf idx ;
+        gen_index buf idx ;
         Buffer.add_char buf ']'
     | LArrayElemExpr (base, idx) ->
         Buffer.add_char buf '(' ;
         gen_expr buf base ;
         Buffer.add_string buf ")[" ;
-        gen_expr buf idx ;
+        gen_index buf idx ;
         Buffer.add_char buf ']'
     | LRecordField (lv, field) ->
         go lv ;

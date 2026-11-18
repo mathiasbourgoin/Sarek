@@ -108,7 +108,8 @@ let check_lacks label src needle =
     Alcotest.failf "%s: did not expect [%s] in:\n%s" label needle src
 
 (* C-8 on one backend: the mutating bound goes through a temporary, the stable
-   one does not. [decl] is the temporary's declaration, [cond] the loop test. *)
+   one does not. A [for] bound keeps C's [-] in the C dialects (index
+   arithmetic, Sarek_ir_c_arith); the loop body's int32 arithmetic wraps. [decl] is the temporary's declaration, [cond] the loop test. *)
 let check_bound_hoist label src ~decl ~cond ~stable ~raw =
   check_has label src decl ;
   check_has label src cond ;
@@ -166,10 +167,12 @@ let test_wgsl_bound () =
     ~stable:"k <= (params.n - 1i)"
     ~raw:"j <= m"
 
-(* C-9 *)
+(* C-9. The subtraction itself wraps (Sarek_ir_c_arith): it is computed in
+   the unsigned type and converted back, so the operand must already be the
+   signed [int] for [x - 1 < 0] to hold at thread 0. *)
 let test_cuda_signed () =
   let src = Sarek_ir_cuda.generate (probe_kernel ()) in
-  check_has "cuda" src "(((int)threadIdx.x) - 1)" ;
+  check_has "cuda" src "((int)((unsigned int)((int)threadIdx.x) - 1u))" ;
   check_has "cuda" src "((int)(threadIdx.x + blockIdx.x * blockDim.x))" ;
   check_has "cuda" src "((int)blockDim.x)" ;
   check_has "cuda" src "((int)gridDim.x)" ;
@@ -177,7 +180,7 @@ let test_cuda_signed () =
 
 let test_opencl_signed () =
   let src = Sarek_ir_opencl.generate (probe_kernel ()) in
-  check_has "opencl" src "(((int)get_local_id(0)) - 1)" ;
+  check_has "opencl" src "((int)((uint)((int)get_local_id(0)) - 1u))" ;
   check_has "opencl" src "((int)get_global_id(0))" ;
   check_has "opencl" src "((int)get_local_size(0))" ;
   check_has "opencl" src "((int)get_num_groups(0))" ;
@@ -185,7 +188,7 @@ let test_opencl_signed () =
 
 let test_metal_signed () =
   let src = Sarek_ir_metal.generate (probe_kernel ()) in
-  check_has "metal" src "(((int)__metal_tid.x) - 1)" ;
+  check_has "metal" src "((int)((uint)((int)__metal_tid.x) - 1u))" ;
   check_has "metal" src "((int)__metal_gid.x)" ;
   check_has "metal" src "((int)__metal_tpg.x)" ;
   check_has "metal" src "((int)__metal_num_groups.x)" ;

@@ -259,9 +259,11 @@ val is_vec_type : Sarek_ir_types.elttype -> bool
 
 (** Emit an l-value (assignment target / read path): [LVar], [LArrayElem],
     [LArrayElemExpr], [LRecordField]. Identical across the C-family backends;
-    [gen_expr] renders array-index subexpressions. *)
+    [gen_index] (default [gen_expr]) renders array subscripts and [gen_expr] the
+    other subexpressions. *)
 val gen_lvalue :
   gen_expr:(Buffer.t -> Sarek_ir_types.expr -> unit) ->
+  ?gen_index:(Buffer.t -> Sarek_ir_types.expr -> unit) ->
   Buffer.t ->
   Sarek_ir_types.lvalue ->
   unit

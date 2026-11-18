@@ -228,6 +228,14 @@
  (preprocess
   (pps sarek_ppx)))
 
+; Wrapping signed integer arithmetic in the C-family emitters
+; (Sarek_ir_c_arith): spelling, typing, clang compile, UBSan execution.
+
+(test
+ (name test_wrapping_signed_arith)
+ (modules test_wrapping_signed_arith)
+ (libraries sarek_ir sarek_codegen alcotest unix))
+
 (test
  (name test_for_bound_signed_idx)
  (modules test_for_bound_signed_idx)

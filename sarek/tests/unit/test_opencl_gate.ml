@@ -385,7 +385,8 @@ let test_budgeted_recursion_is_bounded () =
   Alcotest.(check bool)
     "residual call replaced by a typed zero"
     true
-    (contains src "2 * 0" || contains src "(2 * 0)") ;
+    (* the int32 [*] wraps through [uint] (Sarek_ir_c_arith) *)
+    (contains src "((int)(2u * 0u))") ;
   if Clang.available () then
     match Clang.run_clang src with
     | Ok () -> ()

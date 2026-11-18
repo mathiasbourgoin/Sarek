@@ -127,9 +127,10 @@ let check_lsr32 () =
   List.iter
     (fun (backend, must) ->
       let src = gen backend k in
+      let expected = if contains must "a[tid]" then 1 else 2 in
       Alcotest.(check int)
-        (Printf.sprintf "%s: two logical shifts (%s)" backend must)
-        2
+        (Printf.sprintf "%s: logical shifts (%s)" backend must)
+        expected
         (count src must) ;
       List.iter
         (fun bad ->
@@ -139,9 +140,14 @@ let check_lsr32 () =
             (contains src bad))
         emulation)
     [
-      ("CUDA", "((int)((unsigned int)(");
-      ("OpenCL", "((int)((uint)(");
-      ("Metal", "((int)((uint)(");
+      (* The C dialects also print the wrapping [+] through the unsigned type
+         (Sarek_ir_c_arith), so the shift itself is what is counted. *)
+      ("CUDA", "((int)((unsigned int)(a[tid]) >> (");
+      ("CUDA", ") >> (");
+      ("OpenCL", "((int)((uint)(a[tid]) >> (");
+      ("OpenCL", ") >> (");
+      ("Metal", "((int)((uint)(a[tid]) >> (");
+      ("Metal", ") >> (");
       ("GLSL", "int(uint(");
       ("WGSL", "bitcast<i32>(bitcast<u32>(");
       ("PTX", "shr.b32");

@@ -28,14 +28,37 @@ let%sarek_intrinsic int32 = {device = (fun _ -> "int"); ctype = Ctypes.int32_t}
 
 let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
 
+(* [add], [sub], [mul], [neg] and [shift_left] wrap as in OCaml: they compute
+   through the unsigned type of the same width, where overflow is defined, as
+   the C-family emitters do for the operators (Sarek_ir_c_arith). [div] and
+   [rem] keep C's [/] and [%]: see Sarek_ir_c_arith for why. *)
+
 let%sarek_intrinsic (add_int32 : int32 -> int32 -> int32) =
-  {device = dev "(%s + %s)" "(%s + %s)"; ocaml = Stdlib.Int32.add}
+  {
+    device =
+      dev
+        "((int)((unsigned int)(%s) + (unsigned int)(%s)))"
+        "((int)((uint)(%s) + (uint)(%s)))";
+    ocaml = Stdlib.Int32.add;
+  }
 
 let%sarek_intrinsic (sub_int32 : int32 -> int32 -> int32) =
-  {device = dev "(%s - %s)" "(%s - %s)"; ocaml = Stdlib.Int32.sub}
+  {
+    device =
+      dev
+        "((int)((unsigned int)(%s) - (unsigned int)(%s)))"
+        "((int)((uint)(%s) - (uint)(%s)))";
+    ocaml = Stdlib.Int32.sub;
+  }
 
 let%sarek_intrinsic (mul_int32 : int32 -> int32 -> int32) =
-  {device = dev "(%s * %s)" "(%s * %s)"; ocaml = Stdlib.Int32.mul}
+  {
+    device =
+      dev
+        "((int)((unsigned int)(%s) * (unsigned int)(%s)))"
+        "((int)((uint)(%s) * (uint)(%s)))";
+    ocaml = Stdlib.Int32.mul;
+  }
 
 let%sarek_intrinsic (div_int32 : int32 -> int32 -> int32) =
   {device = dev "(%s / %s)" "(%s / %s)"; ocaml = Stdlib.Int32.div}
@@ -60,7 +83,11 @@ let%sarek_intrinsic (lognot : int32 -> int32) =
   {device = dev "(~%s)" "(~%s)"; ocaml = Stdlib.Int32.lognot}
 
 let%sarek_intrinsic (shift_left : int32 -> int -> int32) =
-  {device = dev "(%s << %s)" "(%s << %s)"; ocaml = Stdlib.Int32.shift_left}
+  {
+    device =
+      dev "((int)((unsigned int)(%s) << (%s)))" "((int)((uint)(%s) << (%s)))";
+    ocaml = Stdlib.Int32.shift_left;
+  }
 
 let%sarek_intrinsic (shift_right : int32 -> int -> int32) =
   {device = dev "(%s >> %s)" "(%s >> %s)"; ocaml = Stdlib.Int32.shift_right}
@@ -79,7 +106,10 @@ let%sarek_intrinsic (abs : int32 -> int32) =
   {device = dev "abs(%s)" "abs(%s)"; ocaml = Stdlib.Int32.abs}
 
 let%sarek_intrinsic (neg : int32 -> int32) =
-  {device = dev "(-%s)" "(-%s)"; ocaml = Stdlib.Int32.neg}
+  {
+    device = dev "((int)(-(unsigned int)(%s)))" "((int)(-(uint)(%s)))";
+    ocaml = Stdlib.Int32.neg;
+  }
 
 let%sarek_intrinsic (min : int32 -> int32 -> int32) =
   {device = dev "min(%s, %s)" "min(%s, %s)"; ocaml = Stdlib.Int32.min}
