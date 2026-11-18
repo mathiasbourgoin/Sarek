@@ -10,9 +10,10 @@
  * 1. add, sub, mul, neg and shift_left: both registrations (Sarek_stdlib and
  *    Sarek_stdlib_meta) agree, compute through the unsigned type and come back
  *    through the dialect's conversion.
- * 2. abs on OpenCL C: [as_int(abs((int)(x)))] / [as_long(abs((long)(x)))],
- *    and clang -x cl accepts it on an 8-bit element read, the argument
- *    [as_int] alone would reject ("sizes ... must match").
+ * 2. abs on OpenCL C ([as_int(abs((int)(x)))], [as_long(abs((long)(x)))]) and
+ *    MSL ([as_type<int>(abs((int)(x)))], [as_type<long>(...)]): clang -x cl
+ *    accepts the OpenCL spelling on an 8-bit element read, and both run on
+ *    the host through a C++ shim with OCaml's results.
  ******************************************************************************)
 
 open Sarek_ir_types
@@ -35,20 +36,120 @@ let wrapping_intrinsics =
 
 (* OpenCL C's [abs] returns an unsigned type: the template reinterprets it, so
    [Int32.abs x - 1] stays signed arithmetic. *)
+(* abs templates: OpenCL C's [abs] returns the unsigned type and MSL leaves the
+   signedness of its integer [abs] undocumented, so both reinterpret a result
+   of the argument's (widened) size. MSL has no [labs]. The Metal spellings
+   are not checked with a Metal compiler; they are valid whichever of the two
+   documented return types MSL's [abs] has. *)
+let abs_spellings =
+  [
+    ("Int32", "OpenCL", "as_int(abs((int)(%s)))");
+    ("Int32", "Metal", "as_type<int>(abs((int)(%s)))");
+    ("Int64", "OpenCL", "as_long(abs((long)(%s)))");
+    ("Int64", "Metal", "as_type<long>(abs((long)(%s)))");
+  ]
+
+let abs_template lib m framework =
+  Sarek_registry.fun_device_template ~module_path:[lib; m] ~framework "abs"
+
 let check_abs_templates () =
   List.iter
-    (fun (m, expected) ->
+    (fun (m, framework, expected) ->
       List.iter
         (fun lib ->
           Alcotest.(check (option string))
-            (Printf.sprintf "%s.%s.abs on OpenCL" lib m)
+            (Printf.sprintf "%s.%s.abs on %s" lib m framework)
             (Some expected)
-            (Sarek_registry.fun_device_template
-               ~module_path:[lib; m]
-               ~framework:"OpenCL"
-               "abs"))
+            (abs_template lib m framework))
         ["Sarek_stdlib"; "Sarek_stdlib_meta"])
-    [("Int32", "as_int(abs((int)(%s)))"); ("Int64", "as_long(abs((long)(%s)))")]
+    abs_spellings
+
+(* The OpenCL C and MSL abs templates run on the host through a C++ shim
+   ([as_type], [as_int], [as_long], [std::abs]) and agree with OCaml on values
+   that avoid min_int (whose [abs] is undefined in the host's C++). *)
+let shim =
+  "#include <cstdio>\n\
+   #include <cstdlib>\n\
+   #include <cstring>\n\
+   using std::abs;\n\
+   typedef unsigned int uint;\n\
+   typedef unsigned long ulong;\n\
+   template <class T, class U> T as_type(U u) {\n\
+  \  static_assert(sizeof(T) == sizeof(U), \"size\");\n\
+  \  T t;\n\
+  \  std::memcpy(&t, &u, sizeof t);\n\
+  \  return t;\n\
+   }\n\
+   inline int as_int(uint u) { return as_type<int>(u); }\n\
+   inline long as_long(ulong u) { return as_type<long>(u); }\n"
+
+let values = [-7L; 0L; 5L; 2147483647L; -2147483647L]
+
+let apply template arg =
+  Printf.sprintf (Scanf.format_from_string template "%s") arg
+
+let shim_program lib =
+  let buf = Buffer.create 2048 in
+  Buffer.add_string buf shim ;
+  Buffer.add_string buf "int main() {\n" ;
+  List.iter
+    (fun (m, framework, _) ->
+      let t = Option.get (abs_template lib m framework) in
+      let ty = if m = "Int32" then "int" else "long" in
+      List.iter
+        (fun v ->
+          Printf.bprintf
+            buf
+            "  { volatile %s x = %LdL; printf(\"%%ld\\n\", (long)%s); }\n"
+            ty
+            v
+            (apply t "x"))
+        values)
+    abs_spellings ;
+  Buffer.add_string buf "  return 0;\n}\n" ;
+  Buffer.contents buf
+
+let run_host source =
+  let dir = Filename.temp_dir "sarek_abs_" "" in
+  let src = Filename.concat dir "t.cpp" and exe = Filename.concat dir "t" in
+  let out = Filename.concat dir "out" in
+  Out_channel.with_open_bin src (fun oc -> output_string oc source) ;
+  let sh fmt = Printf.ksprintf Unix.system fmt in
+  let result =
+    match
+      sh
+        "clang++ -std=c++17 -O2 %s -o %s >%s 2>&1"
+        (Filename.quote src)
+        (Filename.quote exe)
+        (Filename.quote out)
+    with
+    | Unix.WEXITED 0 -> (
+        match sh "%s >%s 2>&1" (Filename.quote exe) (Filename.quote out) with
+        | Unix.WEXITED 0 ->
+            Ok (In_channel.with_open_bin out In_channel.input_all)
+        | _ -> Error "run")
+    | _ -> Error (In_channel.with_open_bin out In_channel.input_all)
+  in
+  ignore (Unix.system ("rm -r " ^ Filename.quote dir)) ;
+  result
+
+let check_abs_host () =
+  if Unix.system "command -v clang++ >/dev/null 2>&1" <> Unix.WEXITED 0 then
+    Alcotest.skip () ;
+  let expected =
+    String.concat
+      ""
+      (List.concat_map
+         (fun _ ->
+           List.map (fun v -> Int64.to_string (Int64.abs v) ^ "\n") values)
+         abs_spellings)
+  in
+  List.iter
+    (fun lib ->
+      match run_host (shim_program lib) with
+      | Ok out -> Alcotest.(check string) (lib ^ ": abs = OCaml's") expected out
+      | Error e -> Alcotest.failf "%s: %s\n%s" lib e (shim_program lib))
+    ["Sarek_stdlib"; "Sarek_stdlib_meta"]
 
 let check_wrapping_parity () =
   List.iter
@@ -163,7 +264,14 @@ let () =
       ( "registry",
         [
           Alcotest.test_case "wrapping parity" `Quick check_wrapping_parity;
-          Alcotest.test_case "abs on OpenCL" `Quick check_abs_templates;
+          Alcotest.test_case
+            "abs on OpenCL and Metal"
+            `Quick
+            check_abs_templates;
         ] );
-      ("clang", [Alcotest.test_case "abs widths" `Quick check_abs_compiles]);
+      ( "clang",
+        [
+          Alcotest.test_case "abs widths" `Quick check_abs_compiles;
+          Alcotest.test_case "abs on the host shim" `Quick check_abs_host;
+        ] );
     ]

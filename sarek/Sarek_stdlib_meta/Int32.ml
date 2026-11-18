@@ -29,7 +29,10 @@ let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
    ([as_int], [as_long]) and MSL ([as_type]), as the operator emitters do
    (Sarek_ir_c_arith). OpenCL C's [abs] returns an unsigned type, hence the
    reinterpretation there too; its argument is first widened to [int] /
-   [long], which an 8-bit element read is not ([as_int] needs 32 bits). *)
+   [long], which an 8-bit element read is not ([as_int] needs 32 bits). MSL
+   documents only the overloaded integer [abs] (no [labs]) without settling
+   whether it returns the signed or the unsigned type; [as_type] of the same
+   size is valid either way. Not checked with a Metal compiler. *)
 let dev3 cuda opencl metal d = if d = "Metal" then metal else dev cuda opencl d
 
 (* [add], [sub], [mul], [neg] and [shift_left] wrap as in OCaml, with the same
@@ -113,7 +116,8 @@ let%sarek_intrinsic (shift_right_logical : int32 -> int -> int32) =
 
 let%sarek_intrinsic (abs : int32 -> int32) =
   {
-    device = dev3 "abs(%s)" "as_int(abs((int)(%s)))" "abs(%s)";
+    device =
+      dev3 "abs(%s)" "as_int(abs((int)(%s)))" "as_type<int>(abs((int)(%s)))";
     ocaml = Stdlib.Int32.abs;
   }
 
