@@ -166,11 +166,12 @@ let intrinsic_arity =
 let full_name path name =
   match path with [] -> name | _ -> String.concat "." path ^ "." ^ name
 
-(** An int32 literal in C, OpenCL C or MSL source. [-2147483648] is unary minus
-    applied to [2147483648], which has type [long] in all three, so
-    [Int32.min_int] would reach a size-checked reinterpretation ([as_float],
-    [as_type<float>]) as an 8-byte operand and fail to compile.
-    [(-2147483647 - 1)] is an [int]. *)
+(** An int32 literal in C, CUDA C, OpenCL C, MSL or GLSL source. [-2147483648]
+    is unary minus applied to [2147483648], which has type [long] in C, OpenCL C
+    and MSL, so [Int32.min_int] would reach a size-checked reinterpretation
+    ([as_float], [as_type<float>]) as an 8-byte operand and fail to compile.
+    [(-2147483647 - 1)] is an [int]; GLSL uses the same spelling so that every
+    C-family printer agrees. *)
 let c_int32_literal n =
   if n = Int32.min_int then "(-2147483647 - 1)" else Int32.to_string n
 
@@ -184,6 +185,28 @@ let c_int64_literal ~suffix n =
   if n = Int64.min_int then
     Printf.sprintf "(-9223372036854775807%s - 1%s)" suffix suffix
   else Int64.to_string n ^ suffix
+
+(** The integer constant [op e] denotes when it is a chain of [Neg] ending in an
+    int32 or int64 literal, negated with wrapping as in OCaml: [-min_int] is
+    [min_int]. The source backends print that constant instead of the
+    expression: negating min_int is signed overflow in a constant expression,
+    undefined in C, CUDA C, OpenCL C and MSL, while the Interpreter and Native
+    wrap ([Int32.neg], [Int64.neg]). GLSL and WGSL wrap too; they fold the same
+    way so that every source printer emits the same constant. *)
+let int_negation_constant (op : Sarek_ir_types.unop) (e : Sarek_ir_types.expr) :
+    Sarek_ir_types.const option =
+  let open Sarek_ir_types in
+  let rec value = function
+    | EConst (CInt32 n) -> Some (CInt32 n)
+    | EConst (CInt64 n) -> Some (CInt64 n)
+    | EUnop (Neg, e) -> (
+        match value e with
+        | Some (CInt32 n) -> Some (CInt32 (Int32.neg n))
+        | Some (CInt64 n) -> Some (CInt64 (Int64.neg n))
+        | _ -> None)
+    | _ -> None
+  in
+  match op with Neg -> value (EUnop (Neg, e)) | Not | BitNot -> None
 
 (** The module paths under which the core warp primitives are reached. *)
 let is_gpu_or_std_path = function

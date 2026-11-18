@@ -450,7 +450,7 @@ let gen_glsl_conversion buf ~gen_expr name args =
         (Codegen_error.invalid_arg_count name 1 (List.length args))
 
 let rec gen_expr st buf = function
-  | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n)
+  | EConst (CInt32 n) -> Buffer.add_string buf (Dispatch.c_int32_literal n)
   | EConst (CInt64 n) ->
       Buffer.add_string buf (Dispatch.c_int64_literal ~suffix:"L" n)
   | EConst (CFloat32 f) ->
@@ -519,8 +519,10 @@ let rec gen_expr st buf = function
       Buffer.add_string buf (gen_binop op) ;
       gen_expr st buf e2 ;
       Buffer.add_char buf ')'
-  | EUnop (op, e) ->
-      Dispatch.emit_unop ~gen_expr:(gen_expr st) buf (gen_unop op) e
+  | EUnop (op, e) -> (
+      match Dispatch.int_negation_constant op e with
+      | Some c -> gen_expr st buf (EConst c)
+      | None -> Dispatch.emit_unop ~gen_expr:(gen_expr st) buf (gen_unop op) e)
   | EArrayRead (arr, idx) when List.mem_assoc arr st.byte_arrays ->
       (* An 8-bit element reads as an int32 (Sarek_ir_int8): widen it. *)
       Buffer.add_string buf "int(" ;
