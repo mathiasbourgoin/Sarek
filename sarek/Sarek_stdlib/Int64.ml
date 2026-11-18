@@ -33,7 +33,8 @@ let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
    signed one by a cast in CUDA C and by a bit reinterpretation in OpenCL C
    ([as_int], [as_long]) and MSL ([as_type]), as the operator emitters do
    (Sarek_ir_c_arith). OpenCL C's [abs] returns an unsigned type, hence the
-   reinterpretation there too. *)
+   reinterpretation there too; its argument is first widened to [int] /
+   [long], which an 8-bit element read is not ([as_int] needs 32 bits). *)
 let dev3 cuda opencl metal d = if d = "Metal" then metal else dev cuda opencl d
 
 (* [add], [sub], [mul], [neg] and [shift_left] wrap as in OCaml: they compute
@@ -118,7 +119,7 @@ let%sarek_intrinsic (shift_right_logical : int64 -> int -> int64) =
 
 let%sarek_intrinsic (abs : int64 -> int64) =
   {
-    device = dev3 "llabs(%s)" "as_long(abs(%s))" "labs(%s)";
+    device = dev3 "llabs(%s)" "as_long(abs((long)(%s)))" "labs(%s)";
     ocaml = Stdlib.Int64.abs;
   }
 

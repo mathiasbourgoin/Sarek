@@ -141,6 +141,37 @@ let test_chain_cost () =
   let rec sum n e = if n = 0 then e else sum (n - 1) (EBinop (Add, e, i32 1)) in
   check_linear "left-deep sum" (fun n -> steps_of_expr (sum n (ev x))) 1000
 
+(* Arithmetic under two non-arithmetic levels at every step: the emitter
+   prints the levels in between with its own arms, and each node must still
+   be typed once (the typing travels with C_arith.visit). *)
+let test_nested_wrappers_cost () =
+  let nest wrap n =
+    let rec go n e =
+      if n = 0 then e else go (n - 1) (EBinop (Add, ev x, wrap e))
+    in
+    go n (ev x)
+  in
+  let cast_of_cast e = ECast (TInt32, ECast (TFloat32, e)) in
+  let field_of_field e =
+    ERecordField
+      ( ERecordField
+          ( ERecord ("outer", [("inner", ERecord ("inner", [("v", e)]))]),
+            "inner" ),
+        "v" )
+  in
+  let call_in_field e =
+    ERecordField
+      (ERecord ("box", [("v", EApp (EVar (var "id" TInt32), [e]))]), "v")
+  in
+  List.iter
+    (fun (label, wrap) ->
+      check_linear label (fun n -> steps_of_expr (nest wrap n)) 400)
+    [
+      ("cast of a cast", cast_of_cast);
+      ("field of a field", field_of_field);
+      ("call in a field", call_in_field);
+    ]
+
 let kernel_of body =
   {
     default_kernel with
@@ -199,6 +230,17 @@ let test_let_chain_cost () =
         800)
     [false; true]
 
+(* The propagation itself: worklist pops and dependency visits grow linearly
+   with the number of lets (a chain whose end is a stored value excludes every
+   let, one through the other). *)
+let test_index_propagation () =
+  let steps n =
+    let env = C_arith.env_of_kernel (fst (let_chain ~as_index:false n)) in
+    C_arith.index_steps env
+  in
+  Alcotest.(check bool) "some propagation" true (steps 100 >= 100) ;
+  check_linear "index propagation" steps 1000
+
 let () =
   Alcotest.run
     "wrapping_signed_arith_scale"
@@ -212,7 +254,9 @@ let () =
       ( "cost",
         [
           Alcotest.test_case "chains" `Quick test_chain_cost;
+          Alcotest.test_case "nested wrappers" `Quick test_nested_wrappers_cost;
           Alcotest.test_case "statements" `Quick test_statements_cost;
           Alcotest.test_case "let chains" `Quick test_let_chain_cost;
+          Alcotest.test_case "index propagation" `Quick test_index_propagation;
         ] );
     ]

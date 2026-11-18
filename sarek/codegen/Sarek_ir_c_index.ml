@@ -147,12 +147,14 @@ let rec use_stmt env lets u = function
 
 (* ---- the fixpoint ---- *)
 
-(* Drop every candidate with an [Other] use; dropping [l] turns the uses in
+(* [index_steps] counts worklist pops and dependency visits. Drop every
+   candidate with an [Other] use; dropping [l] turns the uses in
    its definition into [Other] uses, so its dependencies are dropped in turn.
    Each candidate enters the worklist at most once. *)
-let propagate lets u =
+let propagate (env : T.env) lets u =
   let work = Queue.create () in
   let drop name =
+    incr env.T.index_steps ;
     if Hashtbl.mem lets name then begin
       Hashtbl.remove lets name ;
       Queue.add name work
@@ -160,6 +162,7 @@ let propagate lets u =
   in
   Hashtbl.iter (fun name () -> drop name) u.other ;
   while not (Queue.is_empty work) do
+    incr env.T.index_steps ;
     List.iter drop (Hashtbl.find_all u.deps (Queue.pop work))
   done
 
@@ -170,5 +173,5 @@ let compute (env : T.env) ~scopes ~extra ~params =
   let u = {other = Hashtbl.create 32; deps = Hashtbl.create 32} in
   List.iter (use_root env u Other) extra ;
   List.iter (fun (body, scope_env) -> use_stmt scope_env lets u body) scopes ;
-  propagate lets u ;
+  propagate env lets u ;
   Hashtbl.iter (fun name () -> Hashtbl.replace env.T.index_lets name ()) lets

@@ -206,7 +206,12 @@ let metal_thread_intrinsic = function
 
 (** {1 Expression Generation} *)
 
-let rec gen_expr st buf = function
+(* Every node goes through [C_arith.visit], which hands it the typing its
+   parent computed: the wrapping arithmetic types each node once. *)
+let rec gen_expr st buf e =
+  C_arith.visit st.arith e (fun () -> gen_expr_node st buf e)
+
+and gen_expr_node st buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Dispatch.c_int32_literal n)
   | EConst (CInt64 n) ->
       Buffer.add_string buf (Dispatch.c_int64_literal ~suffix:"L" n)

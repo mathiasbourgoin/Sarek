@@ -431,6 +431,22 @@
 ; glslang/naga/clang validation with negative controls, and the refusals
 ; (another module's same-named intrinsic, wrong arity). CPU-only, no device.
 
+; The Int32/Int64 stdlib arithmetic templates: parity between the two
+; registrations, unsigned operands, the conversion back, abs widths (clang).
+
+(test
+ (name test_int_stdlib_templates)
+ (modules test_int_stdlib_templates)
+ (libraries
+  sarek.codegen
+  sarek.stdlib
+  sarek_stdlib_meta
+  sarek_registry
+  sarek_ir
+  opencl_gate
+  alcotest
+  unix))
+
 (test
  (name test_int32_bitcasts_codegen)
  (modules test_int32_bitcasts_codegen)

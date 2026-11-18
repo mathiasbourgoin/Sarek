@@ -21,6 +21,8 @@ let binop_width = T.binop_width
 
 let typing_steps = T.steps
 
+let index_steps = T.index_steps
+
 let is_index_let (env : env) (v : var) = Hashtbl.mem env.T.index_lets v.var_name
 
 (* ---- environments ---- *)
@@ -67,6 +69,14 @@ let env_of_kernel ?records (k : kernel) =
   env
 
 let for_helper = helper_scope
+
+(* Emit [e] with its typing on the pending stack, where its children's arms
+   find it (Sarek_ir_c_types.annot_of): each emitted node is typed once,
+   whatever non-arithmetic nodes (casts, fields, calls) lie between two
+   arithmetic ones. *)
+let visit env e f =
+  let a = T.annot_of env e in
+  T.with_pending env e a f
 
 (* ---- printing ---- *)
 
