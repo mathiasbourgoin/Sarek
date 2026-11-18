@@ -197,6 +197,21 @@ let render_expr ~gen_expr e =
   gen_expr b e ;
   Buffer.contents b
 
+(** Emit a prefix operator applied to [e] as [(op e)]. A space separates the
+    operator from an operand whose text starts with the same character, so [-]
+    applied to a negative literal is [(- -5)], not [(--5)], which C, OpenCL C,
+    MSL, GLSL and WGSL read as a decrement. *)
+let emit_unop ~gen_expr buf op_text e =
+  let operand = render_expr ~gen_expr e in
+  Buffer.add_char buf '(' ;
+  Buffer.add_string buf op_text ;
+  if
+    op_text <> "" && operand <> ""
+    && operand.[0] = op_text.[String.length op_text - 1]
+  then Buffer.add_char buf ' ' ;
+  Buffer.add_string buf operand ;
+  Buffer.add_char buf ')'
+
 (** Emit [arg0, arg1, ...] (comma-space separated) using the backend generator.
 *)
 let emit_args ~gen_expr buf args =
