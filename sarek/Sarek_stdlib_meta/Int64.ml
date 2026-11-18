@@ -23,14 +23,36 @@ let%sarek_intrinsic int64 = {device = (fun _ -> "long")}
 
 let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
 
+(* [add], [sub], [mul], [neg] and [shift_left] wrap as in OCaml, with the same
+   templates as Sarek_stdlib (Sarek_ir_c_arith); test_int32_bitcasts_codegen
+   checks the two registrations agree. *)
+
 let%sarek_intrinsic (add_int64 : int64 -> int64 -> int64) =
-  {device = dev "(%s + %s)" "(%s + %s)"; ocaml = Stdlib.Int64.add}
+  {
+    device =
+      dev
+        "((long long)((unsigned long long)(%s) + (unsigned long long)(%s)))"
+        "((long)((ulong)(%s) + (ulong)(%s)))";
+    ocaml = Stdlib.Int64.add;
+  }
 
 let%sarek_intrinsic (sub_int64 : int64 -> int64 -> int64) =
-  {device = dev "(%s - %s)" "(%s - %s)"; ocaml = Stdlib.Int64.sub}
+  {
+    device =
+      dev
+        "((long long)((unsigned long long)(%s) - (unsigned long long)(%s)))"
+        "((long)((ulong)(%s) - (ulong)(%s)))";
+    ocaml = Stdlib.Int64.sub;
+  }
 
 let%sarek_intrinsic (mul_int64 : int64 -> int64 -> int64) =
-  {device = dev "(%s * %s)" "(%s * %s)"; ocaml = Stdlib.Int64.mul}
+  {
+    device =
+      dev
+        "((long long)((unsigned long long)(%s) * (unsigned long long)(%s)))"
+        "((long)((ulong)(%s) * (ulong)(%s)))";
+    ocaml = Stdlib.Int64.mul;
+  }
 
 let%sarek_intrinsic (div_int64 : int64 -> int64 -> int64) =
   {device = dev "(%s / %s)" "(%s / %s)"; ocaml = Stdlib.Int64.div}
@@ -55,7 +77,13 @@ let%sarek_intrinsic (lognot : int64 -> int64) =
   {device = dev "(~%s)" "(~%s)"; ocaml = Stdlib.Int64.lognot}
 
 let%sarek_intrinsic (shift_left : int64 -> int -> int64) =
-  {device = dev "(%s << %s)" "(%s << %s)"; ocaml = Stdlib.Int64.shift_left}
+  {
+    device =
+      dev
+        "((long long)((unsigned long long)(%s) << (%s)))"
+        "((long)((ulong)(%s) << (%s)))";
+    ocaml = Stdlib.Int64.shift_left;
+  }
 
 let%sarek_intrinsic (shift_right : int64 -> int -> int64) =
   {device = dev "(%s >> %s)" "(%s >> %s)"; ocaml = Stdlib.Int64.shift_right}
@@ -74,7 +102,11 @@ let%sarek_intrinsic (abs : int64 -> int64) =
   {device = dev "llabs(%s)" "labs(%s)"; ocaml = Stdlib.Int64.abs}
 
 let%sarek_intrinsic (neg : int64 -> int64) =
-  {device = dev "(-%s)" "(-%s)"; ocaml = Stdlib.Int64.neg}
+  {
+    device =
+      dev "((long long)(-(unsigned long long)(%s)))" "((long)(-(ulong)(%s)))";
+    ocaml = Stdlib.Int64.neg;
+  }
 
 let%sarek_intrinsic (min : int64 -> int64 -> int64) =
   {device = dev "min(%s, %s)" "min(%s, %s)"; ocaml = Stdlib.Int64.min}

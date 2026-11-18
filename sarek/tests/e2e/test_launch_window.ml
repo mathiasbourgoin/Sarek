@@ -562,16 +562,13 @@ let fused_source_checks () =
   [
     ("fused CUDA C: 13 barriers", n ~sub:"__syncthreads();" cuda = 13);
     ( "fused CUDA C: group id rewritten",
-      (* once in a subscript, which keeps C's [-], once in a value, whose
-         int32 [-] wraps through the unsigned type (Sarek_ir_c_arith) *)
-      n ~sub:"[(((int)blockIdx.x) - hf1_off)]" cuda = 1
-      && n ~sub:"(unsigned int)((int)blockIdx.x) - (unsigned int)hf1_off" cuda
-         = 1 );
+      (* a subscript and a let used only as an index: both keep C's [-]
+         (index arithmetic, Sarek_ir_c_arith) *)
+      n ~sub:"(((int)blockIdx.x) - hf1_off)" cuda = 2 );
     ( "fused Metal: 13 barriers",
       n ~sub:"threadgroup_barrier(mem_flags::mem_threadgroup);" metal = 13 );
     ( "fused Metal: group id rewritten",
-      n ~sub:"[(((int)__metal_bid.x) - hf1_off)]" metal = 1
-      && n ~sub:"(uint)((int)__metal_bid.x) - (uint)hf1_off" metal = 1 );
+      n ~sub:"(((int)__metal_bid.x) - hf1_off)" metal = 2 );
     ( "window slot count = Metal [[buffer(]]",
       n ~sub:"[[buffer(" metal = window_slots () && window_slots () = 26 );
     ( "independent: 2 groups at 31 slots, 1 unbounded",

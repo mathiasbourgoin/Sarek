@@ -15,7 +15,7 @@ open Sarek_ir_types
    them uses a variant pattern, so the empty state is what the old
    module-level ref held. *)
 let st : Sarek_ir_opencl.state =
-  {variants = []; arith = Sarek_codegen.Sarek_ir_c_arith.empty}
+  {variants = []; arith = Sarek_codegen.Sarek_ir_c_arith.empty ()}
 
 (** Helper: Create a variable record *)
 let make_var name ty =

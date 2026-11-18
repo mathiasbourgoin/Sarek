@@ -85,6 +85,49 @@ let check_templates () =
         ["GLSL"; "WGSL"])
     registrations
 
+(* The wrapping arithmetic templates (Sarek_ir_c_arith): the stdlib and its
+   FFI-free twin must register the same spelling, and it must go through the
+   unsigned type, on every C-family framework. *)
+let wrapping_intrinsics =
+  [
+    ("Int32", ["add_int32"; "sub_int32"; "mul_int32"; "neg"; "shift_left"]);
+    ("Int64", ["add_int64"; "sub_int64"; "mul_int64"; "neg"; "shift_left"]);
+  ]
+
+let check_wrapping_parity () =
+  List.iter
+    (fun (m, names) ->
+      List.iter
+        (fun name ->
+          List.iter
+            (fun framework ->
+              let template lib =
+                Sarek_registry.fun_device_template
+                  ~module_path:[lib; m]
+                  ~framework
+                  name
+              in
+              let std = template "Sarek_stdlib" in
+              let label = Printf.sprintf "%s.%s on %s" m name framework in
+              Alcotest.(check (option string))
+                (label ^ ": Sarek_stdlib_meta = Sarek_stdlib")
+                std
+                (template "Sarek_stdlib_meta") ;
+              let unsigned =
+                match (m, framework) with
+                | "Int32", "CUDA" -> "(unsigned int)"
+                | "Int32", _ -> "(uint)"
+                | _, "CUDA" -> "(unsigned long long)"
+                | _ -> "(ulong)"
+              in
+              Alcotest.(check bool)
+                (label ^ " goes through " ^ unsigned)
+                true
+                (contains (Option.value std ~default:"") unsigned))
+            ["CUDA"; "OpenCL"; "Metal"])
+        names)
+    wrapping_intrinsics
+
 (******************************************************************************
  * 2. Spellings, from a PPX kernel and from hand-built IR
  ******************************************************************************)
@@ -383,7 +426,11 @@ let () =
   Alcotest.run
     "int32-bitcasts-codegen"
     [
-      ("registry", [Alcotest.test_case "templates" `Quick check_templates]);
+      ( "registry",
+        [
+          Alcotest.test_case "templates" `Quick check_templates;
+          Alcotest.test_case "wrapping parity" `Quick check_wrapping_parity;
+        ] );
       ( "spelling",
         [
           Alcotest.test_case "PPX path" `Quick check_ppx_path;

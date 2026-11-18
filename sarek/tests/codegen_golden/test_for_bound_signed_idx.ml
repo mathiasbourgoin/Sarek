@@ -109,7 +109,8 @@ let check_lacks label src needle =
 
 (* C-8 on one backend: the mutating bound goes through a temporary, the stable
    one does not. A [for] bound keeps C's [-] in the C dialects (index
-   arithmetic, Sarek_ir_c_arith); the loop body's int32 arithmetic wraps. [decl] is the temporary's declaration, [cond] the loop test. *)
+   arithmetic, Sarek_ir_c_arith); the loop body's int32 arithmetic wraps.
+   [decl] is the temporary's declaration, [cond] the loop test. *)
 let check_bound_hoist label src ~decl ~cond ~stable ~raw =
   check_has label src decl ;
   check_has label src cond ;

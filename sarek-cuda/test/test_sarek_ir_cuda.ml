@@ -24,7 +24,7 @@ let st : Sarek_ir_cuda.state =
         Sarek_ir_types.default_kernel;
     narrowing = Barrier_unless_exact Sarek_codegen.Sarek_ir_f16_narrowing.empty;
     sites = {total = 0; proven = 0};
-    arith = Sarek_codegen.Sarek_ir_c_arith.empty;
+    arith = Sarek_codegen.Sarek_ir_c_arith.empty ();
   }
 
 (** Helper to generate code from an expression *)

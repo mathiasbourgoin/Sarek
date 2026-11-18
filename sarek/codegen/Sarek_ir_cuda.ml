@@ -266,40 +266,26 @@ let rec gen_expr st buf = function
         buf
         e1
         e2
-  | EBinop (op, e1, e2) -> (
+  | EBinop (op, e1, e2) ->
       (* Signed int +, -, * and lsl wrap as in OCaml (Sarek_ir_c_arith). *)
-      match C_arith.binop_width st.arith op e1 e2 with
-      | Some w ->
-          C_arith.emit_binop
-            st.arith
-            C_arith.cuda
-            w
-            ~gen_expr:(gen_expr st)
-            buf
-            op
-            e1
-            e2
-      | None ->
-          Buffer.add_char buf '(' ;
-          gen_expr st buf e1 ;
-          Buffer.add_string buf (gen_binop op) ;
-          gen_expr st buf e2 ;
-          Buffer.add_char buf ')')
-  | EUnop (op, e) -> (
-      match Dispatch.int_negation_constant op e with
-      | Some c -> gen_expr st buf (EConst c)
-      | None -> (
-          match (op, C_arith.int_width st.arith e) with
-          | Neg, Some w ->
-              C_arith.emit_neg
-                st.arith
-                C_arith.cuda
-                w
-                ~gen_expr:(gen_expr st)
-                buf
-                e
-          | _ -> Dispatch.emit_unop ~gen_expr:(gen_expr st) buf (gen_unop op) e)
-      )
+      C_arith.emit_binop_arm
+        st.arith
+        C_arith.cuda
+        ~gen_expr:(gen_expr st)
+        ~operator_text:(gen_binop op)
+        buf
+        op
+        e1
+        e2
+  | EUnop (op, e) ->
+      C_arith.emit_unop_arm
+        st.arith
+        C_arith.cuda
+        ~gen_expr:(gen_expr st)
+        ~operator_text:(gen_unop op)
+        buf
+        op
+        e
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf arr ;
       Buffer.add_char buf '[' ;
@@ -725,7 +711,7 @@ let rec gen_stmt st buf indent = function
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf v.var_name ;
       Buffer.add_string buf " = " ;
-      gen_expr st buf e ;
+      C_arith.emit_let_init st.arith ~gen_expr:(gen_expr st) buf v e ;
       Buffer.add_string buf ";\n" ;
       gen_stmt st buf indent body
   | SLetMut (v, e, body) ->
