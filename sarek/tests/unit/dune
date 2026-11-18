@@ -472,6 +472,26 @@
  (flags
   (:standard -w -33)))
 
+; Negating int32/int64 min_int wraps on every backend; CPU-only, no GPU.
+
+(test
+ (name test_min_int_negation)
+ (modules test_min_int_negation)
+ (libraries
+  sarek
+  sarek.codegen
+  sarek.stdlib
+  sarek.execute
+  sarek.interpreter
+  sarek.native
+  spoc_core
+  sarek_ir
+  alcotest)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33)))
+
 (test
  (name test_lsr_unroll_codegen)
  (modules test_lsr_unroll_codegen)

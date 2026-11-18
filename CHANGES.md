@@ -11,6 +11,14 @@
   `-9223372036854775808L`, which those languages read as unary minus on an unsigned literal; PTX
   spells it `0x8000000000000000`. Tests: `sarek/tests/unit/test_int64_literals.ml` and the int64
   cases of `test_quote.ml` and `test_quote_ir.ml`.
+- Negating an `int32` or `int64` min_int literal printed `(-(-9223372036854775807LL - 1LL))` (and
+  `(- -2147483648)`, `(-(-2147483647i - 1i))`) in the source backends: signed overflow in a constant
+  expression, undefined in CUDA C, OpenCL C and MSL, while the Interpreter and Native wrap like
+  OCaml (`Int64.neg Int64.min_int = Int64.min_int`). CUDA, OpenCL, Metal, GLSL and WGSL now print a
+  chain of unary minus on an integer literal as the constant it denotes, with wrapping, so
+  `-(min_int)` is the min_int literal and `-(5)` is `-5` (float literals are not folded). GLSL
+  spells `Int32.min_int` as `(-2147483647 - 1)` through the shared helper, like the other C-family
+  printers, instead of `-2147483648`. Tests: `sarek/tests/unit/test_min_int_negation.ml`.
 
 ### Changed
 

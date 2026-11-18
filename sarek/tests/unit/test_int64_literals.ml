@@ -221,8 +221,9 @@ let test_source (name, gen, spellings) () =
 
 (* Unary minus on a negative literal: the operator and the literal's own sign
    must not merge into [--], a decrement that C, OpenCL C, MSL, GLSL and WGSL
-   reject. [ty] is the element type of [out]; WGSL has no int64 literal, so it
-   is checked with an int32 one. *)
+   reject. A negated integer literal is folded to its value
+   (test_min_int_negation.ml), so the operand here is a float literal, which is
+   not folded. [ty] is the element type of [out]. *)
 let negated_kernel ty value : kernel =
   {
     (literal_kernel []) with
@@ -237,19 +238,13 @@ let negated_kernel ty value : kernel =
   }
 
 let negation_cases : (string * (kernel -> string) * kernel * string) list =
-  let neg64 = negated_kernel TInt64 (CInt64 0xbfffffffffffffffL) in
+  let negf = negated_kernel TFloat32 (CFloat32 (-2.5)) in
   [
-    ("CUDA", Sarek_ir_cuda.generate, neg64, "= (- -4611686018427387905LL);");
-    ("OpenCL", Sarek_ir_opencl.generate, neg64, "= (- -4611686018427387905L);");
-    ("Metal", Sarek_ir_metal.generate, neg64, "= (- -4611686018427387905L);");
-    ( "GLSL",
-      (fun k -> Sarek_ir_glsl.generate k),
-      neg64,
-      "= (- -4611686018427387905L);" );
-    ( "WGSL",
-      (fun k -> Sarek_ir_wgsl.generate k),
-      negated_kernel TInt32 (CInt32 (-5l)),
-      "(- -5i)" );
+    ("CUDA", Sarek_ir_cuda.generate, negf, "= (- -2.5f);");
+    ("OpenCL", Sarek_ir_opencl.generate, negf, "= (- -2.5f);");
+    ("Metal", Sarek_ir_metal.generate, negf, "= (- -2.5f);");
+    ("GLSL", (fun k -> Sarek_ir_glsl.generate k), negf, "= (- -2.5);");
+    ("WGSL", (fun k -> Sarek_ir_wgsl.generate k), negf, "(- -2.5");
   ]
 
 let test_negation (name, gen, k, spelling) () =
