@@ -48,7 +48,8 @@
       stays the device's result; not rewritten, so constant divisors keep their
       strength reduction;
     - index arithmetic (array subscripts, cooperative-matrix offsets and
-      strides, [for] bounds): see {i Index arithmetic} below;
+      strides, [for] bounds, lets used only there): see {i Index arithmetic}
+      below;
     - shift counts outside [0 .. width-1]: unspecified in OCaml, undefined in C;
       not masked. [asr] of a negative value is implementation-defined in C and
       arithmetic on every compiler these backends use.
@@ -65,9 +66,19 @@
     therefore the one [Sarek_ir_for_bound] already states for a [for] bound of
     [max_int]: a kernel whose index arithmetic overflows int32 is outside the
     contract on the C-family backends (an overflowing subscript is anyway an
-    out-of-range index unless a later operation wraps it back). Only the root
-    chain is exempt: an operand that is anything else (a load, a call, [land],
-    [/], a variable bound by [let]) is printed by the general rule, so
+    out-of-range index unless a later operation wraps it back).
+
+    An immutable [let] whose every use is index arithmetic is index arithmetic
+    too: in [let off = row * k + i * 4 in a.(off)] the definition of [off] keeps
+    C's operators, as if it were written in the subscript (wrapping it cost an
+    extra sign extension and 64-bit address add per iteration on gfx1100 instead
+    of an immediate-offset load). The set is the greatest one closed under this
+    rule (a let used only in another index let's definition qualifies); a name
+    bound more than once anywhere in the kernel and its helpers, a mutable [let]
+    and a let with any other use are excluded.
+
+    Only the root chain is exempt: an operand that is anything else (a load, a
+    call, [land], [/], a let with other uses) is printed by the general rule, so
     [a.((h * 31 + c) land mask)] still hashes with wrapping.
 
     {b Typing.} The IR does not annotate an operator with its type, so
@@ -88,8 +99,14 @@ type env
 
 val env_of_kernel : kernel -> env
 
-(** No knowledge: only literals, variables and casts are typed. *)
-val empty : env
+(** No knowledge: only literals, variables and casts are typed. A fresh value
+    each time: an [env] memoises the types it computes. *)
+val empty : unit -> env
+
+(** [is_index_let env v]: [v] is bound once, by an immutable [let] of an integer
+    value, and every use of it is index arithmetic (see {i Index arithmetic}).
+*)
+val is_index_let : env -> var -> bool
 
 (** [int_width env e] is the signed integer width of [e]'s C type, or [None]
     when [e] is not an integer or its type cannot be determined. *)
@@ -144,3 +161,34 @@ val emit_neg :
     {i Index arithmetic} above. *)
 val emit_index :
   env -> gen_expr:(Buffer.t -> expr -> unit) -> Buffer.t -> expr -> unit
+
+(** The [EBinop] arm of a C emitter: wrapping when {!binop_width} says so, else
+    [(a <operator_text> b)]. *)
+val emit_binop_arm :
+  env ->
+  spelling ->
+  gen_expr:(Buffer.t -> expr -> unit) ->
+  operator_text:string ->
+  Buffer.t ->
+  binop ->
+  expr ->
+  expr ->
+  unit
+
+(** The [EUnop] arm of a C emitter: a negated integer literal folded to its
+    constant, a wrapping [Neg] on a signed integer, else
+    [Sarek_ir_intrinsic_dispatch.emit_unop]. *)
+val emit_unop_arm :
+  env ->
+  spelling ->
+  gen_expr:(Buffer.t -> expr -> unit) ->
+  operator_text:string ->
+  Buffer.t ->
+  unop ->
+  expr ->
+  unit
+
+(** The initialiser of [let v = e]: {!emit_index} when [v] is an index let,
+    [gen_expr] otherwise. *)
+val emit_let_init :
+  env -> gen_expr:(Buffer.t -> expr -> unit) -> Buffer.t -> var -> expr -> unit

@@ -231,9 +231,12 @@
 ; Wrapping signed integer arithmetic in the C-family emitters
 ; (Sarek_ir_c_arith): spelling, typing, clang compile, UBSan execution.
 
-(test
- (name test_wrapping_signed_arith)
- (modules test_wrapping_signed_arith)
+(tests
+ (names test_wrapping_signed_arith test_wrapping_signed_arith_exec)
+ (modules
+  wrapping_support
+  test_wrapping_signed_arith
+  test_wrapping_signed_arith_exec)
  (libraries sarek_ir sarek_codegen alcotest unix))
 
 (test
