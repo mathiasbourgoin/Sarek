@@ -20,6 +20,7 @@ type env = {
   index_lets : (string, unit) Hashtbl.t;
   mutable pending : (expr * annot) list;
   steps : int ref;
+  index_steps : int ref;
 }
 
 let create ~records ~variants ~helpers =
@@ -31,11 +32,14 @@ let create ~records ~variants ~helpers =
     index_lets = Hashtbl.create 8;
     pending = [];
     steps = ref 0;
+    index_steps = ref 0;
   }
 
 let empty () = create ~records:[] ~variants:[] ~helpers:[]
 
 let steps env = !(env.steps)
+
+let index_steps env = !(env.index_steps)
 
 (* ---- array scope ---- *)
 

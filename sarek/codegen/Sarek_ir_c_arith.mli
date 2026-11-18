@@ -97,10 +97,10 @@
     types (resolved in the function being emitted: the kernel and each helper
     have their own arrays), record fields, variant payloads read through
     [v.data.C_v], helper return types and intrinsic signatures. Each emitted
-    node is typed once: an operator's typing is handed down to the children it
-    prints (Sarek_ir_c_types). When an operand's type cannot be determined the
-    operator is printed as before (plain C), which is the only safe choice when
-    it might be a float. *)
+    node is typed once: every emitted node goes through {!visit}, which hands
+    its typing down to the children the emitter prints (Sarek_ir_c_types). When
+    an operand's type cannot be determined the operator is printed as before
+    (plain C), which is the only safe choice when it might be a float. *)
 
 open Sarek_ir_types
 
@@ -120,6 +120,11 @@ val env_of_kernel :
 (** The environment of helper [hf]: its own arrays, the kernel's layouts. *)
 val for_helper : env -> helper_func -> env
 
+(** [visit env e emit] runs [emit] (which prints [e]) with [e]'s typing
+    available to the arms that print [e]'s children. Every C emitter routes each
+    expression node through it, so each node is typed once. *)
+val visit : env -> expr -> (unit -> unit) -> unit
+
 (** No knowledge: only literals, variables and casts are typed. *)
 val empty : unit -> env
 
@@ -127,6 +132,10 @@ val empty : unit -> env
     it): each emitted node is typed once, so this grows linearly with the
     kernel. For tests. *)
 val typing_steps : env -> int
+
+(** Worklist pops and dependency visits of the index-let propagation, linear in
+    the number of lets. For tests. *)
+val index_steps : env -> int
 
 (** [is_index_let env v]: [v] is bound once, by an immutable [let] of an integer
     value, and every use of it is index arithmetic (see {i Index arithmetic}).
