@@ -13,6 +13,11 @@ on:
 permissions:
   contents: read
 
+# dune is pinned to the version ci.yml pins (see the comment there): bump
+# DUNE_VERSION in ci.yml, docs.yml and deploy-pr-preview.yml together.
+env:
+  DUNE_VERSION: "3.25.0"
+
 jobs:
   deploy-preview:
     runs-on: ubuntu-22.04  # Use 22.04 where darcs is available
@@ -36,6 +41,9 @@ jobs:
       
       - name: Install dependencies
         run: |
+          opam pin add -y dune "$DUNE_VERSION"
+          opam pin add -y -n dune-configurator "$DUNE_VERSION"
+          opam pin add -y -n dune-build-info "$DUNE_VERSION"
           opam install -y yojson
           opam install . --deps-only --with-doc -y
           opam install -y odoc

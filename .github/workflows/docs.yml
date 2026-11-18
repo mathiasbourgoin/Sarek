@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# dune is pinned to the version ci.yml pins (see the comment there): bump
+# DUNE_VERSION in ci.yml, docs.yml and deploy-pr-preview.yml together.
+env:
+  DUNE_VERSION: "3.25.0"
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -26,6 +31,9 @@ jobs:
 
       - name: Install dependencies
         run: |
+          opam pin add -y dune "$DUNE_VERSION"
+          opam pin add -y -n dune-configurator "$DUNE_VERSION"
+          opam pin add -y -n dune-build-info "$DUNE_VERSION"
           opam install . --deps-only --with-doc
           opam install odoc ppxlib dune js_of_ocaml js_of_ocaml-ppx js_of_ocaml-compiler
 
