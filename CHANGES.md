@@ -30,7 +30,10 @@
   (RX 7900 XTX, HIP, ABBA x4 against the parent, machine shared, provisional): within noise on the
   benchmark kernels and the matrix-rewrite/WMMA GEMMs; the two largest median deltas
   (`transpose_tiled` +7.9 %, naive `matrix_mul` +5.3 %, ranges overlapping) compile to the same
-  gfx1100 instructions before and after.
+  gfx1100 instructions before and after. Let-bound offsets in a loop
+  (`sarek-hip/test/bench_let_offsets.ml`, memory-bound): within ±0.5 % of the parent with and
+  without the index-let rule; gfx1100 ISA shows the rule removes a sign extension and a 64-bit
+  address add per iteration.
 
 - An `int64` literal in a kernel whose two top bits differ (for example `0x4000000000000000L`,
   `0x7fffffffffffffffL` or `0x8000000000000000L`) lost bit 63 on every backend: the PPX quoted
