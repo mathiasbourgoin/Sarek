@@ -553,8 +553,7 @@ let rec quote_sarek_expr ~loc (e : Sarek_ast.expr) : expression =
         [%expr Sarek_ast.EInt32 [%e quote_int32 ~loc i]] |> fun _ ->
         [%expr Sarek_ast.EInt32 (Int32.of_int [%e quote_int ~loc i_int])]
     | Sarek_ast.EInt64 i ->
-        let i_int = Int64.to_int i in
-        [%expr Sarek_ast.EInt64 (Int64.of_int [%e quote_int ~loc i_int])]
+        [%expr Sarek_ast.EInt64 [%e Ast_builder.Default.eint64 ~loc i]]
     | Sarek_ast.EFloat f -> [%expr Sarek_ast.EFloat [%e quote_float ~loc f]]
     | Sarek_ast.EDouble f -> [%expr Sarek_ast.EDouble [%e quote_float ~loc f]]
     | Sarek_ast.EVar s -> [%expr Sarek_ast.EVar [%e quote_string ~loc s]]

@@ -106,8 +106,9 @@ let gen_literal ~loc (te : texpr) : expression =
       (* Generate int32 literal using Int32.of_int *)
       [%expr Int32.of_int [%e Ast_builder.Default.eint ~loc (Int32.to_int n)]]
   | TEInt64 n ->
-      (* Generate int64 literal using Int64.of_int *)
-      [%expr Int64.of_int [%e Ast_builder.Default.eint ~loc (Int64.to_int n)]]
+      (* An int64 literal, not [Int64.of_int]: an OCaml [int] has 63 bits and
+         would drop bit 63 of the constant. *)
+      Ast_builder.Default.eint64 ~loc n
   | TEFloat f | TEDouble f ->
       Ast_builder.Default.efloat ~loc (Sarek_float_literal.to_source f)
   | _ -> failwith "gen_literal: not a literal expression"

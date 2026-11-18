@@ -450,6 +450,28 @@
  (flags
   (:standard -w -33)))
 
+; int64 literals keep bit 63 (issue #550): kernel IR, the Interpreter and
+; Native results, and the constant spelled by each source/assembly backend.
+; CPU-only, no GPU.
+
+(test
+ (name test_int64_literals)
+ (modules test_int64_literals)
+ (libraries
+  sarek
+  sarek.codegen
+  sarek.stdlib
+  sarek.execute
+  sarek.interpreter
+  sarek.native
+  spoc_core
+  sarek_ir
+  alcotest)
+ (preprocess
+  (pps sarek_ppx))
+ (flags
+  (:standard -w -33)))
+
 (test
  (name test_lsr_unroll_codegen)
  (modules test_lsr_unroll_codegen)

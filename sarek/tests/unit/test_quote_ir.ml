@@ -187,6 +187,43 @@ let test_quote_const_int64 () =
   let e = Sarek_quote_ir.quote_const ~loc:dummy_loc (Ir.CInt64 100L) in
   Alcotest.(check bool) "contains CInt64" true (expr_contains_ident e "CInt64")
 
+(* The integer constants written in a quoted expression. *)
+let integer_constants e =
+  let collect =
+    object
+      inherit [(string * char option) list] Ast_traverse.fold as super
+
+      method! constant c acc =
+        match c with
+        | Pconst_integer (s, suffix) -> (s, suffix) :: super#constant c acc
+        | _ -> super#constant c acc
+    end
+  in
+  collect#expression e []
+
+(* Issue #550: CInt64 must be quoted as an int64 literal, not through a 63-bit
+   [int] that drops bit 63. *)
+let test_quote_const_int64_full_width () =
+  List.iter
+    (fun v ->
+      let e = Sarek_quote_ir.quote_const ~loc:dummy_loc (Ir.CInt64 v) in
+      let int64_literals =
+        List.filter_map
+          (function s, Some 'L' -> Some (Int64.of_string s) | _ -> None)
+          (integer_constants e)
+      in
+      Alcotest.(check (list int64))
+        (Printf.sprintf "0x%016Lx quoted as an int64 literal" v)
+        [v]
+        int64_literals)
+    [
+      0x4000000000000000L;
+      0x7fffffffffffffffL;
+      0x8000000000000000L;
+      0xbfffffffffffffffL;
+      -1L;
+    ]
+
 let test_quote_const_float32 () =
   let e = Sarek_quote_ir.quote_const ~loc:dummy_loc (Ir.CFloat32 3.14) in
   Alcotest.(check bool)
@@ -727,6 +764,7 @@ let () =
         [
           test_case "CInt32" `Quick test_quote_const_int32;
           test_case "CInt64" `Quick test_quote_const_int64;
+          test_case "CInt64 full width" `Quick test_quote_const_int64_full_width;
           test_case "CFloat32" `Quick test_quote_const_float32;
           test_case "CFloat64" `Quick test_quote_const_float64;
           test_case "CBool" `Quick test_quote_const_bool;

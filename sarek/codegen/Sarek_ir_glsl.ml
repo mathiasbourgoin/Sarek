@@ -451,7 +451,8 @@ let gen_glsl_conversion buf ~gen_expr name args =
 
 let rec gen_expr st buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Int32.to_string n)
-  | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "L")
+  | EConst (CInt64 n) ->
+      Buffer.add_string buf (Dispatch.c_int64_literal ~suffix:"L" n)
   | EConst (CFloat32 f) ->
       let s = Printf.sprintf "%.17g" f in
       let s =

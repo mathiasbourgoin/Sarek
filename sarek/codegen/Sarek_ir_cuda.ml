@@ -235,7 +235,8 @@ let cuda_thread_intrinsic name =
 
 let rec gen_expr st buf = function
   | EConst (CInt32 n) -> Buffer.add_string buf (Dispatch.c_int32_literal n)
-  | EConst (CInt64 n) -> Buffer.add_string buf (Int64.to_string n ^ "LL")
+  | EConst (CInt64 n) ->
+      Buffer.add_string buf (Dispatch.c_int64_literal ~suffix:"LL" n)
   | EConst (CFloat32 f) ->
       let s = Printf.sprintf "%.17g" f in
       (* Ensure decimal point for valid C/CUDA float literal *)
