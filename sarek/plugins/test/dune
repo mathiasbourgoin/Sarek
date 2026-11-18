@@ -5,7 +5,9 @@
 ; is not installed -- no public_name -- cannot resolve.
 ;
 ; The dependency is the root @install alias, not (package sarek): the latter
-; trips a sarek <-> sarek-cuda package-files dependency cycle.
+; trips a sarek <-> sarek-cuda package-files dependency cycle (alias
+; .sarek-files -> .sarek-cuda-files -> .sarek-files: the sarek-device-info
+; executable of package sarek links backend_init, which selects sarek_cuda).
 
 (cram
  (applies_to install_consumer)
