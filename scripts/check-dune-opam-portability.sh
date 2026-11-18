@@ -74,7 +74,7 @@
 #   * Bump `(lang dune 3.15)` to `(lang dune 3.23)`. This re-enables dedup
 #     from 3.23.1 on and would let the declarations stay -- but `(lang dune X.Y)`
 #     is a semantics switch, not a version number: eight minor versions of
-#     changed defaults across 7 packages, a PPX and a jsoo lane. It also raises
+#     changed defaults across 8 packages, a PPX and a jsoo lane. It also raises
 #     the EFFECTIVE floor for consumers from 3.15 to 3.23, because dune refuses
 #     to read a lang version newer than itself, so it is a user-visible
 #     packaging change made to satisfy a gate. And it does not remove the
@@ -113,7 +113,7 @@
 #           multi-term constraint at EVERY dune version.
 #
 # SCOPE OF RULE 2, stated rather than assumed. Exactly the `<name>.opam` files
-# at the repository root for the packages `dune-project` declares -- seven
+# at the repository root for the packages `dune-project` declares -- eight
 # today. Each must exist; a declared package with no root .opam is a refusal,
 # not a smaller set to be quietly content with. (A `.pending-opam/` staging
 # directory of hand-written .opam files, not generated from this dune-project,
@@ -148,6 +148,7 @@
 # copy: sarek-metal.opam
 # copy: sarek-opencl.opam
 # copy: sarek-vulkan.opam
+# copy: sarek-tools.opam
 # invoke: scripts/check-dune-opam-portability.sh
 # baseline-exit: 0
 # baseline-message: check-dune-opam-portability: OK
@@ -244,7 +245,7 @@
 #   expect-message: found 2 of them
 #
 # mutation: one-opam-file-declares-no-dune
-#   desc: strip the `"dune"` line from ONE .opam of seven. An at-least-one guard passes this happily and reports success having examined six -- measured at 1-of-7 against an earlier revision of this gate. Dune injects the dependency into EVERY generated package, so the guard has to be all-of-them or its own refusal text is wider than it is.
+#   desc: strip the `"dune"` line from ONE .opam of eight. An at-least-one guard passes this happily and reports success having examined seven -- measured at 1-of-7 against an earlier revision of this gate. Dune injects the dependency into EVERY generated package, so the guard has to be all-of-them or its own refusal text is wider than it is.
 #   apply: python3 - <<'PYEOF'
 #   apply: import re
 #   apply: p = "sarek-hip.opam"
@@ -254,7 +255,7 @@
 #   apply: open(p, "w", encoding="utf-8").write(s2)
 #   apply: PYEOF
 #   expect-exit: 2
-#   expect-message: 6 of 7 declare one
+#   expect-message: 7 of 8 declare one
 #
 # mutation: escape-spelled-dune-name
 #   desc: declare the dependency as `("\x64une" (>= 3.15))`. Dune decodes the escape and reads it as `dune`; a reader that skipped escapes instead of decoding them read `x64une` and passed. Rule 1's contract is "in ANY form", and a contract that a two-character escape defeats is not that.

@@ -20,7 +20,7 @@
 - Formats memory in MB/GB (`tools/device_info.ml:7-12`).
 - Prints device ID, name, backend, memory, compute capability, max threads/block, compute units, warp size, and feature flags (`tools/device_info.ml:14-39`).
 - Reports no-device guidance for CUDA, OpenCL, Vulkan, Metal, Native, and Interpreter (`tools/device_info.ml:54-63`).
-- Exposes Dune public executable name `sarek-device-info` under package `sarek` (`tools/dune:37-42`).
+- Exposes Dune public executable name `sarek-device-info` under package `sarek-tools` (`tools/dune`), not `sarek`: `backend_init` links the GPU backend packages, which depend on `sarek`, so placing the tool in `sarek` made a `sarek` <-> `sarek-cuda` package cycle. `sarek-tools` lists the backend packages as opam `depopts`.
 
 ## Invariants
 

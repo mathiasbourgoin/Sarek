@@ -139,3 +139,24 @@ Install sarek-cuda, sarek-opencl, or sarek-vulkan for GPU execution.")
   (sarek (= :version))
   (ctypes (>= 0.24.0))
   (ctypes-foreign (>= 0.24.0))))
+
+; Operator tools that aggregate every backend. They live in their own package,
+; not in sarek: each backend package depends on sarek, so a sarek executable
+; that links the backends makes sarek depend on its own dependents (a dune
+; package-files cycle, and an opam build of sarek that can never see them).
+(package
+ (name sarek-tools)
+ (synopsis "Command-line tools for Sarek (sarek-device-info)")
+ (description
+  "sarek-device-info lists the devices of every Sarek backend installed
+alongside it: Native and Interpreter always, and CUDA, HIP, OpenCL, Vulkan or
+Metal when the corresponding sarek-* package is installed.")
+ (depends
+  (ocaml (>= 5.4.0))
+  (sarek (= :version)))
+ (depopts
+  sarek-cuda
+  sarek-hip
+  sarek-opencl
+  sarek-vulkan
+  sarek-metal))

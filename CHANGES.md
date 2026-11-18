@@ -14,6 +14,16 @@
 
 ### Changed
 
+- Packaging: `sarek-device-info` moved from opam package `sarek` to a new package `sarek-tools`
+  (`opam install sarek-tools`); `dune exec -- sarek-device-info` in the repository is unchanged.
+  The tool links every GPU backend package, and each of those depends on `sarek`, so as part of
+  `sarek` it made `sarek` depend on its own dependents: dune reported a package cycle
+  (`.sarek-files -> .sarek-cuda-files -> .sarek-files`) for any action declaring
+  `(deps (package sarek))`; and since opam builds `sarek` before any backend package, the
+  `select` in `tools/dune` could only find Native and Interpreter in an opam-installed tool. `sarek-tools` lists the backend packages
+  as `depopts`, so it is built after them and rebuilt when one is added. The install-tree cram
+  test `sarek/plugins/test/install_consumer.t` now declares `(deps (package spoc) (package sarek))`
+  instead of the root `@install` alias and no longer sets `OCAMLPATH` itself.
 - CUDA/PTX keeps more global loads in flight, the property in which `ptxas` fell four times short
   of NVVM on the CUDA/C of the same kernel for an accumulation loop with a runtime trip count and
   several independent global loads per iteration. Three changes in the PTX generator:

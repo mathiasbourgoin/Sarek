@@ -1,4 +1,5 @@
-; Device info utility with optional backend support
+; Device info utility with optional backend support. Package sarek-tools, not
+; sarek: backend_init links the GPU backend packages, which depend on sarek.
 
 (library
  (name backend_init)
@@ -43,6 +44,6 @@
 (executable
  (name device_info)
  (public_name sarek-device-info)
- (package sarek)
+ (package sarek-tools)
  (libraries sarek backend_init)
  (modules device_info))

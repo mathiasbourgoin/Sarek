@@ -1,15 +1,14 @@
 ; An out-of-tree consumer must be able to link the CPU backends from the
-; install tree: install_consumer.t builds a fresh dune project whose OCAMLPATH
-; is _build/install/default/lib (set by dune for cram tests; third-party deps
-; still come from the switch, where sarek is not installed), so a library that
-; is not installed -- no public_name -- cannot resolve.
-;
-; The dependency is the root @install alias, not (package sarek): the latter
-; trips a sarek <-> sarek-cuda package-files dependency cycle (alias
-; .sarek-files -> .sarek-cuda-files -> .sarek-files: the sarek-device-info
-; executable of package sarek links backend_init, which selects sarek_cuda).
+; install tree: install_consumer.t builds a fresh dune project against the
+; installed copy of package sarek (third-party deps still come from the switch,
+; where sarek is not installed), so a library that is not installed -- no
+; public_name -- cannot resolve. The (package ...) deps both build that install
+; tree and, from dune 3.25 on (ocaml/dune#14373), are what put it on the
+; action's OCAMLPATH: sarek for the libraries the consumer names, spoc for the
+; spoc.* libraries they require.
 
 (cram
  (applies_to install_consumer)
  (deps
-  (alias_rec %{workspace_root}/install)))
+  (package spoc)
+  (package sarek)))

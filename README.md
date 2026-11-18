@@ -140,6 +140,9 @@ GPU Backends:
 ├── sarek-vulkan/  Vulkan/GLSL backend
 └── sarek-metal/   Apple Metal backend
 
+Tools (opam package sarek-tools):
+└── tools/         sarek-device-info: devices of every installed backend
+
 Formal models (Rocq):
 ├── formal/convergence-safety/   Barrier-safety analysis
 ├── formal/type-safety/          Sarek PPX type system
