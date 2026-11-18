@@ -3,7 +3,7 @@
 ## Component Inventory
 
 - Root `dune`: top-level Dune directory selection.
-- Root opam files: `spoc.opam`, `sarek.opam`, `sarek-cuda.opam`, `sarek-opencl.opam`, `sarek-vulkan.opam`, `sarek-metal.opam`.
+- Root opam files, generated from the `(package ...)` stanzas of `dune-project`: `spoc.opam`, `sarek.opam`, `sarek-cuda.opam`, `sarek-hip.opam`, `sarek-opencl.opam`, `sarek-vulkan.opam`, `sarek-metal.opam`, `sarek-tools.opam`.
 - `Makefile`: local build/test/benchmark/release task wrapper.
 - `Dockerfile`: interactive Jupyter/Binder image.
 - `ci/Dockerfile`: CI image, also covered in [scripts-ci.md](scripts-ci.md).
@@ -14,14 +14,15 @@
 - `dune`: includes package directories `spoc`, `sarek`, backend packages, `tools`, `test_verification`, and `benchmarks`.
 - `spoc.opam`: SDK/plugin-interface package metadata and deps.
 - `sarek.opam`: full DSL/runtime package metadata and deps.
-- `sarek-cuda.opam`, `sarek-opencl.opam`, `sarek-vulkan.opam`, `sarek-metal.opam`: optional backend package metadata and deps/depopts.
+- `sarek-cuda.opam`, `sarek-hip.opam`, `sarek-opencl.opam`, `sarek-vulkan.opam`, `sarek-metal.opam`: optional backend package metadata and deps/depopts.
+- `sarek-tools.opam`: the `sarek-device-info` tool; depends on `sarek` and lists the five backend packages as depopts, so it is built after (and rebuilt with) whichever backends are installed.
 - `Makefile`: wraps Dune builds, test tiers, coverage, release, benchmarks, preview, and generated-code commands.
 - `Dockerfile`: builds an OCaml 5.4 JupyterLab image, installs opam dependencies, installs Sarek, configures OCaml Jupyter kernel, and starts JupyterLab.
 - `README.md`: user-facing feature, build, benchmark, docs, troubleshooting, and project-history overview.
 
 ## Features and APIs
 
-- Packages require OCaml 5.4.0+ and Dune 3.15+ in opam metadata (`spoc.opam:15-20`, `sarek.opam:16-26`, `sarek-cuda.opam:11-19`, `sarek-opencl.opam:12-20`, `sarek-vulkan.opam:12-20`, `sarek-metal.opam:12-18`).
+- Packages require OCaml 5.4.0+ and Dune 3.15+ in opam metadata (`spoc.opam:15-20`, `sarek.opam:16-26`, `sarek-cuda.opam:11-19`, `sarek-hip.opam:12-19`, `sarek-opencl.opam:12-20`, `sarek-vulkan.opam:12-20`, `sarek-metal.opam:12-18`, `sarek-tools.opam:14-19`).
 - Backend packages depend on `sarek` and use optional `conf-*` depopts for CUDA/OpenCL/Vulkan (`sarek-cuda.opam:19`, `sarek-opencl.opam:20`, `sarek-vulkan.opam:20`).
 - Docker image installs JupyterLab/Thebe, opam deps, builds and installs the project, then starts Jupyter (`Dockerfile:5-31`, `Dockerfile:74-76`).
 - Make benchmark targets build/run standalone benchmark tooling and update `gh-pages/benchmarks/data/latest.json` (`Makefile:389-437`).
