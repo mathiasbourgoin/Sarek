@@ -22,10 +22,12 @@
   a.(off)`) is index arithmetic too. A kernel whose index arithmetic overflows int32 is outside the
   contract, like a `for` bound of `max_int`. The `Int32`/`Int64` stdlib intrinsics `add`, `sub`,
   `mul`, `neg` and `shift_left` use the same forms, in both `Sarek_stdlib` and `Sarek_stdlib_meta`;
-  on OpenCL C, `Int32.abs` and `Int64.abs` reinterpret the unsigned result of `abs`
-  (`as_int(abs(x))`) so that arithmetic on it stays signed. PTX, GLSL and WGSL already wrap and are
-  unchanged. Not changed, and documented in `sarek/codegen/Sarek_ir_c_arith.mli`: `/` and `mod` (`x
-  / 0` raises in OCaml, `min_int / -1` stays the device's result), shift counts outside `0 ..
+  `Int32.abs` and `Int64.abs` reinterpret the result of `abs` on its widened argument,
+  `as_int(abs((int)(x)))` on OpenCL C (whose `abs` returns the unsigned type) and
+  `as_type<long>(abs((long)(x)))` on MSL (replacing `labs`, which MSL does not document; not checked
+  with a Metal compiler), so that arithmetic on it stays signed. PTX, GLSL and WGSL already wrap and
+  are unchanged. Not changed, and documented in `sarek/codegen/Sarek_ir_c_arith.mli`: `/` and `mod`
+  (`x / 0` raises in OCaml, `min_int / -1` stays the device's result), shift counts outside `0 ..
   width-1` (unspecified in OCaml), the index of an atomic intrinsic (it wraps) and the `for` counter
   increment. Tests: `sarek/tests/codegen_golden/test_wrapping_signed_arith.ml` (spelling per
   printer, typing, index lets), `test_wrapping_signed_arith_scale.ml` (scopes, payloads, linear
