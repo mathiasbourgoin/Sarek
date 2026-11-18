@@ -168,9 +168,10 @@ let test_wgsl_bound () =
     ~stable:"k <= (params.n - 1i)"
     ~raw:"j <= m"
 
-(* C-9. The subtraction itself wraps (Sarek_ir_c_arith): it is computed in
-   the unsigned type and converted back, so the operand must already be the
-   signed [int] for [x - 1 < 0] to hold at thread 0. *)
+(* C-9. The thread intrinsics are spelled as signed [int] (the inner cast).
+   The subtraction wraps (Sarek_ir_c_arith): at thread 0, [0u - 1u] is the
+   same unsigned value whatever the operand's type, and it is the conversion
+   of the result back to [int] that makes it [-1], so [x - 1 < 0] holds. *)
 let test_cuda_signed () =
   let src = Sarek_ir_cuda.generate (probe_kernel ()) in
   check_has "cuda" src "((int)((unsigned int)((int)threadIdx.x) - 1u))" ;
@@ -181,7 +182,7 @@ let test_cuda_signed () =
 
 let test_opencl_signed () =
   let src = Sarek_ir_opencl.generate (probe_kernel ()) in
-  check_has "opencl" src "((int)((uint)((int)get_local_id(0)) - 1u))" ;
+  check_has "opencl" src "as_int(((uint)((int)get_local_id(0)) - 1u))" ;
   check_has "opencl" src "((int)get_global_id(0))" ;
   check_has "opencl" src "((int)get_local_size(0))" ;
   check_has "opencl" src "((int)get_num_groups(0))" ;
@@ -189,7 +190,7 @@ let test_opencl_signed () =
 
 let test_metal_signed () =
   let src = Sarek_ir_metal.generate (probe_kernel ()) in
-  check_has "metal" src "((int)((uint)((int)__metal_tid.x) - 1u))" ;
+  check_has "metal" src "as_type<int>(((uint)((int)__metal_tid.x) - 1u))" ;
   check_has "metal" src "((int)__metal_gid.x)" ;
   check_has "metal" src "((int)__metal_tpg.x)" ;
   check_has "metal" src "((int)__metal_num_groups.x)" ;

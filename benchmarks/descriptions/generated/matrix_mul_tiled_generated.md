@@ -58,14 +58,14 @@ __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __globa
   __local float tile_b[256];
   int tx = ((int)get_local_id(0));
   int ty = ((int)get_local_id(1));
-  int row = ((int)((uint)ty + ((uint)((int)get_local_size(1)) * (uint)((int)get_group_id(1)))));
-  int col = ((int)((uint)tx + ((uint)((int)get_local_size(0)) * (uint)((int)get_group_id(0)))));
+  int row = as_int(((uint)ty + ((uint)((int)get_local_size(1)) * (uint)((int)get_group_id(1)))));
+  int col = as_int(((uint)tx + ((uint)((int)get_local_size(0)) * (uint)((int)get_group_id(0)))));
   int tile_size = 16;
-  int num_tiles = (((int)(((uint)k + (uint)tile_size) - 1u)) / tile_size);
+  int num_tiles = (as_int((((uint)k + (uint)tile_size) - 1u)) / tile_size);
   float sum = 0.0f;
   for (int t = 0; t <= (num_tiles - 1); t++) {
     {
-      int a_col = ((int)(((uint)t * (uint)tile_size) + (uint)tx));
+      int a_col = as_int((((uint)t * (uint)tile_size) + (uint)tx));
       if (((row < m) ? (a_col < k) : 0)) {
         tile_a[((ty * tile_size) + tx)] = a[((row * k) + a_col)];
       } else {
@@ -74,7 +74,7 @@ __kernel void sarek_kern(__global float* restrict a, int sarek_a_length, __globa
     }
     barrier(CLK_LOCAL_MEM_FENCE);
     {
-      int b_row = ((int)(((uint)t * (uint)tile_size) + (uint)ty));
+      int b_row = as_int((((uint)t * (uint)tile_size) + (uint)ty));
       if (((b_row < k) ? (col < n) : 0)) {
         tile_b[((ty * tile_size) + tx)] = b[((b_row * n) + col)];
       } else {
@@ -189,14 +189,14 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   threadgroup float tile_b[256];
   int tx = ((int)__metal_tid.x);
   int ty = ((int)__metal_tid.y);
-  int row = ((int)((uint)ty + ((uint)((int)__metal_tpg.y) * (uint)((int)__metal_bid.y))));
-  int col = ((int)((uint)tx + ((uint)((int)__metal_tpg.x) * (uint)((int)__metal_bid.x))));
+  int row = as_type<int>(((uint)ty + ((uint)((int)__metal_tpg.y) * (uint)((int)__metal_bid.y))));
+  int col = as_type<int>(((uint)tx + ((uint)((int)__metal_tpg.x) * (uint)((int)__metal_bid.x))));
   int tile_size = 16;
-  int num_tiles = (((int)(((uint)k + (uint)tile_size) - 1u)) / tile_size);
+  int num_tiles = (as_type<int>((((uint)k + (uint)tile_size) - 1u)) / tile_size);
   float sum = 0.0f;
   for (int t = 0; t <= (num_tiles - 1); t++) {
     {
-      int a_col = ((int)(((uint)t * (uint)tile_size) + (uint)tx));
+      int a_col = as_type<int>((((uint)t * (uint)tile_size) + (uint)tx));
       if (((row < m) ? (a_col < k) : 0)) {
         tile_a[((ty * tile_size) + tx)] = a[((row * k) + a_col)];
       } else {
@@ -205,7 +205,7 @@ uint3 __metal_num_groups [[threadgroups_per_grid]]) {
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     {
-      int b_row = ((int)(((uint)t * (uint)tile_size) + (uint)ty));
+      int b_row = as_type<int>((((uint)t * (uint)tile_size) + (uint)ty));
       if (((b_row < k) ? (col < n) : 0)) {
         tile_b[((ty * tile_size) + tx)] = b[((b_row * n) + col)];
       } else {

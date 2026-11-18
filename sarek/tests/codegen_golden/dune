@@ -232,11 +232,15 @@
 ; (Sarek_ir_c_arith): spelling, typing, clang compile, UBSan execution.
 
 (tests
- (names test_wrapping_signed_arith test_wrapping_signed_arith_exec)
+ (names
+  test_wrapping_signed_arith
+  test_wrapping_signed_arith_exec
+  test_wrapping_signed_arith_scale)
  (modules
   wrapping_support
   test_wrapping_signed_arith
-  test_wrapping_signed_arith_exec)
+  test_wrapping_signed_arith_exec
+  test_wrapping_signed_arith_scale)
  (libraries sarek_ir sarek_codegen alcotest unix))
 
 (test

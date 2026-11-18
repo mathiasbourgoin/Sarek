@@ -144,13 +144,13 @@ let check_lsr32 () =
     [
       (* The C dialects also print the wrapping [+] through the unsigned type
          (Sarek_ir_c_arith), so each of their two shifts is pinned in full. *)
-      ("CUDA", "((int)((unsigned int)(a[tid]) >> (");
+      ("CUDA", "((int)((unsigned int)(a[tid]) >> (s[tid])))");
       ( "CUDA",
         "((int)((unsigned int)(((int)((unsigned int)a[tid] + 1u))) >> (3)))" );
-      ("OpenCL", "((int)((uint)(a[tid]) >> (");
-      ("OpenCL", "((int)((uint)(((int)((uint)a[tid] + 1u))) >> (3)))");
-      ("Metal", "((int)((uint)(a[tid]) >> (");
-      ("Metal", "((int)((uint)(((int)((uint)a[tid] + 1u))) >> (3)))");
+      ("OpenCL", "((int)((uint)(a[tid]) >> (s[tid])))");
+      ("OpenCL", "((int)((uint)(as_int(((uint)a[tid] + 1u))) >> (3)))");
+      ("Metal", "((int)((uint)(a[tid]) >> (s[tid])))");
+      ("Metal", "((int)((uint)(as_type<int>(((uint)a[tid] + 1u))) >> (3)))");
       ("GLSL", "int(uint(");
       ("WGSL", "bitcast<i32>(bitcast<u32>(");
       ("PTX", "shr.b32");

@@ -47,6 +47,8 @@ type dialect = {
   s64 : string;
   u64 : string;
   u64_suffix : string;
+  w32 : string -> string;  (** an unsigned int32 result back to [int] *)
+  w64 : string -> string;
 }
 
 let render gen env e =
@@ -65,6 +67,8 @@ let cuda =
     s64 = "long long";
     u64 = "unsigned long long";
     u64_suffix = "ull";
+    w32 = (fun b -> "((int)" ^ b ^ ")");
+    w64 = (fun b -> "((long long)" ^ b ^ ")");
   }
 
 let opencl =
@@ -78,6 +82,8 @@ let opencl =
     s64 = "long";
     u64 = "ulong";
     u64_suffix = "ul";
+    w32 = (fun b -> "as_int(" ^ b ^ ")");
+    w64 = (fun b -> "as_long(" ^ b ^ ")");
   }
 
 let metal =
@@ -91,9 +97,17 @@ let metal =
     s64 = "long";
     u64 = "ulong";
     u64_suffix = "ul";
+    w32 = (fun b -> "as_type<int>(" ^ b ^ ")");
+    w64 = (fun b -> "as_type<long>(" ^ b ^ ")");
   }
 
 let dialects = [cuda; opencl; metal]
+
+let generate d k =
+  match d.name with
+  | "CUDA" -> Sarek_ir_cuda.generate k
+  | "OpenCL" -> Sarek_ir_opencl.generate k
+  | _ -> Sarek_ir_metal.generate k
 
 let expect d label e expected =
   Alcotest.(check string)

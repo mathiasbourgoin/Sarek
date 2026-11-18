@@ -115,7 +115,7 @@ __global__ void sarek_kern(float* __restrict__ input, int sarek_input_length, fl
 __kernel void sarek_kern(__global float* restrict input, int sarek_input_length, __global float* restrict output, int sarek_output_length, int n) {
   __local float sdata[256];
   int tid = ((int)get_local_id(0));
-  int gid = ((int)((uint)((int)get_local_id(0)) + ((uint)((int)get_local_size(0)) * (uint)((int)get_group_id(0)))));
+  int gid = as_int(((uint)((int)get_local_id(0)) + ((uint)((int)get_local_size(0)) * (uint)((int)get_group_id(0)))));
   {
     if ((gid < n)) {
       sdata[tid] = input[gid];
@@ -355,7 +355,7 @@ uint3 __metal_tpg [[threads_per_threadgroup]],
 uint3 __metal_num_groups [[threadgroups_per_grid]]) {
   threadgroup float sdata[256];
   int tid = ((int)__metal_tid.x);
-  int gid = ((int)((uint)((int)__metal_tid.x) + ((uint)((int)__metal_tpg.x) * (uint)((int)__metal_bid.x))));
+  int gid = as_type<int>(((uint)((int)__metal_tid.x) + ((uint)((int)__metal_tpg.x) * (uint)((int)__metal_bid.x))));
   {
     if ((gid < n)) {
       sdata[tid] = input[gid];

@@ -68,8 +68,11 @@ type state = {
 }
 
 (** The state for emitting [k]. *)
-let state (k : kernel) : state =
-  {variants = k.kern_variants; arith = Sarek_ir_c_arith.env_of_kernel k}
+let state ?records (k : kernel) : state =
+  {
+    variants = k.kern_variants;
+    arith = Sarek_ir_c_arith.env_of_kernel ?records k;
+  }
 
 (** {1 Type Mapping} *)
 
@@ -228,7 +231,7 @@ let rec gen_expr st buf = function
         buf
         e1
         e2
-  | EBinop (op, e1, e2) ->
+  | EBinop (op, _, _) as e ->
       (* Signed int +, -, * and lsl wrap as in OCaml (Sarek_ir_c_arith). *)
       C_arith.emit_binop_arm
         st.arith
@@ -236,17 +239,14 @@ let rec gen_expr st buf = function
         ~gen_expr:(gen_expr st)
         ~operator_text:(gen_binop op)
         buf
-        op
-        e1
-        e2
-  | EUnop (op, e) ->
+        e
+  | EUnop (op, _) as e ->
       C_arith.emit_unop_arm
         st.arith
         C_arith.opencl
         ~gen_expr:(gen_expr st)
         ~operator_text:(gen_unop op)
         buf
-        op
         e
   | EArrayRead (arr, idx) ->
       Buffer.add_string buf arr ;
@@ -838,6 +838,7 @@ let gen_helper_proto buf (hf : helper_func) =
 
 (** Generate a helper function (OpenCL device function) *)
 let gen_helper_func st buf (hf : helper_func) =
+  let st = {st with arith = C_arith.for_helper st.arith hf} in
   gen_helper_signature buf hf ;
   Buffer.add_string buf ") {\n" ;
   (* Body *)
@@ -1239,7 +1240,7 @@ let generate_with_types ?block
   let k = Sarek_ir_unroll.annotate ~generator:"opencl" k in
   (* Per-generation state, threaded into the emit calls below: the kernel's
      variants for SMatch bindings. *)
-  let st = state k in
+  let st = state ~records:types k in
   let buf = Buffer.create large_buffer_size in
 
   (* Sub-group extensions and shuffle helpers, only for a kernel that uses a

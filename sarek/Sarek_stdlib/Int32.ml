@@ -28,6 +28,14 @@ let%sarek_intrinsic int32 = {device = (fun _ -> "int"); ctype = Ctypes.int32_t}
 
 let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
 
+(* CUDA C, OpenCL C and MSL spellings of one intrinsic. The wrapping
+   operations below compute through the unsigned type and come back to the
+   signed one by a cast in CUDA C and by a bit reinterpretation in OpenCL C
+   ([as_int], [as_long]) and MSL ([as_type]), as the operator emitters do
+   (Sarek_ir_c_arith). OpenCL C's [abs] returns an unsigned type, hence the
+   reinterpretation there too. *)
+let dev3 cuda opencl metal d = if d = "Metal" then metal else dev cuda opencl d
+
 (* [add], [sub], [mul], [neg] and [shift_left] wrap as in OCaml: they compute
    through the unsigned type of the same width, where overflow is defined, as
    the C-family emitters do for the operators (Sarek_ir_c_arith). [div] and
@@ -36,27 +44,30 @@ let dev cuda opencl d = Sarek_registry.cuda_or_opencl d cuda opencl
 let%sarek_intrinsic (add_int32 : int32 -> int32 -> int32) =
   {
     device =
-      dev
+      dev3
         "((int)((unsigned int)(%s) + (unsigned int)(%s)))"
-        "((int)((uint)(%s) + (uint)(%s)))";
+        "as_int(((uint)(%s) + (uint)(%s)))"
+        "as_type<int>(((uint)(%s) + (uint)(%s)))";
     ocaml = Stdlib.Int32.add;
   }
 
 let%sarek_intrinsic (sub_int32 : int32 -> int32 -> int32) =
   {
     device =
-      dev
+      dev3
         "((int)((unsigned int)(%s) - (unsigned int)(%s)))"
-        "((int)((uint)(%s) - (uint)(%s)))";
+        "as_int(((uint)(%s) - (uint)(%s)))"
+        "as_type<int>(((uint)(%s) - (uint)(%s)))";
     ocaml = Stdlib.Int32.sub;
   }
 
 let%sarek_intrinsic (mul_int32 : int32 -> int32 -> int32) =
   {
     device =
-      dev
+      dev3
         "((int)((unsigned int)(%s) * (unsigned int)(%s)))"
-        "((int)((uint)(%s) * (uint)(%s)))";
+        "as_int(((uint)(%s) * (uint)(%s)))"
+        "as_type<int>(((uint)(%s) * (uint)(%s)))";
     ocaml = Stdlib.Int32.mul;
   }
 
@@ -85,7 +96,10 @@ let%sarek_intrinsic (lognot : int32 -> int32) =
 let%sarek_intrinsic (shift_left : int32 -> int -> int32) =
   {
     device =
-      dev "((int)((unsigned int)(%s) << (%s)))" "((int)((uint)(%s) << (%s)))";
+      dev3
+        "((int)((unsigned int)(%s) << (%s)))"
+        "as_int(((uint)(%s) << (%s)))"
+        "as_type<int>(((uint)(%s) << (%s)))";
     ocaml = Stdlib.Int32.shift_left;
   }
 
@@ -103,11 +117,18 @@ let%sarek_intrinsic (shift_right_logical : int32 -> int -> int32) =
  ******************************************************************************)
 
 let%sarek_intrinsic (abs : int32 -> int32) =
-  {device = dev "abs(%s)" "abs(%s)"; ocaml = Stdlib.Int32.abs}
+  {
+    device = dev3 "abs(%s)" "as_int(abs(%s))" "abs(%s)";
+    ocaml = Stdlib.Int32.abs;
+  }
 
 let%sarek_intrinsic (neg : int32 -> int32) =
   {
-    device = dev "((int)(-(unsigned int)(%s)))" "((int)(-(uint)(%s)))";
+    device =
+      dev3
+        "((int)(-(unsigned int)(%s)))"
+        "as_int((-(uint)(%s)))"
+        "as_type<int>((-(uint)(%s)))";
     ocaml = Stdlib.Int32.neg;
   }
 

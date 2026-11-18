@@ -165,17 +165,18 @@ let gen_all f = String.concat "\n" (List.map f all_kernels)
     before C++20, OpenCL C and MSL. Checked for the cast, the global store, the
     shared store, and an int8 local's initialiser and reassignment; and no
     signed-char cast remains. The int32 [+] and [*] around them wrap through the
-    dialect's unsigned int [u32] (Sarek_ir_c_arith). *)
-let signed_narrowing_sites ~u32 =
+    dialect's unsigned int and back, [y_plus_200] being that wrapped sum
+    (Sarek_ir_c_arith). *)
+let signed_narrowing_sites ~y_plus_200 =
   [
     "out[((i * 6) + 3)] = ((((vals[i]) & 0xFF) ^ 0x80) - 0x80);";
     "dst_s8[i] = (((((vals[i] ^ 90)) & 0xFF) ^ 0x80) - 0x80);";
     "ss[t] = (((((vals[g] ^ 51)) & 0xFF) ^ 0x80) - 0x80);";
     "int y = (((((vals[i] ^ 17)) & 0xFF) ^ 0x80) - 0x80);";
-    Printf.sprintf "y = ((((((int)((%s)y + 200u))) & 0xFF) ^ 0x80) - 0x80);" u32;
+    Printf.sprintf "y = ((((%s) & 0xFF) ^ 0x80) - 0x80);" y_plus_200;
   ]
 
-let check_c_family what src ~u8 ~s8 ~u32 ~global ~restrict ~shared =
+let check_c_family what src ~u8 ~s8 ~y_plus_200 ~global ~restrict ~shared =
   List.iter
     (check_has what src)
     ([
@@ -185,7 +186,7 @@ let check_c_family what src ~u8 ~s8 ~u32 ~global ~restrict ~shared =
        Printf.sprintf "%s%s su[64]" shared u8;
        Printf.sprintf "%s%s ss[64]" shared s8;
      ]
-    @ signed_narrowing_sites ~u32) ;
+    @ signed_narrowing_sites ~y_plus_200) ;
   check_absent what src (Printf.sprintf "(%s)" s8)
 
 let test_cuda_spelling () =
@@ -196,7 +197,7 @@ let test_cuda_spelling () =
     src
     ~u8:"unsigned char"
     ~s8:"signed char"
-    ~u32:"unsigned int"
+    ~y_plus_200:"((int)((unsigned int)y + 200u))"
     ~global:""
     ~restrict:"__restrict__ "
     ~shared:"__shared__ "
@@ -208,7 +209,7 @@ let test_opencl_spelling () =
     src
     ~u8:"uchar"
     ~s8:"char"
-    ~u32:"uint"
+    ~y_plus_200:"as_int(((uint)y + 200u))"
     ~global:"__global "
     ~restrict:"restrict "
     ~shared:"__local "
@@ -220,7 +221,7 @@ let test_metal_spelling () =
     src
     ~u8:"uchar"
     ~s8:"char"
-    ~u32:"uint"
+    ~y_plus_200:"as_type<int>(((uint)y + 200u))"
     ~global:"device "
     ~restrict:""
     ~shared:"threadgroup "

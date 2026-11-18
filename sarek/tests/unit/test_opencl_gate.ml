@@ -386,7 +386,7 @@ let test_budgeted_recursion_is_bounded () =
     "residual call replaced by a typed zero"
     true
     (* the int32 [*] wraps through [uint] (Sarek_ir_c_arith) *)
-    (contains src "((int)(2u * 0u))") ;
+    (contains src "as_int((2u * 0u))") ;
   if Clang.available () then
     match Clang.run_clang src with
     | Ok () -> ()
