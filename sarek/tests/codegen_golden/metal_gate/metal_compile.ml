@@ -114,11 +114,37 @@ let driver : (string, string) result Lazy.t =
        let exe = Filename.concat dir "probe" in
        let log = Filename.concat dir "build.log" in
        write_file src driver_source ;
+       (* [xcrun --show-sdk-path] is the sysroot plain clang would resolve
+           anyway, but on macOS 27 hosts the Command Line Tools clang targets
+           a MacOSX27.sdk that no CLT ships yet — clang probes for it by OS
+           version, warns it out of the headers ("no such sysroot
+           directory"), and every driver build dies on Foundation.h. Pinning
+           the sysroot to what [xcrun] actually reports keeps the layer
+           usable there; on healthy hosts it names the same directory, so
+           nothing changes. If [xcrun] fails, fall back to the bare
+           invocation. *)
+       let isysroot =
+         let sdk =
+           try
+             let ic =
+               Unix.open_process_in "xcrun --show-sdk-path 2>/dev/null"
+             in
+             let l = input_line ic in
+             let st = Unix.close_process_in ic in
+             match st with Unix.WEXITED 0 -> Some l | _ -> None
+           with _ -> None
+         in
+         match sdk with
+         | Some sdk when sdk <> "" ->
+             Printf.sprintf " -isysroot %s" (Filename.quote sdk)
+         | _ -> ""
+       in
        let rc =
          Unix.system
            (Printf.sprintf
-              "clang -fobjc-arc -O1 -framework Foundation -framework Metal %s \
-               -o %s >%s 2>&1"
+              "clang -fobjc-arc -O1%s -framework Foundation -framework Metal \
+               %s -o %s >%s 2>&1"
+              isysroot
               (Filename.quote src)
               (Filename.quote exe)
               (Filename.quote log))
