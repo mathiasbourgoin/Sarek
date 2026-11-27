@@ -506,6 +506,157 @@ let test_strict_barrier_mutable () =
             if_ (gt (var "m") (int 0)) (assign (int 2));
           ]))
 
+(** {2 Nested mutables (#558)}
+
+    The strict analysis of a mutable was repeated for every subset of the
+    mutables enclosing it, so the check took time exponential in their number
+    (about 12 s for 16 on the machine that measured it, minutes for 18). [count]
+    constant-initialised mutables [s0 .. s(count-1)], each assigned in the
+    innermost body together with a barrier. *)
+let nested_name k = Printf.sprintf "s%d" k
+
+let nested_id k = 200 + k
+
+let add_expr a b = mk_texpr (TEBinop (Sarek_ast.Add, a, b)) typ_int32
+
+(** [assign_rhs k] is what [s_k] is incremented by; [prelude] runs first in the
+    innermost body; [outer] wraps the whole nest (a mutable or a let). *)
+let nested_mutables ~count ~assign_rhs ~prelude ~last ~outer =
+  let assign k =
+    mk_texpr
+      (TEAssign
+         ( nested_name k,
+           nested_id k,
+           add_expr (var (nested_name k)) (assign_rhs k) ))
+      typ_unit
+  in
+  let innermost =
+    seq ((barrier_call :: prelude) @ List.init count assign @ last)
+  in
+  let rec wrap k body =
+    if k < 0 then body
+    else
+      wrap
+        (k - 1)
+        (mk_texpr (TELetMut (nested_name k, nested_id k, int 0, body)) typ_unit)
+  in
+  outer (wrap (count - 1) innermost)
+
+(** The shape of the issue: the varying value comes from
+    [let tx = thread_idx_x]. *)
+let nested_through_let ~count ~last =
+  nested_mutables
+    ~count
+    ~assign_rhs:(fun _ -> var "tx")
+    ~prelude:[]
+    ~last
+    ~outer:(fun body -> mk_texpr (TELet ("tx", 100, tid_x, body)) typ_unit)
+
+(** The varying value reaches the accumulators through an enclosing mutable that
+    the same body assigns. *)
+let nested_through_mutable ~count ~last =
+  let w = mk_texpr (TEAssign ("w", 99, tid_x)) typ_unit in
+  nested_mutables
+    ~count
+    ~assign_rhs:(fun _ -> var "w")
+    ~prelude:[w]
+    ~last
+    ~outer:(fun body -> mk_texpr (TELetMut ("w", 99, int 0, body)) typ_unit)
+
+let guarded_by_last count =
+  [if_ (gt (var (nested_name (count - 1))) (int 0)) barrier_call]
+
+let check_linear msg count e =
+  let start = Sys.time () in
+  let errors = check_all e in
+  let elapsed = Sys.time () -. start in
+  Alcotest.(check int) (msg ^ ": no error") 0 (List.length errors) ;
+  (* Linear time takes microseconds; the exponential one took seconds. *)
+  Alcotest.(check bool)
+    (Printf.sprintf "%s: %d nested mutables in %.3fs (< 2s)" msg count elapsed)
+    true
+    (elapsed < 2.0)
+
+let test_nested_mutables_linear () =
+  check_linear "through a let" 16 (nested_through_let ~count:16 ~last:[]) ;
+  check_linear
+    "through a mutable"
+    16
+    (nested_through_mutable ~count:16 ~last:[])
+
+let test_nested_mutables_still_detected () =
+  (* The restriction of the memo key must not hide a real divergence: the last
+     mutable is varying, so a barrier guarded by it is refused. *)
+  let count = 12 in
+  barrier_refused
+    "through a let"
+    (nested_through_let ~count ~last:(guarded_by_last count)) ;
+  barrier_refused
+    "through a mutable"
+    (nested_through_mutable ~count ~last:(guarded_by_last count)) ;
+  (* and the same nest with a uniform increment is accepted *)
+  accepted
+    "uniform increment"
+    (nested_mutables
+       ~count
+       ~assign_rhs:(fun _ -> int 1)
+       ~prelude:[]
+       ~last:(guarded_by_last count)
+       ~outer:(fun body -> body))
+
+(** Each way [relevant_reads] learns that a name is read: a mutable that only
+    becomes varying through a name bound outside it ([y] below, standing for
+    [let y = thread_idx_x]) must still be refused when it guards a barrier. Each
+    case needs a different part of [relevant_reads]: the existing tests branch
+    on [thread_idx_x] itself, which is not an environment name, so none of them
+    would notice a part missing. *)
+let test_nested_mutables_each_read_position () =
+  let y = var "y" in
+  let assign_s v = mk_texpr (TEAssign ("s", 7, v)) typ_unit in
+  let guarded = if_ (gt (var "s") (int 0)) barrier_call in
+  let case name body =
+    (* [y] varying: refused. [y] uniform (a constant): accepted. *)
+    let wrap yv =
+      mk_texpr
+        (TELet
+           ( "y",
+             8,
+             yv,
+             mk_texpr (TELetMut ("s", 7, int 0, seq [body; guarded])) typ_unit
+           ))
+        typ_unit
+    in
+    barrier_refused (name ^ ": varying") (wrap tid_x) ;
+    accepted (name ^ ": uniform") (wrap (int 0))
+  in
+  case
+    "let value"
+    (mk_texpr
+       (TELet ("n", 9, y, if_ (gt (var "n") (int 0)) (assign_s (int 1))))
+       typ_unit) ;
+  case "if condition" (if_ (gt y (int 0)) (assign_s (int 1))) ;
+  case
+    "while condition"
+    (mk_texpr (TEWhile (gt y (int 0), assign_s (int 1))) typ_unit) ;
+  case
+    "for bound"
+    (mk_texpr
+       (TEFor ("i", 10, int 0, y, Sarek_ast.Upto, assign_s (int 1)))
+       typ_unit) ;
+  case
+    "inner mutable"
+    (mk_texpr
+       (TELetMut
+          ( "q",
+            11,
+            int 0,
+            seq
+              [
+                mk_texpr (TEAssign ("q", 11, y)) typ_unit;
+                if_ (gt (var "q") (int 0)) (assign_s (int 1));
+              ] ))
+       typ_unit)
+
 let test_strict_barrier_if_value () =
   (* let c = if thread_idx_x > 16 then 1 else 0 in if c > 0 then barrier *)
   let value =
@@ -1239,6 +1390,18 @@ let () =
             `Quick
             test_strict_barrier_helper_result;
           test_case "strict barrier: mutable" `Quick test_strict_barrier_mutable;
+          test_case
+            "nested mutables: linear time"
+            `Quick
+            test_nested_mutables_linear;
+          test_case
+            "nested mutables: divergence still detected"
+            `Quick
+            test_nested_mutables_still_detected;
+          test_case
+            "nested mutables: each read position"
+            `Quick
+            test_nested_mutables_each_read_position;
           test_case
             "strict barrier: value of an if"
             `Quick

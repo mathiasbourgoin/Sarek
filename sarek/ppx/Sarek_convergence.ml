@@ -188,6 +188,43 @@ let sub_exprs (te : texpr) : texpr list =
   | TESuperstep (_, _, body, cont) -> [body; cont]
   | TEIntrinsicFun (_, _, args) -> args
 
+(** Every variable name occurring in [e]. *)
+let rec vars_of acc (e : texpr) : StringSet.t =
+  let acc = match e.te with TEVar (n, _) -> StringSet.add n acc | _ -> acc in
+  List.fold_left vars_of acc (sub_exprs e)
+
+(** The variables whose membership in the environment {!assigned_varying_scan}
+    can test for the mutable [name] over [body]. The scan asks whether an
+    expression varies in exactly these places: the value assigned to [name] (and
+    to a mutable bound inside [body], through the recursive analysis of that
+    one), the conditions of [if] and [while], the bounds of [for], the scrutinee
+    of [match], the value of [let] and [let mut] (also read by
+    [has_varying_return_with] on every statement of a sequence). The values
+    assigned to a mutable bound outside [body], and every other operand (for
+    instance what is stored into an array), are never asked about, so a name
+    that occurs only there does not matter. *)
+let relevant_reads name (body : texpr) : StringSet.t =
+  let rec bound acc (e : texpr) =
+    let acc =
+      match e.te with TELetMut (n, _, _, _) -> StringSet.add n acc | _ -> acc
+    in
+    List.fold_left bound acc (sub_exprs e)
+  in
+  let inner = bound StringSet.empty body in
+  let rec go acc (e : texpr) =
+    let acc =
+      match e.te with
+      | TEAssign (n, _, v) when n = name || StringSet.mem n inner ->
+          vars_of acc v
+      | TEIf (c, _, _) | TEWhile (c, _) | TEMatch (c, _) -> vars_of acc c
+      | TEFor (_, _, lo, hi, _, _) -> vars_of (vars_of acc lo) hi
+      | TELet (_, _, v, _) | TELetMut (_, _, v, _) -> vars_of acc v
+      | _ -> acc
+    in
+    List.fold_left go acc (sub_exprs e)
+  in
+  go StringSet.empty body
+
 let helper_name (f : texpr) : string option =
   match f.te with
   | TEVar (name, _) | TEGlobalRef (name, _) -> Some name
@@ -347,6 +384,11 @@ and helper_result_varying vi env (f : texpr) (args : texpr list) : bool =
     thread-varying value or under thread-varying control flow? Then its value
     after the assignment differs per thread. *)
 and assigned_varying vi env name (body : texpr) : bool =
+  (* The answer depends on [env] only through the names the scan can test, so
+     restrict it to them before it keys the memo. Without that, the [env] of an
+     inner mutable differs by which enclosing mutables are being analysed, and
+     each mutable was analysed once per subset of them (#558). *)
+  let env = StringSet.inter env (relevant_reads name body) in
   match find_assigned vi env name body with
   | Some e -> e.ae_result
   | None ->
