@@ -877,7 +877,7 @@ let is_pointer_type (t : elttype) =
    address space, which Metal rejects outright ("must have address space
    qualifier"). Both such goldens (record_kernel, variant_kernel) had never
    compiled; nothing on Linux could see it. *)
-let gen_buffer_param buf atomic_vars idx v ~memspace ~elttype ~with_length =
+let gen_buffer_param buf _atomic_vars idx v ~memspace ~elttype ~with_length =
   (* [metal_memspace Local] is [""], so a Local buffer parameter would emit a
      leading space and then a pointer with NO address space — the other half of
      MSL 3.2 §4.2, and exactly the shape Metal_gate.Metal_addrspace rejects. The
@@ -898,11 +898,12 @@ let gen_buffer_param buf atomic_vars idx v ~memspace ~elttype ~with_length =
   | Global | Shared -> ()) ;
   Buffer.add_string buf (metal_memspace memspace) ;
   Buffer.add_char buf ' ' ;
-  (* Use atomic type if this variable is used with atomics *)
-  let type_str =
-    if List.mem v.var_name atomic_vars then metal_atomic_type_of_elttype elttype
-    else metal_type_of_elttype elttype
-  in
+  (* Always a plain pointer. Buffers that take atomics keep this plain type
+     and get cast at the atomic call site itself — [emit_atomic] emits a
+     [volatile] cast to [atomic_int] on the operand — so a buffer used both
+     atomically and with plain reads (#545) still compiles: a [device
+     atomic_int*] parameter would reject every plain [ctrl[i]] access in MSL. *)
+  let type_str = metal_type_of_elttype elttype in
   Buffer.add_string buf type_str ;
   Buffer.add_string buf "* " ;
   Buffer.add_string buf v.var_name ;
