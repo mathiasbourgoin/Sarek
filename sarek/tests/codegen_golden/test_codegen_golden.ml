@@ -684,9 +684,9 @@ let mixed_plain_atomic_kernel () =
 
 (** {1 Atomic sub/min/max goldens (#561)}
 
-    MSL has no [atomic_sub], [atomic_min] or [atomic_max]; the MSL spellings
-    are [atomic_fetch_{sub,min,max}_explicit] with an [atomic_int] pointer and
-    a memory order. Two shapes per intrinsic:
+    MSL has no [atomic_sub], [atomic_min] or [atomic_max]; the MSL spellings are
+    [atomic_fetch_{sub,min,max}_explicit] with an [atomic_int] pointer and a
+    memory order. Two shapes per intrinsic:
 
     - GLOBAL — the 2-argument [atomic_sub] form on a [Global] buffer, cast to a
       volatile [device] [atomic_int] pointer at the call site.
@@ -696,8 +696,8 @@ let mixed_plain_atomic_kernel () =
       [threadgroup] [atomic_int] pointer.
 
     Both shapes mix a plain read/write with the atomic on the same buffer, so
-    the goldens pin that the declaration stays a plain type and the cast is
-    what makes the atomic site atomic. *)
+    the goldens pin that the declaration stays a plain type and the cast is what
+    makes the atomic site atomic. *)
 
 let make_atomic_global_kernel ~name ~intrinsic_name =
   let ctrl = make_var "ctrl" (TVec TInt32) in
@@ -757,13 +757,19 @@ let make_atomic_shared_kernel ~name ~intrinsic_name =
     body
 
 let atomic_sub_metal_kernel () =
-  make_atomic_global_kernel ~name:"atomic_sub_metal" ~intrinsic_name:"atomic_sub"
+  make_atomic_global_kernel
+    ~name:"atomic_sub_metal"
+    ~intrinsic_name:"atomic_sub"
 
 let atomic_min_metal_kernel () =
-  make_atomic_global_kernel ~name:"atomic_min_metal" ~intrinsic_name:"atomic_min"
+  make_atomic_global_kernel
+    ~name:"atomic_min_metal"
+    ~intrinsic_name:"atomic_min"
 
 let atomic_max_metal_kernel () =
-  make_atomic_global_kernel ~name:"atomic_max_metal" ~intrinsic_name:"atomic_max"
+  make_atomic_global_kernel
+    ~name:"atomic_max_metal"
+    ~intrinsic_name:"atomic_max"
 
 let atomic_sub_shared_metal_kernel () =
   make_atomic_shared_kernel
@@ -2258,8 +2264,8 @@ let () =
     "#include <metal_stdlib>\n\
      using namespace metal;\n\
      #pragma METAL fp contract(off)\n\n\
-     kernel void atomic_sub_metal(device int* ctrl [[buffer(0)]], constant \
-     int &sarek_ctrl_length [[buffer(1)]],\n\
+     kernel void atomic_sub_metal(device int* ctrl [[buffer(0)]], constant int \
+     &sarek_ctrl_length [[buffer(1)]],\n\
      uint3 __metal_gid [[thread_position_in_grid]],\n\
      uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
@@ -2277,8 +2283,8 @@ let () =
     "#include <metal_stdlib>\n\
      using namespace metal;\n\
      #pragma METAL fp contract(off)\n\n\
-     kernel void atomic_min_metal(device int* ctrl [[buffer(0)]], constant \
-     int &sarek_ctrl_length [[buffer(1)]],\n\
+     kernel void atomic_min_metal(device int* ctrl [[buffer(0)]], constant int \
+     &sarek_ctrl_length [[buffer(1)]],\n\
      uint3 __metal_gid [[thread_position_in_grid]],\n\
      uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
@@ -2296,8 +2302,8 @@ let () =
     "#include <metal_stdlib>\n\
      using namespace metal;\n\
      #pragma METAL fp contract(off)\n\n\
-     kernel void atomic_max_metal(device int* ctrl [[buffer(0)]], constant \
-     int &sarek_ctrl_length [[buffer(1)]],\n\
+     kernel void atomic_max_metal(device int* ctrl [[buffer(0)]], constant int \
+     &sarek_ctrl_length [[buffer(1)]],\n\
      uint3 __metal_gid [[thread_position_in_grid]],\n\
      uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
      uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
