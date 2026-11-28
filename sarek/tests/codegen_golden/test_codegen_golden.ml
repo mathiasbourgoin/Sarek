@@ -644,6 +644,78 @@ let bounds_check_kernel () =
     []
     body
 
+(** Mixed plain read/write and atomic access on the same buffer [ctrl].
+    Exercises the Metal buffer-param fix so [ctrl] stays a plain pointer rather
+    than [device atomic_int*]. *)
+let mixed_plain_atomic_kernel () =
+  let ctrl = make_var "ctrl" (TVec TInt32) in
+  let out = make_var "out" (TVec TInt32) in
+  let idx = make_var "idx" TInt32 in
+  let t1 = make_var "t1" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( t1,
+            EArrayRead ("ctrl", EConst (CInt32 1l)),
+            SSeq
+              [
+                SAssign (LArrayElem ("ctrl", EConst (CInt32 2l)), EVar t1);
+                SExpr
+                  (EIntrinsic
+                     ( [],
+                       "atomic_add_global_int32",
+                       [
+                         EArrayRead ("ctrl", EConst (CInt32 0l));
+                         EConst (CInt32 1l);
+                       ] ));
+                SAssign (LArrayElem ("out", EVar idx), EVar t1);
+              ] ) )
+  in
+  empty_kernel
+    "mixed_plain_atomic"
+    [
+      DParam (ctrl, Some {arr_elttype = TInt32; arr_memspace = Global});
+      DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global});
+    ]
+    []
+    body
+
+(** Mixed plain read/write and atomic access on the same [threadgroup] array
+    [sh]. Exercises the Metal shared-local fix (#560) so [sh] stays
+    [threadgroup int[16]] rather than [threadgroup atomic_int[16]]. *)
+let mixed_shared_plain_atomic_kernel () =
+  let out = make_var "out" (TVec TInt32) in
+  let idx = make_var "idx" TInt32 in
+  let t1 = make_var "t1" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( t1,
+            EArrayRead ("sh", EConst (CInt32 1l)),
+            SSeq
+              [
+                SAssign (LArrayElem ("sh", EConst (CInt32 2l)), EVar t1);
+                SExpr
+                  (EIntrinsic
+                     ( [],
+                       "atomic_add",
+                       [
+                         EArrayRead ("sh", EConst (CInt32 0l));
+                         EConst (CInt32 1l);
+                       ] ));
+                SAssign (LArrayElem ("out", EVar idx), EVar t1);
+              ] ) )
+  in
+  empty_kernel
+    "mixed_shared_plain_atomic"
+    [DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global})]
+    [DShared ("sh", TInt32, Some (EConst (CInt32 16l)))]
+    body
+
 (** {1 Backend Adapter Type} *)
 
 type backend = {
@@ -2092,6 +2164,50 @@ let () =
      uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
     \  int idx = ((int)__metal_gid.x);\n\
     \  b[idx] = log(1.0 + (a[idx]));\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "mixed_plain_atomic"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
+     kernel void mixed_plain_atomic(device int* ctrl [[buffer(0)]], constant \
+     int &sarek_ctrl_length [[buffer(1)]], device int* out [[buffer(2)]], \
+     constant int &sarek_out_length [[buffer(3)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  int idx = ((int)__metal_gid.x);\n\
+    \  int t1 = ctrl[1];\n\
+    \  ctrl[2] = t1;\n\
+    \  atomic_fetch_add_explicit((volatile device atomic_int*)&ctrl[0], 1, \
+     memory_order_relaxed);\n\
+    \  out[idx] = t1;\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "mixed_shared_plain_atomic"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
+     kernel void mixed_shared_plain_atomic(device int* out [[buffer(0)]], \
+     constant int &sarek_out_length [[buffer(1)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  threadgroup int sh[16];\n\
+    \  int idx = ((int)__metal_gid.x);\n\
+    \  int t1 = sh[1];\n\
+    \  sh[2] = t1;\n\
+    \  atomic_fetch_add_explicit((volatile threadgroup atomic_int*)&sh[0], 1, \
+     memory_order_relaxed);\n\
+    \  out[idx] = t1;\n\
      }\n\n"
 
 let metal_only_kernels () =
@@ -2100,6 +2216,8 @@ let metal_only_kernels () =
     ("float32_hypot_path", float32_hypot_path_kernel ());
     ("float32_expm1_path", float32_expm1_path_kernel ());
     ("float32_log1p_path", float32_log1p_path_kernel ());
+    ("mixed_plain_atomic", mixed_plain_atomic_kernel ());
+    ("mixed_shared_plain_atomic", mixed_shared_plain_atomic_kernel ());
   ]
 
 let metal_only_tests () =

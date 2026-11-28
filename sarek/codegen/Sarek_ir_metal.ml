@@ -877,7 +877,7 @@ let is_pointer_type (t : elttype) =
    address space, which Metal rejects outright ("must have address space
    qualifier"). Both such goldens (record_kernel, variant_kernel) had never
    compiled; nothing on Linux could see it. *)
-let gen_buffer_param buf atomic_vars idx v ~memspace ~elttype ~with_length =
+let gen_buffer_param buf _atomic_vars idx v ~memspace ~elttype ~with_length =
   (* [metal_memspace Local] is [""], so a Local buffer parameter would emit a
      leading space and then a pointer with NO address space — the other half of
      MSL 3.2 §4.2, and exactly the shape Metal_gate.Metal_addrspace rejects. The
@@ -898,11 +898,12 @@ let gen_buffer_param buf atomic_vars idx v ~memspace ~elttype ~with_length =
   | Global | Shared -> ()) ;
   Buffer.add_string buf (metal_memspace memspace) ;
   Buffer.add_char buf ' ' ;
-  (* Use atomic type if this variable is used with atomics *)
-  let type_str =
-    if List.mem v.var_name atomic_vars then metal_atomic_type_of_elttype elttype
-    else metal_type_of_elttype elttype
-  in
+  (* Always a plain pointer. Buffers that take atomics keep this plain type
+     and get cast at the atomic call site itself — [emit_atomic] emits a
+     [volatile] cast to [atomic_int] on the operand — so a buffer used both
+     atomically and with plain reads (#545) still compiles: a [device
+     atomic_int*] parameter would reject every plain [ctrl[i]] access in MSL. *)
+  let type_str = metal_type_of_elttype elttype in
   Buffer.add_string buf type_str ;
   Buffer.add_string buf "* " ;
   Buffer.add_string buf v.var_name ;
@@ -1069,7 +1070,7 @@ let rec collect_atomic_vars_stmt = function
   | SBlock s -> collect_atomic_vars_stmt s
   | _ -> []
 
-let gen_local st buf indent atomic_vars = function
+let gen_local st buf indent _atomic_vars = function
   | DLocal (v, None) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf (metal_type_of_elttype v.var_type) ;
@@ -1087,24 +1088,21 @@ let gen_local st buf indent atomic_vars = function
   | DShared (name, elt, None) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup " ;
-      (* Use atomic type if this variable is used with atomics *)
-      let type_str =
-        if List.mem name atomic_vars then metal_atomic_type_of_elttype elt
-        else metal_type_of_elttype elt
-      in
-      Buffer.add_string buf type_str ;
+      (* Always a plain element type, like the buffer parameters (#560). A
+         shared array used both atomically and with plain reads would otherwise
+         be declared [threadgroup atomic_int sh[N]], which Metal rejects on the
+         plain access ("no viable conversion from threadgroup metal::atomic_int
+         to int"). The atomic call site already casts its operand to [volatile
+         threadgroup atomic_int*], so keeping the declaration plain is enough. *)
+      Buffer.add_string buf (metal_type_of_elttype elt) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf name ;
       Buffer.add_string buf "[];\n"
   | DShared (name, elt, Some size) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup " ;
-      (* Use atomic type if this variable is used with atomics *)
-      let type_str =
-        if List.mem name atomic_vars then metal_atomic_type_of_elttype elt
-        else metal_type_of_elttype elt
-      in
-      Buffer.add_string buf type_str ;
+      (* Plain element type for the same reason as the unsized arm above. *)
+      Buffer.add_string buf (metal_type_of_elttype elt) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf name ;
       Buffer.add_char buf '[' ;
