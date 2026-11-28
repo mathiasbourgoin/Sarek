@@ -682,6 +682,63 @@ let mixed_plain_atomic_kernel () =
     []
     body
 
+(** {1 Atomic increment goldens (#563)}
+
+    The two atomic_increment primitives are two-argument (operand, index) with
+    the increment fixed at 1. The Metal arms append the literal and go through
+    the three-argument branch of Dispatch.emit_atomic, so the emitted site is
+    [atomic_fetch_add_explicit] on a volatile [atomic_int] pointer to [v[i]]
+    with relaxed ordering — MSL has no [atomic_inc]. One golden per address
+    space, each mixing a plain access with the increment:
+
+    - SHARED — [atomic_inc_int32] on a [DShared] array.
+    - GLOBAL — [atomic_inc_global_int32] on a [Global] buffer parameter. *)
+
+let atomic_inc_shared_metal_kernel () =
+  let out = make_var "out" (TVec TInt32) in
+  let sh = make_var "sh" (TArray (TInt32, Shared)) in
+  let idx = make_var "idx" TInt32 in
+  let t1 = make_var "t1" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( t1,
+            EArrayRead ("sh", EConst (CInt32 1l)),
+            SSeq
+              [
+                SExpr (EIntrinsic ([], "atomic_inc_int32", [EVar sh; EVar idx]));
+                SAssign (LArrayElem ("sh", EConst (CInt32 2l)), EVar t1);
+                SAssign (LArrayElem ("out", EVar idx), EVar t1);
+              ] ) )
+  in
+  empty_kernel
+    "atomic_inc_shared_metal"
+    [DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global})]
+    [DShared ("sh", TInt32, Some (EConst (CInt32 16l)))]
+    body
+
+let atomic_inc_global_metal_kernel () =
+  let ctrl = make_var "ctrl" (TVec TInt32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            SExpr
+              (EIntrinsic ([], "atomic_inc_global_int32", [EVar ctrl; EVar idx]));
+            SAssign (LArrayElem ("ctrl", EVar idx), EVar idx);
+          ] )
+  in
+  empty_kernel
+    "atomic_inc_global_metal"
+    [DParam (ctrl, Some {arr_elttype = TInt32; arr_memspace = Global})]
+    []
+    body
+
 (** {1 Backend Adapter Type} *)
 
 type backend = {
@@ -2152,6 +2209,47 @@ let () =
     \  atomic_fetch_add_explicit((volatile device atomic_int*)&ctrl[0], 1, \
      memory_order_relaxed);\n\
     \  out[idx] = t1;\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "atomic_inc_shared_metal"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
+     kernel void atomic_inc_shared_metal(device int* out [[buffer(0)]], \
+     constant int &sarek_out_length [[buffer(1)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  threadgroup int sh[16];\n\
+    \  int idx = ((int)__metal_gid.x);\n\
+    \  int t1 = sh[1];\n\
+    \  atomic_fetch_add_explicit((volatile threadgroup atomic_int*)&sh[idx], \
+     1, memory_order_relaxed);\n\
+    \  sh[2] = t1;\n\
+    \  out[idx] = t1;\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "atomic_inc_global_metal"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
+     kernel void atomic_inc_global_metal(device int* ctrl [[buffer(0)]], \
+     constant int &sarek_ctrl_length [[buffer(1)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  int idx = ((int)__metal_gid.x);\n\
+    \  atomic_fetch_add_explicit((volatile device atomic_int*)&ctrl[idx], 1, \
+     memory_order_relaxed);\n\
+    \  ctrl[idx] = idx;\n\
      }\n\n"
 
 let metal_only_kernels () =
@@ -2161,6 +2259,8 @@ let metal_only_kernels () =
     ("float32_expm1_path", float32_expm1_path_kernel ());
     ("float32_log1p_path", float32_log1p_path_kernel ());
     ("mixed_plain_atomic", mixed_plain_atomic_kernel ());
+    ("atomic_inc_shared_metal", atomic_inc_shared_metal_kernel ());
+    ("atomic_inc_global_metal", atomic_inc_global_metal_kernel ());
   ]
 
 let metal_only_tests () =

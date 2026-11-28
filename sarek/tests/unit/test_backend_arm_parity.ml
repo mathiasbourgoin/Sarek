@@ -183,6 +183,16 @@ let names : (string * int * verdict list) list =
     (* log10: GAP, not a decision. WGSL has `log2`, and log10 x = log2 x * log10 2;
        the other four all handle it (GLSL through `pre_hook`). *)
     ("log10", 1, [Emitted; Emitted; Emitted; Unknown; Emitted]);
+    (* atomic_inc_int32 / atomic_inc_global_int32: Metal only (#563). The two
+       atomic_increment primitives (typed (array|vector, index), increment
+       fixed at 1) are declared in Sarek_stdlib.Gpu with CUDA/OpenCL device
+       templates, but Metal had no arm — Unknown intrinsic. Metal now lowers
+       both through atomic_fetch_add_explicit with the increment literal
+       appended. The probe sees Unknown on CUDA/OpenCL because this test does
+       not link Sarek_stdlib, so the registry templates are not loaded — the
+       same env these observations were made in. *)
+    ("atomic_inc_int32", 2, [Unknown; Unknown; Emitted; Unknown; Unknown]);
+    ("atomic_inc_global_int32", 2, [Unknown; Unknown; Emitted; Unknown; Unknown]);
   ]
 
 let observed name arity =
@@ -255,7 +265,7 @@ let test_arity_guard (name, wrong_arity, handling) () =
 let test_row_count () =
   Alcotest.(check int)
     "intrinsic rows covered (update deliberately when adding an arm)"
-    40
+    42
     (List.length names)
 
 let () =
