@@ -1070,7 +1070,7 @@ let rec collect_atomic_vars_stmt = function
   | SBlock s -> collect_atomic_vars_stmt s
   | _ -> []
 
-let gen_local st buf indent atomic_vars = function
+let gen_local st buf indent _atomic_vars = function
   | DLocal (v, None) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf (metal_type_of_elttype v.var_type) ;
@@ -1088,24 +1088,21 @@ let gen_local st buf indent atomic_vars = function
   | DShared (name, elt, None) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup " ;
-      (* Use atomic type if this variable is used with atomics *)
-      let type_str =
-        if List.mem name atomic_vars then metal_atomic_type_of_elttype elt
-        else metal_type_of_elttype elt
-      in
-      Buffer.add_string buf type_str ;
+      (* Always a plain element type, like the buffer parameters (#560). A
+         shared array used both atomically and with plain reads would otherwise
+         be declared [threadgroup atomic_int sh[N]], which Metal rejects on the
+         plain access ("no viable conversion from threadgroup metal::atomic_int
+         to int"). The atomic call site already casts its operand to [volatile
+         threadgroup atomic_int*], so keeping the declaration plain is enough. *)
+      Buffer.add_string buf (metal_type_of_elttype elt) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf name ;
       Buffer.add_string buf "[];\n"
   | DShared (name, elt, Some size) ->
       Buffer.add_string buf indent ;
       Buffer.add_string buf "threadgroup " ;
-      (* Use atomic type if this variable is used with atomics *)
-      let type_str =
-        if List.mem name atomic_vars then metal_atomic_type_of_elttype elt
-        else metal_type_of_elttype elt
-      in
-      Buffer.add_string buf type_str ;
+      (* Plain element type for the same reason as the unsized arm above. *)
+      Buffer.add_string buf (metal_type_of_elttype elt) ;
       Buffer.add_char buf ' ' ;
       Buffer.add_string buf name ;
       Buffer.add_char buf '[' ;
