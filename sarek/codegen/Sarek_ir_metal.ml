@@ -516,6 +516,49 @@ and metal_backend st =
                 Buffer.add_string
                   buf
                   "threadgroup_barrier(mem_flags::mem_threadgroup)")
+        (* The two atomic_increment primitives (#563). Both are two-argument
+           (array-or-vector, index) with the increment fixed at 1, so the arm
+           appends the literal and goes through the three-argument branch of
+           Dispatch.emit_atomic, emitting [atomic_fetch_add_explicit] on a
+           volatile [atomic_int] pointer to [arr[i]] with relaxed ordering.
+           The arity is checked here first — appending to a call that is not
+           exactly (operand, index) would otherwise mis-shape the emission
+           instead of failing. MSL has no [atomic_inc]; increment IS
+           [atomic_fetch_add] by 1. *)
+        | "atomic_inc_int32" ->
+            Some
+              (fun buf args ->
+                match args with
+                | [_arr; _idx] ->
+                    Dispatch.emit_atomic
+                      ~gen_expr:(gen_expr st)
+                      ~invalid_arg_count:bad_arity
+                      buf
+                      ~callee:"atomic_fetch_add_explicit"
+                      ~prefix:"(volatile threadgroup atomic_int*)&"
+                      ~suffix:", memory_order_relaxed)"
+                      ~opname:"atomic_inc"
+                      ~expected:2
+                      ~allow_array:true
+                      (args @ [EConst (CInt32 1l)])
+                | _ -> bad_arity "atomic_inc_int32" 2 (List.length args))
+        | "atomic_inc_global_int32" ->
+            Some
+              (fun buf args ->
+                match args with
+                | [_vec; _idx] ->
+                    Dispatch.emit_atomic
+                      ~gen_expr:(gen_expr st)
+                      ~invalid_arg_count:bad_arity
+                      buf
+                      ~callee:"atomic_fetch_add_explicit"
+                      ~prefix:"(volatile device atomic_int*)&"
+                      ~suffix:", memory_order_relaxed)"
+                      ~opname:"atomic_inc_global"
+                      ~expected:2
+                      ~allow_array:true
+                      (args @ [EConst (CInt32 1l)])
+                | _ -> bad_arity "atomic_inc_global_int32" 2 (List.length args))
         | "atomic_add" | "atomic_add_int32" ->
             Some
               (fun buf args ->
