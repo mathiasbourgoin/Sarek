@@ -725,6 +725,7 @@ let make_atomic_global_kernel ~name ~intrinsic_name =
 
 let make_atomic_shared_kernel ~name ~intrinsic_name =
   let out = make_var "out" (TVec TInt32) in
+  let sh = make_var "sh" (TArray (TInt32, Shared)) in
   let idx = make_var "idx" TInt32 in
   let t1 = make_var "t1" TInt32 in
   let body =
@@ -741,10 +742,11 @@ let make_atomic_shared_kernel ~name ~intrinsic_name =
                   (EIntrinsic
                      ( [],
                        intrinsic_name,
-                       [
-                         EArrayRead ("sh", EConst (CInt32 0l));
-                         EConst (CInt32 1l);
-                       ] ));
+                       (* The 3-argument (array, index, value) form the ppx
+                          primitives produce — the [allow_array] branch of
+                          Dispatch.emit_atomic, with the index an expression
+                          rather than baked into an EArrayRead. *)
+                       [EVar sh; EVar idx; EConst (CInt32 1l)] ));
                 SAssign (LArrayElem ("out", EVar idx), EVar t1);
               ] ) )
   in
@@ -2324,8 +2326,8 @@ let () =
     \  int idx = ((int)__metal_gid.x);\n\
     \  int t1 = sh[1];\n\
     \  sh[2] = t1;\n\
-    \  atomic_fetch_sub_explicit((volatile threadgroup atomic_int*)&sh[0], 1, \
-     memory_order_relaxed);\n\
+    \  atomic_fetch_sub_explicit((volatile threadgroup atomic_int*)&sh[idx], \
+     1, memory_order_relaxed);\n\
     \  out[idx] = t1;\n\
      }\n\n" ;
 
@@ -2346,8 +2348,8 @@ let () =
     \  int idx = ((int)__metal_gid.x);\n\
     \  int t1 = sh[1];\n\
     \  sh[2] = t1;\n\
-    \  atomic_fetch_min_explicit((volatile threadgroup atomic_int*)&sh[0], 1, \
-     memory_order_relaxed);\n\
+    \  atomic_fetch_min_explicit((volatile threadgroup atomic_int*)&sh[idx], \
+     1, memory_order_relaxed);\n\
     \  out[idx] = t1;\n\
      }\n\n" ;
 
@@ -2368,8 +2370,8 @@ let () =
     \  int idx = ((int)__metal_gid.x);\n\
     \  int t1 = sh[1];\n\
     \  sh[2] = t1;\n\
-    \  atomic_fetch_max_explicit((volatile threadgroup atomic_int*)&sh[0], 1, \
-     memory_order_relaxed);\n\
+    \  atomic_fetch_max_explicit((volatile threadgroup atomic_int*)&sh[idx], \
+     1, memory_order_relaxed);\n\
     \  out[idx] = t1;\n\
      }\n\n"
 
