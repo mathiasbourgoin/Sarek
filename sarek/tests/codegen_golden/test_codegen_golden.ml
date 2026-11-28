@@ -682,6 +682,102 @@ let mixed_plain_atomic_kernel () =
     []
     body
 
+(** {1 Atomic sub/min/max goldens (#561)}
+
+    MSL has no [atomic_sub], [atomic_min] or [atomic_max]; the MSL spellings
+    are [atomic_fetch_{sub,min,max}_explicit] with an [atomic_int] pointer and
+    a memory order. Two shapes per intrinsic:
+
+    - GLOBAL — the 2-argument [atomic_sub] form on a [Global] buffer, cast to a
+      volatile [device] [atomic_int] pointer at the call site.
+    - SHARED — the [atomic_sub_int32]/[atomic_min_int32]/[atomic_max_int32]
+      primitives (typed [t_arr t_int32 Local], the [atomic_add_int32] pair of
+      the global names) through the 3-argument array form, cast to a volatile
+      [threadgroup] [atomic_int] pointer.
+
+    Both shapes mix a plain read/write with the atomic on the same buffer, so
+    the goldens pin that the declaration stays a plain type and the cast is
+    what makes the atomic site atomic. *)
+
+let make_atomic_global_kernel ~name ~intrinsic_name =
+  let ctrl = make_var "ctrl" (TVec TInt32) in
+  let idx = make_var "idx" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SSeq
+          [
+            SExpr
+              (EIntrinsic
+                 ( [],
+                   intrinsic_name,
+                   [EArrayRead ("ctrl", EConst (CInt32 0l)); EConst (CInt32 1l)]
+                 ));
+            SAssign (LArrayElem ("ctrl", EVar idx), EVar idx);
+          ] )
+  in
+  empty_kernel
+    name
+    [DParam (ctrl, Some {arr_elttype = TInt32; arr_memspace = Global})]
+    []
+    body
+
+let make_atomic_shared_kernel ~name ~intrinsic_name =
+  let out = make_var "out" (TVec TInt32) in
+  let idx = make_var "idx" TInt32 in
+  let t1 = make_var "t1" TInt32 in
+  let body =
+    SLet
+      ( idx,
+        EIntrinsic ([], "global_thread_id", []),
+        SLet
+          ( t1,
+            EArrayRead ("sh", EConst (CInt32 1l)),
+            SSeq
+              [
+                SAssign (LArrayElem ("sh", EConst (CInt32 2l)), EVar t1);
+                SExpr
+                  (EIntrinsic
+                     ( [],
+                       intrinsic_name,
+                       [
+                         EArrayRead ("sh", EConst (CInt32 0l));
+                         EConst (CInt32 1l);
+                       ] ));
+                SAssign (LArrayElem ("out", EVar idx), EVar t1);
+              ] ) )
+  in
+  empty_kernel
+    name
+    [DParam (out, Some {arr_elttype = TInt32; arr_memspace = Global})]
+    [DShared ("sh", TInt32, Some (EConst (CInt32 16l)))]
+    body
+
+let atomic_sub_metal_kernel () =
+  make_atomic_global_kernel ~name:"atomic_sub_metal" ~intrinsic_name:"atomic_sub"
+
+let atomic_min_metal_kernel () =
+  make_atomic_global_kernel ~name:"atomic_min_metal" ~intrinsic_name:"atomic_min"
+
+let atomic_max_metal_kernel () =
+  make_atomic_global_kernel ~name:"atomic_max_metal" ~intrinsic_name:"atomic_max"
+
+let atomic_sub_shared_metal_kernel () =
+  make_atomic_shared_kernel
+    ~name:"atomic_sub_shared_metal"
+    ~intrinsic_name:"atomic_sub_int32"
+
+let atomic_min_shared_metal_kernel () =
+  make_atomic_shared_kernel
+    ~name:"atomic_min_shared_metal"
+    ~intrinsic_name:"atomic_min_int32"
+
+let atomic_max_shared_metal_kernel () =
+  make_atomic_shared_kernel
+    ~name:"atomic_max_shared_metal"
+    ~intrinsic_name:"atomic_max_int32"
+
 (** {1 Backend Adapter Type} *)
 
 type backend = {
@@ -2152,6 +2248,129 @@ let () =
     \  atomic_fetch_add_explicit((volatile device atomic_int*)&ctrl[0], 1, \
      memory_order_relaxed);\n\
     \  out[idx] = t1;\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "atomic_sub_metal"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
+     kernel void atomic_sub_metal(device int* ctrl [[buffer(0)]], constant \
+     int &sarek_ctrl_length [[buffer(1)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  int idx = ((int)__metal_gid.x);\n\
+    \  atomic_fetch_sub_explicit((volatile device atomic_int*)&ctrl[0], 1, \
+     memory_order_relaxed);\n\
+    \  ctrl[idx] = idx;\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "atomic_min_metal"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
+     kernel void atomic_min_metal(device int* ctrl [[buffer(0)]], constant \
+     int &sarek_ctrl_length [[buffer(1)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  int idx = ((int)__metal_gid.x);\n\
+    \  atomic_fetch_min_explicit((volatile device atomic_int*)&ctrl[0], 1, \
+     memory_order_relaxed);\n\
+    \  ctrl[idx] = idx;\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "atomic_max_metal"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
+     kernel void atomic_max_metal(device int* ctrl [[buffer(0)]], constant \
+     int &sarek_ctrl_length [[buffer(1)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  int idx = ((int)__metal_gid.x);\n\
+    \  atomic_fetch_max_explicit((volatile device atomic_int*)&ctrl[0], 1, \
+     memory_order_relaxed);\n\
+    \  ctrl[idx] = idx;\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "atomic_sub_shared_metal"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
+     kernel void atomic_sub_shared_metal(device int* out [[buffer(0)]], \
+     constant int &sarek_out_length [[buffer(1)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  threadgroup int sh[16];\n\
+    \  int idx = ((int)__metal_gid.x);\n\
+    \  int t1 = sh[1];\n\
+    \  sh[2] = t1;\n\
+    \  atomic_fetch_sub_explicit((volatile threadgroup atomic_int*)&sh[0], 1, \
+     memory_order_relaxed);\n\
+    \  out[idx] = t1;\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "atomic_min_shared_metal"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
+     kernel void atomic_min_shared_metal(device int* out [[buffer(0)]], \
+     constant int &sarek_out_length [[buffer(1)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  threadgroup int sh[16];\n\
+    \  int idx = ((int)__metal_gid.x);\n\
+    \  int t1 = sh[1];\n\
+    \  sh[2] = t1;\n\
+    \  atomic_fetch_min_explicit((volatile threadgroup atomic_int*)&sh[0], 1, \
+     memory_order_relaxed);\n\
+    \  out[idx] = t1;\n\
+     }\n\n" ;
+
+  register_golden
+    "metal"
+    "atomic_max_shared_metal"
+    "#include <metal_stdlib>\n\
+     using namespace metal;\n\
+     #pragma METAL fp contract(off)\n\n\
+     kernel void atomic_max_shared_metal(device int* out [[buffer(0)]], \
+     constant int &sarek_out_length [[buffer(1)]],\n\
+     uint3 __metal_gid [[thread_position_in_grid]],\n\
+     uint3 __metal_tid [[thread_position_in_threadgroup]],\n\
+     uint3 __metal_bid [[threadgroup_position_in_grid]],\n\
+     uint3 __metal_tpg [[threads_per_threadgroup]],\n\
+     uint3 __metal_num_groups [[threadgroups_per_grid]]) {\n\
+    \  threadgroup int sh[16];\n\
+    \  int idx = ((int)__metal_gid.x);\n\
+    \  int t1 = sh[1];\n\
+    \  sh[2] = t1;\n\
+    \  atomic_fetch_max_explicit((volatile threadgroup atomic_int*)&sh[0], 1, \
+     memory_order_relaxed);\n\
+    \  out[idx] = t1;\n\
      }\n\n"
 
 let metal_only_kernels () =
@@ -2161,6 +2380,12 @@ let metal_only_kernels () =
     ("float32_expm1_path", float32_expm1_path_kernel ());
     ("float32_log1p_path", float32_log1p_path_kernel ());
     ("mixed_plain_atomic", mixed_plain_atomic_kernel ());
+    ("atomic_sub_metal", atomic_sub_metal_kernel ());
+    ("atomic_min_metal", atomic_min_metal_kernel ());
+    ("atomic_max_metal", atomic_max_metal_kernel ());
+    ("atomic_sub_shared_metal", atomic_sub_shared_metal_kernel ());
+    ("atomic_min_shared_metal", atomic_min_shared_metal_kernel ());
+    ("atomic_max_shared_metal", atomic_max_shared_metal_kernel ());
   ]
 
 let metal_only_tests () =
