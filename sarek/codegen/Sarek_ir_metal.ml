@@ -551,9 +551,9 @@ and metal_backend st =
                   ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
-                  ~callee:"atomic_sub"
-                  ~prefix:"&"
-                  ~suffix:")"
+                  ~callee:"atomic_fetch_sub_explicit"
+                  ~prefix:"(volatile device atomic_int*)&"
+                  ~suffix:", memory_order_relaxed)"
                   ~opname:"atomic_sub"
                   ~expected:2
                   ~allow_array:false
@@ -565,9 +565,9 @@ and metal_backend st =
                   ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
-                  ~callee:"atomic_min"
-                  ~prefix:"&"
-                  ~suffix:")"
+                  ~callee:"atomic_fetch_min_explicit"
+                  ~prefix:"(volatile device atomic_int*)&"
+                  ~suffix:", memory_order_relaxed)"
                   ~opname:"atomic_min"
                   ~expected:2
                   ~allow_array:false
@@ -579,12 +579,62 @@ and metal_backend st =
                   ~gen_expr:(gen_expr st)
                   ~invalid_arg_count:bad_arity
                   buf
-                  ~callee:"atomic_max"
-                  ~prefix:"&"
-                  ~suffix:")"
+                  ~callee:"atomic_fetch_max_explicit"
+                  ~prefix:"(volatile device atomic_int*)&"
+                  ~suffix:", memory_order_relaxed)"
                   ~opname:"atomic_max"
                   ~expected:2
                   ~allow_array:false
+                  args)
+        (* The threadgroup variants, the [atomic_add_int32] pair of the
+           threadgroup [atomic_add] above (#561). MSL has no [atomic_sub],
+           [atomic_min] or [atomic_max]; the MSL spellings are
+           [atomic_fetch_{sub,min,max}_explicit], which take a pointer to an
+           [atomic_int] in the SAME address space as the operand, plus a memory
+           order. Shared arrays reach these through the 3-argument array form
+           and are declared plain (the [atomic_add] story, #545), so the cast
+           at the call site is what makes them atomic. *)
+        | "atomic_sub_int32" ->
+            Some
+              (fun buf args ->
+                Dispatch.emit_atomic
+                  ~gen_expr:(gen_expr st)
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~callee:"atomic_fetch_sub_explicit"
+                  ~prefix:"(volatile threadgroup atomic_int*)&"
+                  ~suffix:", memory_order_relaxed)"
+                  ~opname:"atomic_sub_int32"
+                  ~expected:2
+                  ~allow_array:true
+                  args)
+        | "atomic_min_int32" ->
+            Some
+              (fun buf args ->
+                Dispatch.emit_atomic
+                  ~gen_expr:(gen_expr st)
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~callee:"atomic_fetch_min_explicit"
+                  ~prefix:"(volatile threadgroup atomic_int*)&"
+                  ~suffix:", memory_order_relaxed)"
+                  ~opname:"atomic_min_int32"
+                  ~expected:2
+                  ~allow_array:true
+                  args)
+        | "atomic_max_int32" ->
+            Some
+              (fun buf args ->
+                Dispatch.emit_atomic
+                  ~gen_expr:(gen_expr st)
+                  ~invalid_arg_count:bad_arity
+                  buf
+                  ~callee:"atomic_fetch_max_explicit"
+                  ~prefix:"(volatile threadgroup atomic_int*)&"
+                  ~suffix:", memory_order_relaxed)"
+                  ~opname:"atomic_max_int32"
+                  ~expected:2
+                  ~allow_array:true
                   args)
         | _ -> None);
   }

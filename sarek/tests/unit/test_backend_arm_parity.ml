@@ -183,6 +183,15 @@ let names : (string * int * verdict list) list =
     (* log10: GAP, not a decision. WGSL has `log2`, and log10 x = log2 x * log10 2;
        the other four all handle it (GLSL through `pre_hook`). *)
     ("log10", 1, [Emitted; Emitted; Emitted; Unknown; Emitted]);
+    (* atomic_{sub,min,max}_int32: Metal only (#561). These are the ppx
+       primitives for shared-memory atomics (typed [t_arr t_int32 Local], the
+       [atomic_add_int32] pair of the global names), and until #561 they were
+       Unknown on EVERY backend — Metal now lowers them through
+       [atomic_fetch_{sub,min,max}_explicit]. The other four remain a GAP, the
+       same family as the atomic_sub row above. *)
+    ("atomic_sub_int32", 3, [Unknown; Unknown; Emitted; Unknown; Unknown]);
+    ("atomic_min_int32", 3, [Unknown; Unknown; Emitted; Unknown; Unknown]);
+    ("atomic_max_int32", 3, [Unknown; Unknown; Emitted; Unknown; Unknown]);
   ]
 
 let observed name arity =
@@ -255,7 +264,7 @@ let test_arity_guard (name, wrong_arity, handling) () =
 let test_row_count () =
   Alcotest.(check int)
     "intrinsic rows covered (update deliberately when adding an arm)"
-    40
+    43
     (List.length names)
 
 let () =
